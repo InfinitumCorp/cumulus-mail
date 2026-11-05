@@ -17,6 +17,10 @@ export function isE2E(message: MailMessage): boolean {
   return people.length > 0 && people.every((p) => isCumulus(p.email));
 }
 
+export function audienceLabel(people: Person[]): "Personal" | "External" {
+  return people.length > 0 && people.every((person) => isCumulus(person.email)) ? "Personal" : "External";
+}
+
 export function inBox(message: MailMessage, box: BoxId): boolean {
   if (box === "starred") return message.starred && message.folder !== "trash";
   return message.folder === box;
@@ -86,35 +90,31 @@ function haystack(message: MailMessage): string {
     .toLowerCase();
 }
 
+function tokenMatches(message: MailMessage, token: string): boolean {
+  if (token.startsWith("from:")) {
+    const needle = token.slice(5);
+    return !needle || `${message.from.name} ${message.from.email}`.toLowerCase().includes(needle);
+  }
+  if (token.startsWith("to:")) {
+    const needle = token.slice(3);
+    const people = [...message.to, ...message.cc];
+    return !needle || people.some((person) => `${person.name} ${person.email}`.toLowerCase().includes(needle));
+  }
+  if (token.startsWith("subject:")) {
+    const needle = token.slice(8);
+    return !needle || message.subject.toLowerCase().includes(needle);
+  }
+  if (token === "is:unread") return message.unread;
+  if (token === "is:starred") return message.starred;
+  if (token === "has:file") return Boolean(message.attachments?.length);
+  return haystack(message).includes(token);
+}
+
 function threadMatches(messages: MailMessage[], row: MailMessage, query: string): boolean {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
   const thread = messages.filter((message) => message.threadId === row.threadId);
-  return thread.some((message) => {
-    const free: string[] = [];
-    for (const token of tokens) {
-      if (token.startsWith("from:")) {
-        const needle = token.slice(5);
-        if (needle && !`${message.from.name} ${message.from.email}`.toLowerCase().includes(needle)) return false;
-      } else if (token.startsWith("to:")) {
-        const needle = token.slice(3);
-        const people = [...message.to, ...message.cc];
-        if (needle && !people.some((person) => `${person.name} ${person.email}`.toLowerCase().includes(needle))) return false;
-      } else if (token.startsWith("subject:")) {
-        const needle = token.slice(8);
-        if (needle && !message.subject.toLowerCase().includes(needle)) return false;
-      } else if (token === "is:unread") {
-        if (!message.unread) return false;
-      } else if (token === "is:starred") {
-        if (!message.starred) return false;
-      } else if (token === "has:file") {
-        if (!message.attachments?.length) return false;
-      } else {
-        free.push(token);
-      }
-    }
-    return free.every((bit) => haystack(message).includes(bit));
-  });
+  return tokens.every((token) => thread.some((message) => tokenMatches(message, token)));
 }
 
 export function listThreads(

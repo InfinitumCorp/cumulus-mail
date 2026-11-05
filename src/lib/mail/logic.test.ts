@@ -27,3 +27,26 @@ test("from: finds a sender and has:file finds an attachment", () => {
   assert.equal(listThreads(messages, "inbox", "has:file", false)[0]?.id, "file-1");
   assert.equal(ME.email.endsWith("@cumulusmail.cloud"), true);
 });
+
+test("a search term can match a different message in the same thread", () => {
+  const first: MailMessage = {
+    ...SEED_MESSAGES[0]!,
+    id: "t-1",
+    threadId: "th-split",
+    from: { name: "Leah Okonkwo", email: "leah@cumulusmail.cloud" },
+    subject: "Hello",
+    body: "See you Thursday.",
+    attachments: undefined,
+  };
+  const reply: MailMessage = {
+    ...SEED_MESSAGES[0]!,
+    id: "t-2",
+    threadId: "th-split",
+    from: { name: "Alex Reid", email: ME.email },
+    subject: "Re: Hello",
+    body: "The budget appendix is attached in Drive.",
+    at: "2026-11-05T13:00:00.000Z",
+  };
+  const rows = listThreads([first, reply, ...SEED_MESSAGES], "inbox", "from:leah budget", false);
+  assert.equal(rows.some((row) => row.threadId === "th-split"), true);
+});

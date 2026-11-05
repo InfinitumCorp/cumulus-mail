@@ -3,6 +3,7 @@ import { Menu, Search, SquarePen } from "lucide-react";
 import { briefThread } from "@/lib/mail/brief";
 import {
   briefKey,
+  audienceLabel,
   isCumulus,
   listThreads,
   parsePeople,
@@ -185,7 +186,7 @@ export function MailApp() {
       at: new Date().toISOString(),
       unread: false,
       starred: false,
-      labels: to.every((person) => isCumulus(person.email)) ? ["Personal"] : ["External"],
+      labels: [audienceLabel([...to, ...cc])],
       attachments: composer.attachments,
       delivery,
     };
