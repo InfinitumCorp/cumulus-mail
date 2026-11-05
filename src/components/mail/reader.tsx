@@ -1,5 +1,6 @@
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { MailMessage } from "@/lib/mail/model";
+import { ME } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
 
@@ -18,6 +19,8 @@ type Props = {
   onArchive: (id: string) => void;
   onTrash: (id: string) => void;
   onSnooze: () => void;
+  onUnread: () => void;
+  onMute: () => void;
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;
   onReply: () => void;
@@ -69,6 +72,8 @@ function Opened({
   onArchive,
   onTrash,
   onSnooze,
+  onUnread,
+  onMute,
   onRestore,
   onRemove,
   onReply,
@@ -129,6 +134,14 @@ function Opened({
             </button>
           </>
         )}
+        <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onUnread}>
+          Unread
+        </button>
+        {message.from.email !== ME.email ? (
+          <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onMute}>
+            Mute
+          </button>
+        ) : null}
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onTask}>
           <ListTodo className="size-4" />
           Conductor

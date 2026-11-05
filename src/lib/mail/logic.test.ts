@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyRules, inBox, isSnoozed, listThreads, planDelivery, tomorrowMorning, withSignature } from "./logic.ts";
+import { applyRules, archiveThreads, emptyTrash, inBox, isSnoozed, listThreads, markThreadUnread, planDelivery, tomorrowMorning, trashThreads, withSignature } from "./logic.ts";
 import { ME, SEED_MESSAGES, type MailMessage } from "./model.ts";
 
 test("Cumulus recipients stay inside and everyone else is outbound", () => {
@@ -65,6 +65,16 @@ test("a snoozed note leaves the inbox and an outside send sits in the outbox", (
   };
   assert.equal(inBox(sent, "outbox"), true);
   assert.equal(tomorrowMorning(new Date("2026-11-05T22:00:00.000Z")), "2026-11-06T08:00:00.000Z");
+});
+
+test("archive, unread, and empty trash only touch the conversations you chose", () => {
+  const archived = archiveThreads(SEED_MESSAGES, ["th-priya"]);
+  assert.equal(archived.find((message) => message.threadId === "th-priya" && message.folder === "inbox"), undefined);
+  assert.equal(archived.some((message) => message.threadId === "th-priya" && message.folder === "archive"), true);
+  const unread = markThreadUnread(archived, "th-leah");
+  assert.equal(unread.some((message) => message.threadId === "th-leah" && message.unread), true);
+  const trashed = trashThreads(SEED_MESSAGES, ["th-leah"]);
+  assert.equal(emptyTrash(trashed).some((message) => message.folder === "trash"), false);
 });
 
 test("rules archive a match and the signature stays above a quote", () => {

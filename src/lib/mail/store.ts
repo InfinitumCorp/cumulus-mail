@@ -39,6 +39,8 @@ type MailStore = Snapshot & {
   setSignature: (signature: string) => void;
   addRule: (rule: MailRule) => void;
   removeRule: (id: string) => void;
+  replaceMessages: (messages: MailMessage[]) => void;
+  replaceRules: (rules: MailRule[]) => void;
 };
 
 let dirty = false;
@@ -160,5 +162,11 @@ export const useMail = create<MailStore>((set, get) => ({
   },
   removeRule: (id) => {
     commit(set, get, { rules: get().rules.filter((rule) => rule.id !== id) });
+  },
+  replaceMessages: (messages) => {
+    commit(set, get, { messages });
+  },
+  replaceRules: (rules) => {
+    commit(set, get, { rules });
   },
 }));

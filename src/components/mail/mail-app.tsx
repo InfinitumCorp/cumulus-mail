@@ -14,11 +14,15 @@ import {
   threadOf,
   tomorrowMorning,
   transcript,
+  trashThreads,
   validEmail,
   withSignature,
   applyRules,
+  archiveThreads,
+  emptyTrash,
+  markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, ME, type BoxId, type MailMessage, type ViewId } from "@/lib/mail/model";
+import { EVENTS, ME, type BoxId, type MailMessage, type MailRule, type ViewId } from "@/lib/mail/model";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
 import { MessageList } from "./message-list";
@@ -60,6 +64,8 @@ export function MailApp() {
   const setSignature = useMail((s) => s.setSignature);
   const addRule = useMail((s) => s.addRule);
   const removeRule = useMail((s) => s.removeRule);
+  const replaceMessages = useMail((s) => s.replaceMessages);
+  const replaceRules = useMail((s) => s.replaceRules);
 
   const [view, setView] = useState<ViewId>("mail");
   const [box, setBox] = useState<BoxId>("inbox");
@@ -74,11 +80,35 @@ export function MailApp() {
   const [briefError, setBriefError] = useState("");
   const [assisting, setAssisting] = useState(false);
   const [notice, setNotice] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [undo, setUndo] = useState<{ label: string; messages: MailMessage[]; rules: MailRule[] } | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+
+  function remember(label: string) {
+    const snap = useMail.getState();
+    setUndo({
+      label,
+      messages: snap.messages.map((message) => ({ ...message })),
+      rules: snap.rules.map((rule) => ({ ...rule })),
+    });
+  }
+
+  function undoLast() {
+    if (!undo) return;
+    replaceMessages(undo.messages);
+    replaceRules(undo.rules);
+    setUndo(null);
+  }
 
   useEffect(() => {
     const next = messages
@@ -108,6 +138,18 @@ export function MailApp() {
       } else if (event.key === "#" && reading && reading.folder !== "trash") {
         event.preventDefault();
         moveSelected(reading.id, "trash");
+      } else if (event.key === "z") {
+        event.preventDefault();
+        undoLast();
+      } else if (event.key === "u" && reading) {
+        event.preventDefault();
+        remember("Marked as unread.");
+        replaceMessages(markThreadUnread(messages, reading.threadId));
+        setSelectedId(null);
+      } else if (event.key === "x" && (reading || rows[0])) {
+        event.preventDefault();
+        const threadId = reading?.threadId ?? rows[0]?.threadId;
+        if (threadId) setPicked((current) => (current.includes(threadId) ? current.filter((id) => id !== threadId) : [...current, threadId]));
       } else if (event.key === "j" || event.key === "k") {
         event.preventDefault();
         const index = rows.findIndex((row) => row.id === selectedId);
@@ -221,6 +263,7 @@ export function MailApp() {
       return;
     }
     const id = `m-${Date.now().toString(36)}`;
+    remember("Message sent.");
     if (composer.draftId) remove(composer.draftId);
     const delivery = planDelivery([...to, ...cc]);
     const sent = {
@@ -341,8 +384,37 @@ export function MailApp() {
   }
 
   function moveSelected(id: string, folder: "archive" | "trash" | "inbox") {
-    move(id, folder);
+    const message = messages.find((item) => item.id === id);
+    const threadId = message?.threadId ?? id;
+    if (folder === "archive") {
+      remember("Archived.");
+      replaceMessages(archiveThreads(messages, [threadId]));
+    } else if (folder === "trash") {
+      remember("Moved to Trash.");
+      replaceMessages(trashThreads(messages, [threadId]));
+    } else {
+      remember("Moved to Inbox.");
+      move(id, folder);
+    }
     if (selectedId === id) setSelectedId(null);
+    setPicked([]);
+  }
+
+  function actOnPicked(kind: "archive" | "trash" | "unread") {
+    if (!picked.length) return;
+    const count = picked.length;
+    if (kind === "archive") {
+      remember(count === 1 ? "Conversation archived." : `${count} conversations archived.`);
+      replaceMessages(archiveThreads(messages, picked));
+    } else if (kind === "trash") {
+      remember(count === 1 ? "Conversation moved to Trash." : `${count} conversations moved to Trash.`);
+      replaceMessages(trashThreads(messages, picked));
+    } else {
+      remember(count === 1 ? "Marked as unread." : `${count} conversations marked as unread.`);
+      replaceMessages(picked.reduce((next, threadId) => markThreadUnread(next, threadId), messages));
+    }
+    setPicked([]);
+    setSelectedId(null);
   }
 
   return (
@@ -395,6 +467,7 @@ export function MailApp() {
             setBox(next);
             setView("mail");
             setSelectedId(null);
+            setPicked([]);
             setNavOpen(false);
           }}
           onAccount={() => {
@@ -410,9 +483,23 @@ export function MailApp() {
               messages={messages}
               selectedId={reading?.id ?? null}
               unreadOnly={unreadOnly}
+              picked={picked}
               onUnreadOnly={setUnreadOnly}
               onOpen={openRow}
               onStar={toggleStar}
+              onTogglePick={(threadId) => setPicked((current) => (current.includes(threadId) ? current.filter((id) => id !== threadId) : [...current, threadId]))}
+              onPickAll={(threadIds, on) => setPicked(on ? threadIds : [])}
+              onArchivePicked={() => actOnPicked("archive")}
+              onTrashPicked={() => actOnPicked("trash")}
+              onUnreadPicked={() => actOnPicked("unread")}
+              onClearPick={() => setPicked([])}
+              onEmptyTrash={() => {
+                if (!messages.some((message) => message.folder === "trash")) return;
+                if (!window.confirm("Delete everything in Trash? This can be undone.")) return;
+                remember("Trash emptied.");
+                replaceMessages(emptyTrash(messages));
+                setSelectedId(null);
+              }}
             />
             <Reader
               message={reading}
@@ -430,11 +517,30 @@ export function MailApp() {
               onTrash={(id) => moveSelected(id, "trash")}
               onSnooze={() => {
                 if (!reading) return;
+                remember("Snoozed until tomorrow morning.");
                 snooze(reading.id, tomorrowMorning());
+                setSelectedId(null);
+              }}
+              onUnread={() => {
+                if (!reading) return;
+                remember("Marked as unread.");
+                replaceMessages(markThreadUnread(messages, reading.threadId));
+                setSelectedId(null);
+              }}
+              onMute={() => {
+                if (!reading || reading.from.email === ME.email) return;
+                if (!rules.some((rule) => rule.action === "archive" && rule.from.toLowerCase() === reading.from.email.toLowerCase())) {
+                  remember(`Mail from ${reading.from.name} will be archived.`);
+                  addRule({ id: `r-${Date.now().toString(36)}`, from: reading.from.email, action: "archive" });
+                } else {
+                  remember("Muted.");
+                }
+                replaceMessages(archiveThreads(messages, [reading.threadId]));
                 setSelectedId(null);
               }}
               onRestore={(id) => moveSelected(id, "inbox")}
               onRemove={(id) => {
+                remember("Deleted.");
                 remove(id);
                 setSelectedId(null);
               }}
@@ -498,6 +604,14 @@ export function MailApp() {
           onAddRule={addRule}
           onRemoveRule={removeRule}
         />
+      ) : null}
+      {undo ? (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 border border-line bg-paper px-4 py-3" role="status">
+          <p className="text-sm">{undo.label}</p>
+          <button type="button" className="text-sm text-accent" onClick={undoLast}>
+            Undo
+          </button>
+        </div>
       ) : null}
     </div>
   );

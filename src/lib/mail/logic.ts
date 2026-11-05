@@ -64,6 +64,35 @@ export function withSignature(body: string, signature: string): string {
   return `${body.trimEnd()}\n\n${sig}`;
 }
 
+export function archiveThreads(messages: MailMessage[], threadIds: string[]): MailMessage[] {
+  const ids = new Set(threadIds);
+  return messages.map((message) =>
+    ids.has(message.threadId) && message.folder === "inbox" ? { ...message, folder: "archive", unread: false } : message,
+  );
+}
+
+export function trashThreads(messages: MailMessage[], threadIds: string[]): MailMessage[] {
+  const ids = new Set(threadIds);
+  return messages.map((message) =>
+    ids.has(message.threadId) && message.folder !== "drafts" && message.folder !== "trash"
+      ? { ...message, folder: "trash", unread: false }
+      : message,
+  );
+}
+
+export function markThreadUnread(messages: MailMessage[], threadId: string): MailMessage[] {
+  const received = messages
+    .filter((message) => message.threadId === threadId && message.from.email !== ME.email && message.folder !== "trash")
+    .sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  const target = received ?? messages.filter((message) => message.threadId === threadId).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  if (!target) return messages;
+  return messages.map((message) => (message.id === target.id ? { ...message, unread: true } : message));
+}
+
+export function emptyTrash(messages: MailMessage[]): MailMessage[] {
+  return messages.filter((message) => message.folder !== "trash");
+}
+
 export function tomorrowMorning(now = new Date()): string {
   const until = new Date(now);
   until.setUTCDate(until.getUTCDate() + 1);
