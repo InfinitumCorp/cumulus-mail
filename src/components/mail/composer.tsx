@@ -1,0 +1,92 @@
+import { Sparkles, X } from "lucide-react";
+
+export type DraftForm = {
+  draftId?: string;
+  threadId?: string;
+  placement: "modal" | "inline";
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+};
+
+type Props = {
+  form: DraftForm;
+  error: string;
+  assisting: boolean;
+  onChange: (form: DraftForm) => void;
+  onSend: () => void;
+  onSave: () => void;
+  onClose: () => void;
+  onAssist: () => void;
+};
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 border-b border-line px-4">
+      <span className="w-14 shrink-0 font-mono text-xs uppercase tracking-wide text-muted">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+        autoComplete="off"
+      />
+    </label>
+  );
+}
+
+export function Composer({ form, error, assisting, onChange, onSend, onSave, onClose, onAssist }: Props) {
+  const title = form.draftId ? "Draft" : form.placement === "inline" ? "Reply" : "New message";
+  return (
+    <form
+      className="flex min-h-0 flex-col bg-paper"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSend();
+      }}
+    >
+      <div className="flex items-center justify-between border-b border-line px-4 py-2">
+        <h2 className="text-sm">{title}</h2>
+        <button type="button" className="grid size-11 place-items-center text-muted hover:text-ink" onClick={onClose} aria-label="Close composer">
+          <X className="size-4" />
+        </button>
+      </div>
+      <Field label="To" value={form.to} onChange={(to) => onChange({ ...form, to })} />
+      <Field label="Cc" value={form.cc} onChange={(cc) => onChange({ ...form, cc })} />
+      <Field label="Subject" value={form.subject} onChange={(subject) => onChange({ ...form, subject })} />
+      <textarea
+        value={form.body}
+        onChange={(event) => onChange({ ...form, body: event.target.value })}
+        className="min-h-40 flex-1 resize-none bg-transparent px-4 py-4 text-base leading-normal outline-none"
+        placeholder="Write"
+        aria-label="Message"
+      />
+      {error ? <p className="px-4 pb-2 text-sm text-ink">{error}</p> : null}
+      <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3">
+        <button type="submit" className="inline-flex h-11 items-center bg-ink px-5 text-sm text-paper transition-colors hover:bg-accent">
+          Send
+        </button>
+        <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm hover:border-ink" onClick={onSave}>
+          Save draft
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-11 items-center gap-2 px-3 text-sm text-accent disabled:opacity-50"
+          onClick={onAssist}
+          disabled={assisting}
+        >
+          <Sparkles className="size-4" />
+          {assisting ? "SCALVS is writing" : "Draft with SCALVS"}
+        </button>
+      </div>
+    </form>
+  );
+}

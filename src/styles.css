@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #111820;
+  --color-paper: #ffffff;
+  --color-muted: #52606b;
+  --color-line: #d6dce1;
+  --color-accent: #2454dd;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 0px;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-weight: 400;
+    letter-spacing: -0.011em;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 22%, white);
+  }
+}
+
+@layer components {
+  .mail-shell {
+    display: flex;
+    height: 100dvh;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  .mail-body {
+    position: relative;
+    display: flex;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .nav-pane,
+  .list-pane,
+  .reader-pane,
+  .aux-pane {
+    min-height: 0;
+    min-width: 0;
+    flex-direction: column;
+    background: var(--color-paper);
+  }
+
+  .nav-pane {
+    display: none;
+    border-right: 1px solid var(--color-line);
+  }
+
+  .nav-pane[data-open="true"] {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    width: 100%;
+  }
+
+  .list-pane {
+    display: flex;
+    flex: 1;
+    border-right: 1px solid var(--color-line);
+  }
+
+  .reader-pane {
+    display: none;
+    flex: 1;
+  }
+
+  .reader-pane[data-open="true"] {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    background: var(--color-paper);
+  }
+
+  .aux-pane {
+    display: flex;
+    flex: 1;
+  }
+
+  .scrim {
+    background: color-mix(in srgb, var(--color-ink) 42%, transparent);
+  }
+
+  @media (min-width: 768px) {
+    .nav-pane,
+    .nav-pane[data-open="true"] {
+      position: static;
+      display: flex;
+      width: 232px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .list-pane {
+      width: 360px;
+      flex: none;
+    }
+
+    .reader-pane,
+    .reader-pane[data-open="true"] {
+      position: static;
+      display: flex;
+    }
+
+    .mail-body:has(.reader-pane[data-open="true"]) .list-pane {
+      display: flex;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .mail-body:has(.reader-pane[data-open="true"]) .list-pane {
+      display: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
