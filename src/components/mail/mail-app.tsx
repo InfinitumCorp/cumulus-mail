@@ -12,8 +12,11 @@ import {
   quota,
   quote,
   threadOf,
+  tomorrowMorning,
   transcript,
   validEmail,
+  withSignature,
+  applyRules,
 } from "@/lib/mail/logic";
 import { EVENTS, ME, type BoxId, type MailMessage, type ViewId } from "@/lib/mail/model";
 import { useMail } from "@/lib/mail/store";
@@ -40,6 +43,8 @@ export function MailApp() {
   const briefs = useMail((s) => s.briefs);
   const tasks = useMail((s) => s.tasks);
   const contacts = useMail((s) => s.contacts);
+  const signature = useMail((s) => s.signature);
+  const rules = useMail((s) => s.rules);
   const hydrate = useMail((s) => s.hydrate);
   const markThreadRead = useMail((s) => s.markThreadRead);
   const toggleStar = useMail((s) => s.toggleStar);
@@ -51,6 +56,10 @@ export function MailApp() {
   const addTask = useMail((s) => s.addTask);
   const toggleTask = useMail((s) => s.toggleTask);
   const addContact = useMail((s) => s.addContact);
+  const snooze = useMail((s) => s.snooze);
+  const setSignature = useMail((s) => s.setSignature);
+  const addRule = useMail((s) => s.addRule);
+  const removeRule = useMail((s) => s.removeRule);
 
   const [view, setView] = useState<ViewId>("mail");
   const [box, setBox] = useState<BoxId>("inbox");
@@ -65,10 +74,50 @@ export function MailApp() {
   const [briefError, setBriefError] = useState("");
   const [assisting, setAssisting] = useState(false);
   const [notice, setNotice] = useState("");
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    const next = messages
+      .map((message) => (message.snoozeUntil ? Date.parse(message.snoozeUntil) : 0))
+      .filter((time) => time > Date.now())
+      .sort((a, b) => a - b)[0];
+    if (!next) return;
+    const wait = Math.min(next - Date.now() + 40, 2_147_000_000);
+    const timer = window.setTimeout(() => setTick((value) => value + 1), wait);
+    return () => window.clearTimeout(timer);
+  }, [messages]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "c") {
+        event.preventDefault();
+        writeNew();
+      } else if (event.key === "r" && reading) {
+        event.preventDefault();
+        reply();
+      } else if (event.key === "e" && reading && reading.folder !== "trash") {
+        event.preventDefault();
+        moveSelected(reading.id, "archive");
+      } else if (event.key === "#" && reading && reading.folder !== "trash") {
+        event.preventDefault();
+        moveSelected(reading.id, "trash");
+      } else if (event.key === "j" || event.key === "k") {
+        event.preventDefault();
+        const index = rows.findIndex((row) => row.id === selectedId);
+        const next = event.key === "j" ? rows[index + 1] ?? rows[0] : rows[index - 1] ?? rows[rows.length - 1];
+        if (next) openRow(next);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const rows = listThreads(messages, box, query, unreadOnly);
   const selected = messages.find((message) => message.id === selectedId) ?? null;
@@ -190,15 +239,11 @@ export function MailApp() {
       attachments: composer.attachments,
       delivery,
     };
+    sent.body = withSignature(composer.body, signature);
     saveMessage(sent);
     const mine = ME.email.toLowerCase();
     if ([...to, ...cc].some((person) => person.email.toLowerCase() === mine)) {
-      saveMessage({
-        ...sent,
-        id: `${id}-in`,
-        folder: "inbox",
-        unread: true,
-      });
+      saveMessage(applyRules({ ...sent, id: `${id}-in`, folder: "inbox", unread: true }, rules));
     }
     setComposer(null);
     setComposeError("");
@@ -383,6 +428,11 @@ export function MailApp() {
               onStar={toggleStar}
               onArchive={(id) => moveSelected(id, "archive")}
               onTrash={(id) => moveSelected(id, "trash")}
+              onSnooze={() => {
+                if (!reading) return;
+                snooze(reading.id, tomorrowMorning());
+                setSelectedId(null);
+              }}
               onRestore={(id) => moveSelected(id, "inbox")}
               onRemove={(id) => {
                 remove(id);
@@ -440,8 +490,13 @@ export function MailApp() {
         <AccountPanel
           aliases={aliases}
           quotaLabel={quota(messages).label}
+          signature={signature}
+          rules={rules}
           onClose={() => setAccountOpen(false)}
           onAddAlias={addAlias}
+          onSignature={setSignature}
+          onAddRule={addRule}
+          onRemoveRule={removeRule}
         />
       ) : null}
     </div>

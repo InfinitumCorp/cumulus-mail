@@ -1,6 +1,8 @@
 import {
   Archive,
+  ArrowUpRight,
   CalendarDays,
+  Clock,
   FileText,
   Inbox,
   ListTodo,
@@ -16,6 +18,8 @@ import type { MailMessage } from "@/lib/mail/model";
 
 const ICONS = {
   inbox: Inbox,
+  snoozed: Clock,
+  outbox: ArrowUpRight,
   starred: Star,
   sent: Send,
   drafts: FileText,

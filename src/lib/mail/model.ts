@@ -10,7 +10,16 @@ export type Person = { name: string; email: string };
 
 export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash";
 
-export type BoxId = FolderId | "starred";
+export type BoxId = FolderId | "starred" | "outbox" | "snoozed";
+
+export type RuleAction = "star" | "archive" | "label";
+
+export type MailRule = {
+  id: string;
+  from: string;
+  action: RuleAction;
+  label?: string;
+};
 
 export type Attachment = { name: string; size: number };
 
@@ -35,6 +44,7 @@ export type MailMessage = {
   labels: string[];
   attachments?: Attachment[];
   delivery?: DeliveryHop[];
+  snoozeUntil?: string;
 };
 
 export type ConductorTask = {
@@ -350,6 +360,8 @@ export const EVENTS: CalEvent[] = [
 
 export const BOXES: { id: BoxId; label: string }[] = [
   { id: "inbox", label: "Inbox" },
+  { id: "snoozed", label: "Snoozed" },
+  { id: "outbox", label: "Outbox" },
   { id: "starred", label: "Starred" },
   { id: "sent", label: "Sent" },
   { id: "drafts", label: "Drafts" },

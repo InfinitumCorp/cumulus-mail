@@ -15,6 +15,8 @@ type Props = {
 
 const TITLES: Record<BoxId, string> = {
   inbox: "Inbox",
+  snoozed: "Snoozed",
+  outbox: "Outbox",
   starred: "Starred",
   sent: "Sent",
   drafts: "Drafts",

@@ -3,6 +3,7 @@ import {
   type BoxId,
   type DeliveryHop,
   type MailMessage,
+  type MailRule,
   type Person,
 } from "./model.ts";
 
@@ -21,9 +22,53 @@ export function audienceLabel(people: Person[]): "Personal" | "External" {
   return people.length > 0 && people.every((person) => isCumulus(person.email)) ? "Personal" : "External";
 }
 
-export function inBox(message: MailMessage, box: BoxId): boolean {
+export function isSnoozed(message: MailMessage, now = Date.now()): boolean {
+  if (!message.snoozeUntil || message.folder === "trash" || message.folder === "drafts") return false;
+  const at = Date.parse(message.snoozeUntil);
+  return Number.isFinite(at) && at > now;
+}
+
+export function inBox(message: MailMessage, box: BoxId, now = Date.now()): boolean {
+  if (box === "snoozed") return isSnoozed(message, now);
+  if (isSnoozed(message, now)) return false;
+  if (box === "outbox") {
+    return message.folder === "sent" && (message.delivery ?? []).some((hop) => hop.status === "outbound");
+  }
   if (box === "starred") return message.starred && message.folder !== "trash";
   return message.folder === box;
+}
+
+export function applyRules(message: MailMessage, rules: MailRule[]): MailMessage {
+  if (message.folder !== "inbox") return message;
+  let next = message;
+  for (const rule of rules) {
+    const needle = rule.from.trim().toLowerCase();
+    if (!needle) continue;
+    if (!`${next.from.name} ${next.from.email}`.toLowerCase().includes(needle)) continue;
+    if (rule.action === "star") next = { ...next, starred: true };
+    if (rule.action === "archive") next = { ...next, folder: "archive", unread: false };
+    if (rule.action === "label") {
+      const label = rule.label?.trim();
+      if (label && !next.labels.includes(label)) next = { ...next, labels: [...next.labels, label] };
+    }
+  }
+  return next;
+}
+
+export function withSignature(body: string, signature: string): string {
+  const sig = signature.trim();
+  if (!sig || body.includes(sig)) return body;
+  const marker = "\n\n—\n";
+  const cut = body.indexOf(marker);
+  if (cut >= 0) return `${body.slice(0, cut).trimEnd()}\n\n${sig}${body.slice(cut)}`;
+  return `${body.trimEnd()}\n\n${sig}`;
+}
+
+export function tomorrowMorning(now = new Date()): string {
+  const until = new Date(now);
+  until.setUTCDate(until.getUTCDate() + 1);
+  until.setUTCHours(8, 0, 0, 0);
+  return until.toISOString();
 }
 
 export function formatWhen(iso: string): string {

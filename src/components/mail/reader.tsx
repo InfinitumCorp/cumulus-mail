@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
+import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { MailMessage } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
@@ -17,6 +17,7 @@ type Props = {
   onStar: (id: string) => void;
   onArchive: (id: string) => void;
   onTrash: (id: string) => void;
+  onSnooze: () => void;
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;
   onReply: () => void;
@@ -67,6 +68,7 @@ function Opened({
   onStar,
   onArchive,
   onTrash,
+  onSnooze,
   onRestore,
   onRemove,
   onReply,
@@ -121,6 +123,9 @@ function Opened({
             </button>
             <button type="button" className="grid size-11 place-items-center" onClick={() => onTrash(message.id)} aria-label="Trash">
               <Trash2 className="size-4" />
+            </button>
+            <button type="button" className="grid size-11 place-items-center" onClick={onSnooze} aria-label="Snooze until tomorrow morning">
+              <Clock className="size-4" />
             </button>
           </>
         )}

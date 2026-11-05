@@ -1,5 +1,5 @@
 import { Check, Plus, X } from "lucide-react";
-import { ME, type CalEvent, type ConductorTask, type Contact } from "@/lib/mail/model";
+import { ME, type CalEvent, type ConductorTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -106,13 +106,23 @@ export function newAlias(): string {
 export function AccountPanel({
   aliases,
   quotaLabel,
+  signature,
+  rules,
   onClose,
   onAddAlias,
+  onSignature,
+  onAddRule,
+  onRemoveRule,
 }: {
   aliases: string[];
   quotaLabel: string;
+  signature: string;
+  rules: MailRule[];
   onClose: () => void;
   onAddAlias: (alias: string) => void;
+  onSignature: (signature: string) => void;
+  onAddRule: (rule: MailRule) => void;
+  onRemoveRule: (id: string) => void;
 }) {
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
@@ -154,6 +164,58 @@ export function AccountPanel({
                   <Plus className="size-4" />
                   Disposable alias
                 </button>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Signature</dt>
+              <dd className="mt-3">
+                <textarea
+                  value={signature}
+                  onChange={(event) => onSignature(event.target.value)}
+                  aria-label="Signature"
+                  className="min-h-24 w-full border border-line bg-transparent px-3 py-2 text-sm outline-none"
+                />
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Rules</dt>
+              <dd className="mt-3 flex flex-col gap-3">
+                {rules.length === 0 ? <p className="text-sm text-muted">None yet. A rule runs when mail arrives in the inbox.</p> : null}
+                {rules.map((rule) => (
+                  <div key={rule.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span>From {rule.from} · {rule.action === "label" ? rule.label : rule.action}</span>
+                    <button type="button" className="text-muted hover:text-ink" onClick={() => onRemoveRule(rule.id)} aria-label={`Remove rule for ${rule.from}`}>
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    const from = String(data.get("from") ?? "").trim();
+                    const action = String(data.get("action") ?? "star") as RuleAction;
+                    const label = String(data.get("label") ?? "").trim();
+                    if (!from) return;
+                    if (action === "label" && !label) return;
+                    onAddRule({ id: `r-${Date.now().toString(36)}`, from, action, label });
+                    event.currentTarget.reset();
+                  }}
+                >
+                  <input name="from" placeholder="From contains" aria-label="Rule match" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
+                  <div className="flex gap-2">
+                    <select name="action" aria-label="Rule action" className="h-11 flex-1 border border-line bg-transparent px-2 text-sm" defaultValue="star">
+                      <option value="star">Star</option>
+                      <option value="archive">Archive</option>
+                      <option value="label">Label</option>
+                    </select>
+                    <input name="label" placeholder="Label" aria-label="Rule label" className="h-11 w-28 border border-line bg-transparent px-3 text-sm outline-none" />
+                  </div>
+                  <button type="submit" className="inline-flex h-11 items-center self-start border border-line px-3 text-sm hover:border-ink">
+                    Add rule
+                  </button>
+                </form>
               </dd>
             </div>
           </dl>

@@ -8,6 +8,7 @@ import {
   type Contact,
   type FolderId,
   type MailMessage,
+  type MailRule,
 } from "./model";
 
 const KEY = "cumulus-mail-v1";
@@ -18,6 +19,8 @@ type Snapshot = {
   briefs: Record<string, string>;
   tasks: ConductorTask[];
   contacts: Contact[];
+  signature: string;
+  rules: MailRule[];
 };
 
 type MailStore = Snapshot & {
@@ -32,6 +35,10 @@ type MailStore = Snapshot & {
   addTask: (task: ConductorTask) => void;
   toggleTask: (id: string) => void;
   addContact: (contact: Contact) => void;
+  snooze: (id: string, until: string) => void;
+  setSignature: (signature: string) => void;
+  addRule: (rule: MailRule) => void;
+  removeRule: (id: string) => void;
 };
 
 let dirty = false;
@@ -43,6 +50,8 @@ function blank(): Snapshot {
     briefs: {},
     tasks: SEED_TASKS,
     contacts: SEED_CONTACTS,
+    signature: "Alex Reid\nalex@cumulusmail.cloud",
+    rules: [],
   };
 }
 
@@ -54,6 +63,8 @@ function persist(state: Snapshot) {
     briefs: state.briefs,
     tasks: state.tasks,
     contacts: state.contacts,
+    signature: state.signature,
+    rules: state.rules,
   };
   localStorage.setItem(KEY, JSON.stringify(snapshot));
 }
@@ -83,6 +94,8 @@ export const useMail = create<MailStore>((set, get) => ({
         briefs: data.briefs && typeof data.briefs === "object" ? data.briefs : {},
         tasks: Array.isArray(data.tasks) ? data.tasks : SEED_TASKS,
         contacts: Array.isArray(data.contacts) && data.contacts.length > 0 ? data.contacts : SEED_CONTACTS,
+        signature: typeof data.signature === "string" ? data.signature : blank().signature,
+        rules: Array.isArray(data.rules) ? data.rules : [],
       });
     } catch {
       /* keep the seed mailbox */
@@ -133,5 +146,19 @@ export const useMail = create<MailStore>((set, get) => ({
   addContact: (contact) => {
     if (get().contacts.some((c) => c.email === contact.email)) return;
     commit(set, get, { contacts: [...get().contacts, contact] });
+  },
+  snooze: (id, until) => {
+    commit(set, get, {
+      messages: get().messages.map((message) => (message.id === id ? { ...message, snoozeUntil: until, unread: false } : message)),
+    });
+  },
+  setSignature: (signature) => {
+    commit(set, get, { signature });
+  },
+  addRule: (rule) => {
+    commit(set, get, { rules: [...get().rules, rule] });
+  },
+  removeRule: (id) => {
+    commit(set, get, { rules: get().rules.filter((rule) => rule.id !== id) });
   },
 }));
