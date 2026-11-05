@@ -1,9 +1,10 @@
 import {
   ME,
   type BoxId,
+  type DeliveryHop,
   type MailMessage,
   type Person,
-} from "./model";
+} from "./model.ts";
 
 const CUMULUS = "@cumulusmail.cloud";
 
@@ -47,6 +48,75 @@ export function initials(name: string): string {
   return letters.toUpperCase() || "•";
 }
 
+export function planDelivery(people: Person[]): DeliveryHop[] {
+  const seen = new Set<string>();
+  const hops: DeliveryHop[] = [];
+  for (const person of people) {
+    const email = person.email.toLowerCase();
+    if (seen.has(email)) continue;
+    seen.add(email);
+    hops.push(
+      isCumulus(email)
+        ? { email, status: "inside", detail: "Delivered inside Cumulus. End-to-end." }
+        : { email, status: "outbound", detail: "Accepted. Leaves Cumulus encrypted." },
+    );
+  }
+  return hops;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function haystack(message: MailMessage): string {
+  const files = (message.attachments ?? []).map((file) => file.name);
+  return [
+    message.subject,
+    message.body,
+    message.from.name,
+    message.from.email,
+    ...message.to.flatMap((person) => [person.name, person.email]),
+    ...message.cc.flatMap((person) => [person.name, person.email]),
+    ...message.labels,
+    ...files,
+  ]
+    .join("\n")
+    .toLowerCase();
+}
+
+function threadMatches(messages: MailMessage[], row: MailMessage, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const thread = messages.filter((message) => message.threadId === row.threadId);
+  return thread.some((message) => {
+    const free: string[] = [];
+    for (const token of tokens) {
+      if (token.startsWith("from:")) {
+        const needle = token.slice(5);
+        if (needle && !`${message.from.name} ${message.from.email}`.toLowerCase().includes(needle)) return false;
+      } else if (token.startsWith("to:")) {
+        const needle = token.slice(3);
+        const people = [...message.to, ...message.cc];
+        if (needle && !people.some((person) => `${person.name} ${person.email}`.toLowerCase().includes(needle))) return false;
+      } else if (token.startsWith("subject:")) {
+        const needle = token.slice(8);
+        if (needle && !message.subject.toLowerCase().includes(needle)) return false;
+      } else if (token === "is:unread") {
+        if (!message.unread) return false;
+      } else if (token === "is:starred") {
+        if (!message.starred) return false;
+      } else if (token === "has:file") {
+        if (!message.attachments?.length) return false;
+      } else {
+        free.push(token);
+      }
+    }
+    return free.every((bit) => haystack(message).includes(bit));
+  });
+}
+
 export function listThreads(
   messages: MailMessage[],
   box: BoxId,
@@ -60,19 +130,7 @@ export function listThreads(
     if (!prev || prev.at < message.at) latest.set(message.threadId, message);
   }
   let rows = [...latest.values()];
-  const q = query.trim().toLowerCase();
-  if (q) {
-    rows = rows.filter((row) =>
-      messages
-        .filter((m) => m.threadId === row.threadId)
-        .some((m) =>
-          [m.subject, m.body, m.from.name, m.from.email, ...m.to.flatMap((p) => [p.name, p.email]), ...m.labels]
-            .join("\n")
-            .toLowerCase()
-            .includes(q),
-        ),
-    );
-  }
+  if (query.trim()) rows = rows.filter((row) => threadMatches(messages, row, query));
   if (unreadOnly) {
     rows = rows.filter((row) =>
       messages.some((m) => m.threadId === row.threadId && m.unread && inBox(m, box)),
@@ -108,7 +166,10 @@ export function rowTitle(message: MailMessage): string {
 }
 
 export function quota(messages: MailMessage[]): { label: string; pct: number } {
-  const extra = messages.reduce((n, m) => n + m.subject.length + m.body.length, 0);
+  const extra = messages.reduce((n, message) => {
+    const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
+    return n + message.subject.length + message.body.length + files;
+  }, 0);
   const bytes = 2.41e9 + extra;
   const gb = bytes / 1e9;
   const pct = Math.min(100, (gb / ME.quotaGb) * 100);

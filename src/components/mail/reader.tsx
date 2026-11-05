@@ -1,6 +1,6 @@
-import { Archive, ChevronLeft, Forward, ListTodo, Lock, Reply, Shield, Sparkles, Star, Trash2 } from "lucide-react";
+import { Archive, ChevronLeft, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { MailMessage } from "@/lib/mail/model";
-import { formatWhen, initials, isE2E } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -20,6 +20,7 @@ type Props = {
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;
   onReply: () => void;
+  onReplyAll: () => void;
   onForward: () => void;
   onBrief: () => void;
   onTask: () => void;
@@ -69,6 +70,7 @@ function Opened({
   onRestore,
   onRemove,
   onReply,
+  onReplyAll,
   onForward,
   onBrief,
   onTask,
@@ -91,6 +93,10 @@ function Opened({
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onReply}>
           <Reply className="size-4" />
           Reply
+        </button>
+        <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onReplyAll}>
+          <ReplyAll className="size-4" />
+          Reply all
         </button>
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onForward}>
           <Forward className="size-4" />
@@ -131,6 +137,15 @@ function Opened({
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
           </p>
+          {message.delivery?.length ? (
+            <ul className="mt-3 space-y-1">
+              {message.delivery.map((hop) => (
+                <li key={hop.email} className="font-mono text-xs text-muted">
+                  {hop.email} · {hop.detail}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {brief ? (
             <div className="mt-6 border-t border-line pt-4">
               <p className="font-mono text-xs uppercase tracking-wide text-accent">SCALVS brief</p>
@@ -171,6 +186,17 @@ function Opened({
                   </div>
                 </div>
                 <p className="mt-4 whitespace-pre-wrap text-base leading-normal">{item.body}</p>
+                {item.attachments?.length ? (
+                  <ul className="mt-4 flex flex-wrap gap-2">
+                    {item.attachments.map((file) => (
+                      <li key={file.name} className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm">
+                        <Paperclip className="size-3.5 text-muted" />
+                        {file.name}
+                        <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             ))}
           </ol>

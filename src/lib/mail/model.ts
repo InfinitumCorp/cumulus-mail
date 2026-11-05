@@ -12,6 +12,14 @@ export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash";
 
 export type BoxId = FolderId | "starred";
 
+export type Attachment = { name: string; size: number };
+
+export type DeliveryHop = {
+  email: string;
+  status: "inside" | "outbound";
+  detail: string;
+};
+
 export type MailMessage = {
   id: string;
   threadId: string;
@@ -25,6 +33,8 @@ export type MailMessage = {
   unread: boolean;
   starred: boolean;
   labels: string[];
+  attachments?: Attachment[];
+  delivery?: DeliveryHop[];
 };
 
 export type ConductorTask = {

@@ -7,6 +7,7 @@ import {
   listThreads,
   parsePeople,
   peopleToField,
+  planDelivery,
   quota,
   quote,
   threadOf,
@@ -90,6 +91,7 @@ export function MailApp() {
         cc: peopleToField(message.cc),
         subject: message.subject,
         body: message.body,
+        attachments: message.attachments ?? [],
       });
       return;
     }
@@ -109,6 +111,26 @@ export function MailApp() {
       cc: "",
       subject: source.subject.startsWith("Re:") ? source.subject : `Re: ${source.subject}`,
       body: quote(source),
+      attachments: [],
+    });
+  }
+
+  function replyAll() {
+    if (!reading) return;
+    const source = [...thread].reverse().find((message) => message.from.email !== ME.email) ?? reading;
+    const mine = ME.email.toLowerCase();
+    const others = [...source.to, ...source.cc].filter((person) => person.email.toLowerCase() !== mine && person.email.toLowerCase() !== source.from.email.toLowerCase());
+    const to = source.from.email.toLowerCase() === mine ? source.to : [source.from];
+    const cc = source.from.email.toLowerCase() === mine ? source.cc.filter((person) => person.email.toLowerCase() !== mine) : others;
+    setComposeError("");
+    setComposer({
+      placement: "inline",
+      threadId: source.threadId,
+      to: peopleToField(to),
+      cc: peopleToField(cc),
+      subject: source.subject.startsWith("Re:") ? source.subject : `Re: ${source.subject}`,
+      body: quote(source),
+      attachments: [],
     });
   }
 
@@ -122,13 +144,14 @@ export function MailApp() {
       cc: "",
       subject: reading.subject.startsWith("Fw:") ? reading.subject : `Fw: ${reading.subject}`,
       body: quote(reading),
+      attachments: reading.attachments ?? [],
     });
   }
 
   function writeNew(to = "", subject = "") {
     setView("mail");
     setComposeError("");
-    setComposer({ placement: "modal", to, cc: "", subject, body: "" });
+    setComposer({ placement: "modal", to, cc: "", subject, body: "", attachments: [] });
   }
 
   function send() {
@@ -149,10 +172,11 @@ export function MailApp() {
     }
     const id = `m-${Date.now().toString(36)}`;
     if (composer.draftId) remove(composer.draftId);
-    saveMessage({
+    const delivery = planDelivery([...to, ...cc]);
+    const sent = {
       id,
       threadId: composer.threadId ?? id,
-      folder: "sent",
+      folder: "sent" as const,
       from: { name: ME.name, email: ME.email },
       to,
       cc,
@@ -162,7 +186,19 @@ export function MailApp() {
       unread: false,
       starred: false,
       labels: to.every((person) => isCumulus(person.email)) ? ["Personal"] : ["External"],
-    });
+      attachments: composer.attachments,
+      delivery,
+    };
+    saveMessage(sent);
+    const mine = ME.email.toLowerCase();
+    if ([...to, ...cc].some((person) => person.email.toLowerCase() === mine)) {
+      saveMessage({
+        ...sent,
+        id: `${id}-in`,
+        folder: "inbox",
+        unread: true,
+      });
+    }
     setComposer(null);
     setComposeError("");
     setBox("sent");
@@ -186,6 +222,7 @@ export function MailApp() {
       unread: false,
       starred: false,
       labels: [],
+      attachments: composer.attachments,
     });
     setComposer(null);
     setComposeError("");
@@ -282,6 +319,7 @@ export function MailApp() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={view === "contacts" ? "Search people" : "Search mail"}
+            title="from: leah · to: priya · subject: forecast · is:unread · has:file"
             aria-label={view === "contacts" ? "Search people" : "Search mail"}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
@@ -350,6 +388,7 @@ export function MailApp() {
                 setSelectedId(null);
               }}
               onReply={reply}
+              onReplyAll={replyAll}
               onForward={forward}
               onBrief={() => void runBrief()}
               onTask={handOff}

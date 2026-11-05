@@ -1,4 +1,10 @@
-import { Sparkles, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Paperclip, Sparkles, X } from "lucide-react";
+import type { Attachment } from "@/lib/mail/model";
+import { formatSize } from "@/lib/mail/logic";
+
+const MAX_FILE = 25 * 1024 * 1024;
+const MAX_FILES = 8;
 
 export type DraftForm = {
   draftId?: string;
@@ -8,6 +14,7 @@ export type DraftForm = {
   cc: string;
   subject: string;
   body: string;
+  attachments: Attachment[];
 };
 
 type Props = {
@@ -45,6 +52,29 @@ function Field({
 
 export function Composer({ form, error, assisting, onChange, onSend, onSave, onClose, onAssist }: Props) {
   const title = form.draftId ? "Draft" : form.placement === "inline" ? "Reply" : "New message";
+  const picker = useRef<HTMLInputElement>(null);
+  const [fileNote, setFileNote] = useState("");
+
+  function addFiles(list: FileList | null) {
+    if (!list) return;
+    const next = [...form.attachments];
+    let note = "";
+    for (const file of list) {
+      if (file.size > MAX_FILE) {
+        note = "Files stay under 25 MB. Larger ones belong in Drive.";
+        continue;
+      }
+      if (next.length >= MAX_FILES) {
+        note = "Eight files is the limit on a message.";
+        break;
+      }
+      next.push({ name: file.name, size: file.size });
+    }
+    setFileNote(note);
+    onChange({ ...form, attachments: next });
+    if (picker.current) picker.current.value = "";
+  }
+
   return (
     <form
       className="flex min-h-0 flex-col bg-paper"
@@ -69,6 +99,26 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
         placeholder="Write"
         aria-label="Message"
       />
+      {form.attachments.length ? (
+        <ul className="flex flex-wrap gap-2 px-4 pb-3">
+          {form.attachments.map((file, index) => (
+            <li key={`${file.name}-${index}`} className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm">
+              <Paperclip className="size-3.5 text-muted" />
+              <span className="max-w-48 truncate">{file.name}</span>
+              <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+              <button
+                type="button"
+                className="grid size-7 place-items-center text-muted hover:text-ink"
+                aria-label={`Remove ${file.name}`}
+                onClick={() => onChange({ ...form, attachments: form.attachments.filter((_, item) => item !== index) })}
+              >
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {fileNote ? <p className="px-4 pb-2 text-sm">{fileNote}</p> : null}
       {error ? <p className="px-4 pb-2 text-sm text-ink">{error}</p> : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3">
         <button type="submit" className="inline-flex h-11 items-center bg-ink px-5 text-sm text-paper transition-colors hover:bg-accent">
@@ -77,6 +127,11 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
         <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm hover:border-ink" onClick={onSave}>
           Save draft
         </button>
+        <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={() => picker.current?.click()}>
+          <Paperclip className="size-4" />
+          Drive file
+        </button>
+        <input ref={picker} type="file" className="sr-only" multiple onChange={(event) => addFiles(event.target.files)} />
         <button
           type="button"
           className="inline-flex h-11 items-center gap-2 px-3 text-sm text-accent disabled:opacity-50"
