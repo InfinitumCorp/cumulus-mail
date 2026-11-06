@@ -4,7 +4,7 @@ import {
   SEED_CONTACTS,
   SEED_MESSAGES,
   SEED_TASKS,
-  type ConductorTask,
+  type ArchitectTask,
   type Contact,
   type FolderId,
   type MailMessage,
@@ -17,7 +17,7 @@ type Snapshot = {
   messages: MailMessage[];
   aliases: string[];
   briefs: Record<string, string>;
-  tasks: ConductorTask[];
+  tasks: ArchitectTask[];
   contacts: Contact[];
   signature: string;
   rules: MailRule[];
@@ -32,7 +32,7 @@ type MailStore = Snapshot & {
   saveMessage: (message: MailMessage) => void;
   addAlias: (alias: string) => void;
   saveBrief: (key: string, text: string) => void;
-  addTask: (task: ConductorTask) => void;
+  addTask: (task: ArchitectTask) => void;
   toggleTask: (id: string) => void;
   addContact: (contact: Contact) => void;
   snooze: (id: string, until: string) => void;

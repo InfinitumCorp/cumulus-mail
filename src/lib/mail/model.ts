@@ -47,7 +47,7 @@ export type MailMessage = {
   snoozeUntil?: string;
 };
 
-export type ConductorTask = {
+export type ArchitectTask = {
   id: string;
   title: string;
   detail: string;
@@ -275,7 +275,7 @@ export const SEED_MESSAGES: MailMessage[] = [
   },
 ];
 
-export const SEED_TASKS: ConductorTask[] = [
+export const SEED_TASKS: ArchitectTask[] = [
   {
     id: "t1",
     title: "Send the security appendix to VYRAL",
