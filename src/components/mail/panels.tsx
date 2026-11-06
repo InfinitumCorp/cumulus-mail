@@ -1,5 +1,5 @@
 import { Check, Plus, X } from "lucide-react";
-import { ME, type CalEvent, type ConductorTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -64,7 +64,7 @@ export function ContactsPanel({
   );
 }
 
-export function TasksPanel({ tasks, onToggle }: { tasks: ConductorTask[]; onToggle: (id: string) => void }) {
+export function TasksPanel({ tasks, onToggle }: { tasks: ArchitectTask[]; onToggle: (id: string) => void }) {
   const open = tasks.filter((task) => !task.done);
   const done = tasks.filter((task) => task.done);
   return (
