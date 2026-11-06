@@ -45,7 +45,7 @@ export function Sidebar({ open, view, box, messages, openTasks, onClose, onView,
     { id: "mail", label: "Mail" },
     { id: "calendar", label: "Calendar" },
     { id: "contacts", label: "Contacts" },
-    { id: "tasks", label: "Conductor", count: openTasks },
+    { id: "tasks", label: "Architect", count: openTasks },
   ];
 
   return (
@@ -101,7 +101,7 @@ export function Sidebar({ open, view, box, messages, openTasks, onClose, onView,
             ? "Holds that belong to this CID. Spectre can read titles only while you allow it."
             : view === "contacts"
               ? "People already in this mailbox. External addresses leave the encrypted channel."
-              : "Conductor keeps the task. It does not send the mail."}
+              : "Architect keeps the task. It does not send the mail."}
         </p>
       )}
       <button type="button" onClick={onAccount} className="mt-auto w-full border-t border-line px-4 py-4 text-left">

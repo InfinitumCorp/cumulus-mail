@@ -369,7 +369,7 @@ export function MailApp() {
   function handOff() {
     if (!reading) return;
     if (tasks.some((task) => task.messageId === reading.id)) {
-      setNotice("Conductor already has this.");
+      setNotice("Architect already has this.");
       setView("tasks");
       return;
     }
@@ -380,7 +380,7 @@ export function MailApp() {
       done: false,
       messageId: reading.id,
     });
-    setNotice("Handed to Conductor. It will not send the mail.");
+    setNotice("Handed to Architect. It will not send the mail.");
   }
 
   function moveSelected(id: string, folder: "archive" | "trash" | "inbox") {

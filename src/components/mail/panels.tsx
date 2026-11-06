@@ -70,9 +70,9 @@ export function TasksPanel({ tasks, onToggle }: { tasks: ConductorTask[]; onTogg
   return (
     <div className="aux-pane overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
-        <p className="font-mono text-xs uppercase tracking-wide text-muted">/CNDCTR/</p>
+        <p className="font-mono text-xs uppercase tracking-wide text-muted">:\ARCHITECT\</p>
         <h2 className="mt-3 text-4xl tracking-tight">Waiting on you</h2>
-        <p className="mt-3 max-w-lg text-muted">A task is a promise you already made in mail. Conductor keeps score. It does not send.</p>
+        <p className="mt-3 max-w-lg text-muted">A task is a promise you already made in mail. Architect keeps score. It does not send.</p>
         <ul className="mt-8">
           {open.length === 0 ? <li className="border-t border-line py-6 text-sm text-muted">Nothing is waiting.</li> : null}
           {[...open, ...done].map((task) => (

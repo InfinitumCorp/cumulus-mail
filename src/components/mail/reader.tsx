@@ -144,7 +144,7 @@ function Opened({
         ) : null}
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onTask}>
           <ListTodo className="size-4" />
-          Conductor
+          Architect
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
