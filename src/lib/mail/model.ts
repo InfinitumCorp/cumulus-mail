@@ -1,6 +1,6 @@
 export const ME = {
   name: "Alex Reid",
-  email: "alex@cumulusmail.cloud",
+  email: "alex@cumuluscloud.app",
   cid: "cid:alex",
   plan: "Free",
   quotaGb: 15,
@@ -8,7 +8,15 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash";
+export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
+
+export type MailAuth = {
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  policy: string;
+  disposition: "deliver" | "quarantine";
+};
 
 export type BoxId = FolderId | "starred" | "outbox" | "snoozed";
 
@@ -21,7 +29,15 @@ export type MailRule = {
   label?: string;
 };
 
-export type Attachment = { name: string; size: number };
+export type Attachment = {
+  name: string;
+  size: number;
+  id?: string;
+  contentType?: string;
+  sha256?: string;
+  /** Present only until the server has stored the bytes. */
+  dataBase64?: string;
+};
 
 export type DeliveryHop = {
   email: string;
@@ -45,6 +61,7 @@ export type MailMessage = {
   attachments?: Attachment[];
   delivery?: DeliveryHop[];
   snoozeUntil?: string;
+  auth?: MailAuth;
 };
 
 export type ArchitectTask = {
@@ -81,7 +98,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-pipe-1",
     threadId: "th-pipe",
     folder: "inbox",
-    from: { name: "Mira Chen", email: "mira.chen@cumulusmail.cloud" },
+    from: { name: "Mira Chen", email: "mira.chen@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "VYRAL London — hold the forecast",
@@ -96,7 +113,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     threadId: "th-pipe",
     folder: "sent",
     from: alex,
-    to: [{ name: "Mira Chen", email: "mira.chen@cumulusmail.cloud" }],
+    to: [{ name: "Mira Chen", email: "mira.chen@cumuluscloud.app" }],
     cc: [],
     subject: "Re: VYRAL London — hold the forecast",
     body: "Mira,\n\nHold the forecast. I will send the appendix before the Thursday call. Do not move stage until Priya confirms the comms lead has it.\n\nAlex",
@@ -109,9 +126,9 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-pipe-3",
     threadId: "th-pipe",
     folder: "inbox",
-    from: { name: "Mira Chen", email: "mira.chen@cumulusmail.cloud" },
+    from: { name: "Mira Chen", email: "mira.chen@cumuluscloud.app" },
     to: [alex],
-    cc: [{ name: "Jordan Hale", email: "jordan.hale@cumulusmail.cloud" }],
+    cc: [{ name: "Jordan Hale", email: "jordan.hale@cumuluscloud.app" }],
     subject: "VYRAL London — Q4 account review",
     body: "Alex,\n\nSpectre finished the Q4 pass on VYRAL London.\n\nWin probability: 62%.\nWhy: security review is the only open objection. Budget and timeline are already agreed.\nRisk: the appendix is three days late against the date we gave Priya.\nForecast: leave it in Commit only after the appendix is sent. Until then it stays in Best case.\n\nWarmest path is still you → Priya Nair. No other path reaches their comms lead.\n\nMira",
     at: "2026-11-03T16:48:00.000Z",
@@ -123,7 +140,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-sec-1",
     threadId: "th-sec",
     folder: "inbox",
-    from: { name: "CID Security", email: "security@cumulusmail.cloud" },
+    from: { name: "CID Security", email: "security@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "New passkey on your Cumulus://ID",
@@ -137,7 +154,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-scalvs-1",
     threadId: "th-scalvs",
     folder: "inbox",
-    from: { name: "SCALVS", email: "scalvs@cumulusmail.cloud" },
+    from: { name: "SCALVS", email: "scalvs@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "Three things need you",
@@ -151,7 +168,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-cond-1",
     threadId: "th-cond",
     folder: "inbox",
-    from: { name: "Jordan Hale", email: "jordan.hale@cumulusmail.cloud" },
+    from: { name: "Jordan Hale", email: "jordan.hale@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "Score 0.81 — security appendix for VYRAL",
@@ -165,7 +182,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-firm-1",
     threadId: "th-firm",
     folder: "inbox",
-    from: { name: "Firmament Network", email: "ledger@cumulusmail.cloud" },
+    from: { name: "Firmament Network", email: "ledger@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "Spectre can read your calendar — until you say otherwise",
@@ -179,7 +196,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-leah-1",
     threadId: "th-leah",
     folder: "inbox",
-    from: { name: "Leah Okonkwo", email: "leah@cumulusmail.cloud" },
+    from: { name: "Leah Okonkwo", email: "leah@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "ODIN briefing notes are in Drive",
@@ -193,7 +210,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-ex-1",
     threadId: "th-ex",
     folder: "inbox",
-    from: { name: "Data Exchange", email: "exchange@cumulusmail.cloud" },
+    from: { name: "Data Exchange", email: "exchange@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "License settled — you keep 85%",
@@ -221,7 +238,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-veil-1",
     threadId: "th-veil",
     folder: "inbox",
-    from: { name: "VEIL", email: "veil@cumulusmail.cloud" },
+    from: { name: "VEIL", email: "veil@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "Your $VEIL statement",
@@ -253,7 +270,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     to: [{ name: "Daniel Cho", email: "dcho@prpgnd.com" }],
     cc: [],
     subject: "Introduction — Cumulus for the DC studio",
-    body: "Daniel,\n\nGood to meet you last week. Cumulus://Mail is the address I actually read: alex@cumulusmail.cloud.\n\nI will send a short note on what we would run for PRPGND after Spectre clears the stale activity on your account. No deck until then.\n\nAlex Reid\nInfinitum",
+    body: "Daniel,\n\nGood to meet you last week. Cumulus://Mail is the address I actually read: alex@cumuluscloud.app.\n\nI will send a short note on what we would run for PRPGND after Spectre clears the stale activity on your account. No deck until then.\n\nAlex Reid\nInfinitum",
     at: "2026-10-28T15:00:00.000Z",
     unread: false,
     starred: false,
@@ -263,7 +280,7 @@ export const SEED_MESSAGES: MailMessage[] = [
     id: "m-trash-1",
     threadId: "th-trash",
     folder: "trash",
-    from: { name: "FIRM Office", email: "office@cumulusmail.cloud" },
+    from: { name: "FIRM Office", email: "office@cumuluscloud.app" },
     to: [alex],
     cc: [],
     subject: "Office hours you already declined",
@@ -289,21 +306,21 @@ export const SEED_CONTACTS: Contact[] = [
   {
     id: "c-mira",
     name: "Mira Chen",
-    email: "mira.chen@cumulusmail.cloud",
+    email: "mira.chen@cumuluscloud.app",
     org: "Infinitum · Spectre",
     note: "Account team. Owns the VYRAL forecast.",
   },
   {
     id: "c-jordan",
     name: "Jordan Hale",
-    email: "jordan.hale@cumulusmail.cloud",
+    email: "jordan.hale@cumuluscloud.app",
     org: "Infinitum · Architect",
     note: "Scores intent. Does not send mail for you.",
   },
   {
     id: "c-leah",
     name: "Leah Okonkwo",
-    email: "leah@cumulusmail.cloud",
+    email: "leah@cumuluscloud.app",
     org: "Infinitum",
     note: "Drive shares stay inside Cumulus.",
   },
@@ -367,4 +384,5 @@ export const BOXES: { id: BoxId; label: string }[] = [
   { id: "drafts", label: "Drafts" },
   { id: "archive", label: "Archive" },
   { id: "trash", label: "Trash" },
+  { id: "quarantine", label: "Quarantine" },
 ];

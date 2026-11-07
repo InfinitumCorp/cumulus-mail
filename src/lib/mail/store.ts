@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getMailbox, putMailbox } from "@/lib/mail/api";
 import {
   ME,
   SEED_CONTACTS,
@@ -10,21 +11,12 @@ import {
   type MailMessage,
   type MailRule,
 } from "./model";
+import type { MailProfile, MailboxSnapshot } from "./snapshot";
 
-const KEY = "cumulus-mail-v1";
-
-type Snapshot = {
-  messages: MailMessage[];
-  aliases: string[];
-  briefs: Record<string, string>;
-  tasks: ArchitectTask[];
-  contacts: Contact[];
-  signature: string;
-  rules: MailRule[];
-};
-
-type MailStore = Snapshot & {
+type MailStore = MailboxSnapshot & {
+  syncError: string;
   hydrate: () => void;
+  flush: () => Promise<void>;
   markThreadRead: (threadId: string) => void;
   toggleStar: (id: string) => void;
   move: (id: string, folder: FolderId) => void;
@@ -43,23 +35,30 @@ type MailStore = Snapshot & {
   replaceRules: (rules: MailRule[]) => void;
 };
 
-let dirty = false;
+const previewProfile: MailProfile = {
+  name: ME.name,
+  email: ME.email,
+  cid: ME.cid,
+  plan: ME.plan,
+  quotaGb: ME.quotaGb,
+};
 
-function blank(): Snapshot {
+function blank(): MailboxSnapshot {
   return {
+    me: previewProfile,
     messages: SEED_MESSAGES,
-    aliases: ["press@cumulusmail.cloud"],
+    aliases: ["press@cumuluscloud.app"],
     briefs: {},
     tasks: SEED_TASKS,
     contacts: SEED_CONTACTS,
-    signature: "Alex Reid\nalex@cumulusmail.cloud",
+    signature: "Alex Reid\nalex@cumuluscloud.app",
     rules: [],
   };
 }
 
-function persist(state: Snapshot) {
-  if (typeof window === "undefined") return;
-  const snapshot: Snapshot = {
+function pick(state: MailStore): MailboxSnapshot {
+  return {
+    me: state.me,
     messages: state.messages,
     aliases: state.aliases,
     briefs: state.briefs,
@@ -68,85 +67,99 @@ function persist(state: Snapshot) {
     signature: state.signature,
     rules: state.rules,
   };
-  localStorage.setItem(KEY, JSON.stringify(snapshot));
+}
+
+let dirty = false;
+let revision = 0;
+let hydratePromise: Promise<void> | null = null;
+let pushChain: Promise<void> = Promise.resolve();
+
+function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
+  if (typeof window === "undefined") return;
+  const mine = ++revision;
+  const snapshot = pick(get());
+  pushChain = pushChain
+    .catch(() => undefined)
+    .then(async () => {
+      const saved = await putMailbox({ data: snapshot });
+      if (mine !== revision) return;
+      set({ ...saved, syncError: "" });
+    })
+    .catch((error: unknown) => {
+      set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+      throw error;
+    });
 }
 
 function commit(
   set: (partial: Partial<MailStore>) => void,
   get: () => MailStore,
-  partial: Partial<Snapshot>,
+  partial: Partial<MailboxSnapshot>,
 ) {
   dirty = true;
   set(partial);
-  persist({ ...get(), ...partial });
+  schedulePush(get, set);
 }
 
 export const useMail = create<MailStore>((set, get) => ({
   ...blank(),
+  syncError: "",
   hydrate: () => {
-    if (dirty || typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw) as Partial<Snapshot>;
-      if (!Array.isArray(data.messages) || data.messages.length === 0) return;
-      set({
-        messages: data.messages,
-        aliases: Array.isArray(data.aliases) ? data.aliases : [],
-        briefs: data.briefs && typeof data.briefs === "object" ? data.briefs : {},
-        tasks: Array.isArray(data.tasks) ? data.tasks : SEED_TASKS,
-        contacts: Array.isArray(data.contacts) && data.contacts.length > 0 ? data.contacts : SEED_CONTACTS,
-        signature: typeof data.signature === "string" ? data.signature : blank().signature,
-        rules: Array.isArray(data.rules) ? data.rules : [],
-      });
-    } catch {
-      /* keep the seed mailbox */
-    }
+    if (hydratePromise || typeof window === "undefined") return;
+    hydratePromise = (async () => {
+      try {
+        const saved = await getMailbox();
+        if (!dirty) set({ ...saved, syncError: "" });
+      } catch (error) {
+        set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+      }
+    })();
   },
+  flush: () => (hydratePromise ? hydratePromise.then(() => pushChain) : pushChain),
   markThreadRead: (threadId) => {
     commit(set, get, {
-      messages: get().messages.map((m) => (m.threadId === threadId ? { ...m, unread: false } : m)),
+      messages: get().messages.map((message) => (message.threadId === threadId ? { ...message, unread: false } : message)),
     });
   },
   toggleStar: (id) => {
     commit(set, get, {
-      messages: get().messages.map((m) => (m.id === id ? { ...m, starred: !m.starred } : m)),
+      messages: get().messages.map((message) => (message.id === id ? { ...message, starred: !message.starred } : message)),
     });
   },
   move: (id, folder) => {
     commit(set, get, {
-      messages: get().messages.map((m) => (m.id === id ? { ...m, folder, unread: false } : m)),
+      messages: get().messages.map((message) => (message.id === id ? { ...message, folder, unread: false } : message)),
     });
   },
   remove: (id) => {
-    commit(set, get, { messages: get().messages.filter((m) => m.id !== id) });
+    commit(set, get, { messages: get().messages.filter((message) => message.id !== id) });
   },
   saveMessage: (message) => {
-    const exists = get().messages.some((m) => m.id === message.id);
+    const exists = get().messages.some((item) => item.id === message.id);
     commit(set, get, {
       messages: exists
-        ? get().messages.map((m) => (m.id === message.id ? message : m))
+        ? get().messages.map((item) => (item.id === message.id ? message : item))
         : [message, ...get().messages],
     });
   },
   addAlias: (alias) => {
-    if (get().aliases.includes(alias) || alias === ME.email) return;
+    if (get().aliases.includes(alias) || alias === get().me.email) return;
     commit(set, get, { aliases: [...get().aliases, alias] });
   },
   saveBrief: (key, text) => {
     commit(set, get, { briefs: { ...get().briefs, [key]: text } });
   },
   addTask: (task) => {
-    if (get().tasks.some((t) => t.messageId && t.messageId === task.messageId)) return;
+    if (get().tasks.some((item) => item.messageId && item.messageId === task.messageId)) return;
     commit(set, get, { tasks: [task, ...get().tasks] });
   },
   toggleTask: (id) => {
     commit(set, get, {
-      tasks: get().tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+      tasks: get().tasks.map((task) => (task.id === id ? { ...task, done: !task.done } : task)),
     });
   },
   addContact: (contact) => {
-    if (get().contacts.some((c) => c.email === contact.email)) return;
+    if (get().contacts.some((item) => item.email === contact.email)) return;
     commit(set, get, { contacts: [...get().contacts, contact] });
   },
   snooze: (id, until) => {

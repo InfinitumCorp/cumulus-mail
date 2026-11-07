@@ -1,5 +1,7 @@
 import { Check, Plus, X } from "lucide-react";
+import { mailDomain } from "@/lib/mail/domain";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
+import type { MailProfile } from "@/lib/mail/snapshot";
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -100,10 +102,11 @@ export function newAlias(): string {
   const a = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "north";
   const b = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "quiet";
   const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}.${b}.${n}@cumulusmail.cloud`;
+  return `${a}.${b}.${n}@${mailDomain()}`;
 }
 
 export function AccountPanel({
+  me = ME,
   aliases,
   quotaLabel,
   signature,
@@ -114,6 +117,7 @@ export function AccountPanel({
   onAddRule,
   onRemoveRule,
 }: {
+  me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
   signature: string;
@@ -139,16 +143,16 @@ export function AccountPanel({
           </button>
         </div>
         <div className="px-5 py-6">
-          <h2 id="account-title" className="text-3xl tracking-tight">{ME.name}</h2>
-          <p className="mt-2 font-mono text-sm text-muted">{ME.cid}</p>
+          <h2 id="account-title" className="text-3xl tracking-tight">{me.name}</h2>
+          <p className="mt-2 font-mono text-sm text-muted">{me.cid}</p>
           <dl className="mt-8 border-t border-line text-sm">
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Address</dt>
-              <dd className="font-mono text-xs">{ME.email}</dd>
+              <dd className="font-mono text-xs">{me.email}</dd>
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Plan</dt>
-              <dd>{ME.plan} · {quotaLabel}</dd>
+              <dd>{me.plan} · {quotaLabel}</dd>
             </div>
             <div className="border-b border-line py-4">
               <dt className="text-muted">Aliases</dt>
