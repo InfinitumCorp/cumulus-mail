@@ -1,3 +1,4 @@
+import { usesSampleMailDomain } from "./domain.ts";
 import {
   ME,
   type BoxId,
@@ -7,19 +8,10 @@ import {
   type Person,
 } from "./model.ts";
 
-const CUMULUS = "@cumulusmail.cloud";
-
-export function isCumulus(email: string): boolean {
-  return email.toLowerCase().endsWith(CUMULUS);
-}
-
-export function isE2E(message: MailMessage): boolean {
-  const people = [message.from, ...message.to, ...message.cc];
-  return people.length > 0 && people.every((p) => isCumulus(p.email));
-}
+export { usesSampleMailDomain } from "./domain.ts";
 
 export function audienceLabel(people: Person[]): "Personal" | "External" {
-  return people.length > 0 && people.every((person) => isCumulus(person.email)) ? "Personal" : "External";
+  return people.length > 0 && people.every((person) => usesSampleMailDomain(person.email)) ? "Personal" : "External";
 }
 
 export function isSnoozed(message: MailMessage, now = Date.now()): boolean {
@@ -134,7 +126,7 @@ export function planDelivery(people: Person[]): DeliveryHop[] {
     if (seen.has(email)) continue;
     seen.add(email);
     hops.push(
-      isCumulus(email)
+      usesSampleMailDomain(email)
         ? { email, status: "inside", detail: "Saved in this browser. Not delivered." }
         : { email, status: "outbound", detail: "Saved in this browser. Not sent." },
     );

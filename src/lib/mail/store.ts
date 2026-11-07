@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { SAMPLE_MAIL_DOMAIN } from "./domain";
 import {
   ME,
   SEED_CONTACTS,
@@ -48,11 +49,11 @@ let dirty = false;
 function blank(): Snapshot {
   return {
     messages: SEED_MESSAGES,
-    aliases: ["press@cumulusmail.cloud"],
+    aliases: [`press@${SAMPLE_MAIL_DOMAIN}`],
     briefs: {},
     tasks: SEED_TASKS,
     contacts: SEED_CONTACTS,
-    signature: "Alex Reid\nalex@cumulusmail.cloud",
+    signature: `Alex Reid\n${ME.email}`,
     rules: [],
   };
 }

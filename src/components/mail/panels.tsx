@@ -1,4 +1,5 @@
 import { Check, Plus, X } from "lucide-react";
+import { SAMPLE_MAIL_DOMAIN } from "@/lib/mail/domain";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
@@ -100,7 +101,7 @@ export function newAlias(): string {
   const a = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "north";
   const b = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "quiet";
   const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}.${b}.${n}@cumulusmail.cloud`;
+  return `${a}.${b}.${n}@${SAMPLE_MAIL_DOMAIN}`;
 }
 
 export function AccountPanel({

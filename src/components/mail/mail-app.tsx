@@ -4,7 +4,7 @@ import { briefThread } from "@/lib/mail/brief";
 import {
   briefKey,
   audienceLabel,
-  isCumulus,
+  usesSampleMailDomain,
   listThreads,
   parsePeople,
   peopleToField,
@@ -564,7 +564,7 @@ export function MailApp() {
                   id: `c-${Date.now().toString(36)}`,
                   name: reading.from.name,
                   email: reading.from.email,
-                  org: isCumulus(reading.from.email) ? "Cumulus://Mail" : "External",
+                  org: usesSampleMailDomain(reading.from.email) ? "Cumulus://Mail" : "External",
                   note: "Saved from a message.",
                 });
               }}
