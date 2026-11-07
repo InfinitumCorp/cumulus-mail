@@ -19,18 +19,18 @@ export function openText(tenantId: string, stored: string | null, master: Uint8A
 }
 
 /**
- * Equality index for a field. Message fields use the tenant key, so the same
- * subject in two mailboxes does not share an index value. Address routing
- * does not know the tenant yet, so pass `null` and the index is derived from
- * the master under the fixed scope `global`.
+ * Equality index for one tenant. The HMAC key is that tenant's blind key,
+ * derived from the master and the tenant id. The same address in two
+ * mailboxes does not share an index value. Routing does not call this with a
+ * master-only key; see `directory.ts`.
  */
 export function blindIndex(
-  tenantId: string | null,
+  tenantId: string,
   field: string,
   value: string,
   master: Uint8Array = masterKeyFromEnv(),
 ): string {
-  const key = tenantKey(master, tenantId ?? "global", "blind");
+  const key = tenantKey(master, tenantId, "blind");
   return createHmac("sha256", key).update(`${field}\0${value.trim().toLowerCase()}`).digest("hex");
 }
 

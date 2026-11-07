@@ -1,6 +1,7 @@
 import { assertTenantId } from "../storage/adapter.ts";
 import { mailboxAddress } from "./domain.ts";
-import { blindIndex, sealText } from "./field-crypto.ts";
+import { addressBlind, publishAddress } from "./directory.ts";
+import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import { SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -30,8 +31,16 @@ export async function ensureDemoDirectory(db: MailQuery): Promise<void> {
          tenant_id, address, address_bidx, display_name, cid, plan, quota_gb, signature, seeded
        ) values ($1,$2,$3,$4,$5,'Free',15,$6,true)
        on conflict (tenant_id) do nothing`,
-      [tenantId, sealText(tenantId, address), blindIndex(null, "address", address), name, `cid:${tenantId}`, `${name}\n${address}`],
+      [
+        tenantId,
+        sealText(tenantId, address),
+        addressBlind(tenantId, address),
+        sealText(tenantId, name),
+        `cid:${tenantId}`,
+        sealText(tenantId, `${name}\n${address}`),
+      ],
     );
+    await publishAddress(db, tenantId, address);
   }
 }
 
@@ -62,11 +71,12 @@ export async function seedPreviewContents(db: MailQuery, tenantId: string): Prom
   await db.query(
     `insert into cumulus_mail.aliases (tenant_id, address, address_bidx) values ($1, $2, $3)
      on conflict (tenant_id, address_bidx) do nothing`,
-    [tenantId, sealText(tenantId, "press@cumuluscloud.app"), blindIndex(null, "address", "press@cumuluscloud.app")],
+    [tenantId, sealText(tenantId, "press@cumuluscloud.app"), addressBlind(tenantId, "press@cumuluscloud.app")],
   );
+  await publishAddress(db, tenantId, "press@cumuluscloud.app");
   await db.query(`update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`, [
     tenantId,
-    "Alex Reid\nalex@cumuluscloud.app",
+    sealText(tenantId, "Alex Reid\nalex@cumuluscloud.app"),
   ]);
 }
 
@@ -86,14 +96,15 @@ export async function provisionMailbox(
     [
       tenantId,
       sealText(tenantId, email),
-      blindIndex(null, "address", email),
-      profile.name.slice(0, 200),
+      addressBlind(tenantId, email),
+      sealText(tenantId, profile.name.slice(0, 200)),
       profile.cid.slice(0, 200),
       profile.plan.slice(0, 40),
       profile.quotaGb,
-      `${profile.name}\n${email}`,
+      sealText(tenantId, `${profile.name}\n${email}`),
     ],
   );
+  await publishAddress(db, tenantId, email);
   if (email === previewAddress()) await ensureDemoDirectory(db);
   const claimed = await db.query<{ tenant_id: string }>(
     `update cumulus_mail.mailboxes set seeded = true where tenant_id = $1 and seeded = false returning tenant_id`,

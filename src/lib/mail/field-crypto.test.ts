@@ -12,5 +12,6 @@ test("message fields are AES-256-GCM and reject tampering and another tenant", (
   assert.throws(() => openText("tenant-a", flipped));
   assert.throws(() => openText("tenant-b", sealed));
   assert.notEqual(blindIndex("tenant-a", "subject", "Quarterly review"), blindIndex("tenant-b", "subject", "Quarterly review"));
-  assert.equal(blindIndex(null, "address", "Ada@Example.test"), blindIndex(null, "address", "ada@example.test"));
+  assert.equal(blindIndex("tenant-a", "address", "Ada@Example.test"), blindIndex("tenant-a", "address", "ada@example.test"));
+  assert.notEqual(blindIndex("tenant-a", "address", "ada@example.test"), blindIndex("tenant-b", "address", "ada@example.test"));
 });

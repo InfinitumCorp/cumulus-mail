@@ -1,5 +1,6 @@
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
+import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
 import { messageSnippet } from "./logic.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
@@ -71,7 +72,7 @@ export function rowToMessage(row: MessageRow, attachments: Attachment[], tenantI
     attachments: attachments.length ? attachments : undefined,
     delivery: row.delivery_json ? parseJson(storedText(tenantId, row.delivery_json), undefined) : undefined,
     snoozeUntil: row.snooze_until ?? undefined,
-    auth: row.auth_json ? parseJson(row.auth_json, undefined) : undefined,
+    auth: row.auth_json ? parseJson(openText(tenantId, row.auth_json), undefined) : undefined,
     headers,
   };
 }
@@ -148,7 +149,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   for (const brief of briefs) briefMap[brief.brief_key] = brief.body;
   return {
     me: {
-      name: box.display_name,
+      name: openText(tenantId, box.display_name),
       email: openText(tenantId, box.address),
       cid: box.cid,
       plan: box.plan,
@@ -171,7 +172,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       messageId: task.message_id ?? undefined,
     })),
     contacts,
-    signature: box.signature,
+    signature: openText(tenantId, box.signature),
     rules: rules
       .filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label")
       .map((rule) => ({
@@ -250,7 +251,7 @@ export async function insertMessage(
       message.snoozeUntil ?? null,
       message.delivery ? sealText(tenantId, JSON.stringify(message.delivery)) : null,
       rawKey,
-      message.auth ? JSON.stringify(message.auth) : null,
+      message.auth ? sealText(tenantId, JSON.stringify(message.auth)) : null,
       sealText(tenantId, snippet),
       headerJson ? sealText(tenantId, headerJson) : null,
     ],
@@ -354,7 +355,7 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
     await db.query(
       `update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`,
-      [tenantId, snapshot.signature.slice(0, 4000)],
+      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000))],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);
@@ -366,7 +367,7 @@ export async function replaceMailboxContents(
       await db.query(
         `insert into cumulus_mail.aliases (tenant_id, address, address_bidx) values ($1, $2, $3)
          on conflict (tenant_id, address_bidx) do nothing`,
-        [tenantId, sealText(tenantId, alias), blindIndex(null, "address", alias)],
+        [tenantId, sealText(tenantId, alias), addressBlind(tenantId, alias)],
       );
     }
     for (const contact of snapshot.contacts) {
@@ -390,6 +391,7 @@ export async function replaceMailboxContents(
         [tenantId, rule.id, rule.from.slice(0, 320), rule.action, rule.label?.slice(0, 80) ?? null],
       );
     }
+    await replaceRoutedAddresses(db, tenantId, [snapshot.me.email, ...snapshot.aliases]);
     for (const [key, text] of Object.entries(snapshot.briefs)) {
       await db.query(
         `insert into cumulus_mail.briefs (tenant_id, brief_key, body) values ($1,$2,$3)`,
@@ -413,7 +415,7 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
   const row = rows[0];
   if (!row) return null;
   return {
-    name: row.display_name,
+    name: openText(tenantId, row.display_name),
     email: openText(tenantId, row.address),
     cid: row.cid,
     plan: row.plan,
