@@ -62,6 +62,8 @@ export type MailMessage = {
   delivery?: DeliveryHop[];
   snoozeUntil?: string;
   auth?: MailAuth;
+  /** MIME headers. Stored encrypted. Absent on messages composed in the app. */
+  headers?: Record<string, string>;
 };
 
 export type ArchitectTask = {
