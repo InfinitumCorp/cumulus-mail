@@ -27,7 +27,7 @@ export type MailboxSnapshot = {
   rules: MailRule[];
 };
 
-const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash"]);
+const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,200}$/;
 
 export function assertId(value: string, label: string): string {

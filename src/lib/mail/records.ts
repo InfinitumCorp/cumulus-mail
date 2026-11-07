@@ -21,6 +21,7 @@ type MessageRow = {
   snooze_until: string | null;
   delivery_json: string | null;
   raw_key: string | null;
+  auth_json: string | null;
 };
 
 type AttachmentRow = {
@@ -60,6 +61,7 @@ export function rowToMessage(row: MessageRow, attachments: Attachment[]): MailMe
     attachments: attachments.length ? attachments : undefined,
     delivery: row.delivery_json ? parseJson(row.delivery_json, undefined) : undefined,
     snoozeUntil: row.snooze_until ?? undefined,
+    auth: row.auth_json ? parseJson(row.auth_json, undefined) : undefined,
   };
 }
 
@@ -106,7 +108,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   const attachments = await loadAttachmentMap(db, tenantId);
   const messages = await db.query<MessageRow>(
     `select id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body, sent_at,
-            unread, starred, labels_json, snooze_until, delivery_json, raw_key
+            unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json
      from cumulus_mail.messages where tenant_id = $1`,
     [tenantId],
   );
@@ -188,9 +190,9 @@ export async function insertMessage(
   await db.query(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
-       sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key
+       sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -207,7 +209,8 @@ export async function insertMessage(
        labels_json = excluded.labels_json,
        snooze_until = excluded.snooze_until,
        delivery_json = excluded.delivery_json,
-       raw_key = coalesce(excluded.raw_key, cumulus_mail.messages.raw_key)`,
+       raw_key = coalesce(excluded.raw_key, cumulus_mail.messages.raw_key),
+       auth_json = excluded.auth_json`,
     [
       tenantId,
       message.id,
@@ -226,6 +229,7 @@ export async function insertMessage(
       message.snoozeUntil ?? null,
       message.delivery ? JSON.stringify(message.delivery) : null,
       rawKey,
+      message.auth ? JSON.stringify(message.auth) : null,
     ],
   );
 }

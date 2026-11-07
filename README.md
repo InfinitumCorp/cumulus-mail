@@ -4,7 +4,7 @@ Private email for every [Cumulus://ID](https://infinitum-corporation.vercel.app/
 
 This client is the web app: inbox, compose, drafts, calendar, contacts, and Architect tasks. SCALVS briefs and drafts run through the xAI API when `XAI_API_KEY` is set on the server. The mailbox is stored on the server. Metadata is in the `cumulus_mail` Postgres schema, and attachment bytes go through the storage adapter (`MAIL_STORAGE=local` by default, under `MAIL_BLOB_DIR` or `.data/mail-blobs`). The S3 driver is a stub with the same `put` / `get` / `delete` signature as the Drive driver. Mail between local Cumulus addresses is delivered inside the app. This preview does not send to external addresses.
 
-Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker template lives in `workers/email/` and is not deployed.
+Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). Blob encryption uses `MAIL_BLOB_KEY` (32 bytes, hex or base64). The OIDC issuer defaults to `https://id.cumuluscloud.app/realms/cumulus` (`CUMULUS_OIDC_ISSUER`). DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker template lives in `workers/email/` and is not deployed. Inbound SPF, DKIM, and DMARC use a fixture resolver unless `MAIL_AUTH_DNS=live`.
 
 ## Run
 

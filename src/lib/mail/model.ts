@@ -8,7 +8,15 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash";
+export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
+
+export type MailAuth = {
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  policy: string;
+  disposition: "deliver" | "quarantine";
+};
 
 export type BoxId = FolderId | "starred" | "outbox" | "snoozed";
 
@@ -53,6 +61,7 @@ export type MailMessage = {
   attachments?: Attachment[];
   delivery?: DeliveryHop[];
   snoozeUntil?: string;
+  auth?: MailAuth;
 };
 
 export type ArchitectTask = {
@@ -375,4 +384,5 @@ export const BOXES: { id: BoxId; label: string }[] = [
   { id: "drafts", label: "Drafts" },
   { id: "archive", label: "Archive" },
   { id: "trash", label: "Trash" },
+  { id: "quarantine", label: "Quarantine" },
 ];

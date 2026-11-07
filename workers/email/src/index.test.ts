@@ -36,7 +36,11 @@ test("the email handler parses MIME and stores it through the storage adapter", 
     const message = box.messages.find((item) => item.subject === "Worker");
     assert.equal(message?.body, "Stored by the email handler.");
     assert.ok(message);
-    const raw = await harness.storageFor("worker-ada").get(`inbound/${message.id}/raw`);
+    const rawRows = await harness.db.query<{ raw_key: string }>(
+      `select raw_key from cumulus_mail.messages where tenant_id = $1 and id = $2`,
+      ["worker-ada", message.id],
+    );
+    const raw = await harness.storageFor("worker-ada").get(rawRows[0]?.raw_key ?? "");
     assert.equal(raw?.body.byteLength, RAW.byteLength);
   } finally {
     await harness.close();

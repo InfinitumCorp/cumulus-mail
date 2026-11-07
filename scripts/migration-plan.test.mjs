@@ -60,6 +60,7 @@ test("the auth schema ships outside the globbed directory", () => {
   const migrationsDir = join(projectRoot(), "migrations");
   assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), [
     { name: "0002_cumulus_mail.sql", path: "0002_cumulus_mail.sql" },
+    { name: "0003_mail_auth_share.sql", path: "0003_mail_auth_share.sql" },
   ]);
   assert.equal(readdirSync(migrationsDir).includes("0001_auth.sql"), false);
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));

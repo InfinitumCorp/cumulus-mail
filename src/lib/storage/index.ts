@@ -1,31 +1,88 @@
 import { join } from "node:path";
-import { bindTenantStorage, type StorageAdapter, type StorageDriver } from "./adapter.ts";
-import { LocalDiskStorageDriver } from "./local-disk.ts";
-import { S3CompatibleStorageDriver } from "./s3-stub.ts";
+import { sha256Hex } from "./adapter.ts";
+import { openSeal, seal, masterKeyFromEnv } from "./crypto.ts";
+import {
+  BlobNotFoundError,
+  createFilesystemDriver,
+  createS3Driver,
+  newBlobId,
+  type StorageDriver,
+} from "./driver.ts";
 
-export type { ObjectHead, PutOptions, StorageAdapter, StorageDriver, StoredObject } from "./adapter.ts";
-export { ChecksumMismatchError, TenantAccessError, bindTenantStorage, checksumOf, sha256Hex, storageKey } from "./adapter.ts";
-export { LocalDiskStorageDriver } from "./local-disk.ts";
-export { S3CompatibleStorageDriver } from "./s3-stub.ts";
+export type { StorageDriver, S3DriverOptions, S3StorageDriver } from "./driver.ts";
+export { BlobNotFoundError, createFilesystemDriver, createS3Driver, newBlobId } from "./driver.ts";
+export { masterKeyFromEnv, openSeal, seal, tenantKey } from "./crypto.ts";
+export { ChecksumMismatchError, TenantAccessError, assertTenantId, sha256Hex } from "./adapter.ts";
 
-/**
- * `MAIL_STORAGE=local` (default) uses the disk under `MAIL_BLOB_DIR` or
- * `.data/mail-blobs`. `MAIL_STORAGE=s3` returns the stub driver.
- */
+export type TenantBlobs = {
+  put(plaintext: Uint8Array): Promise<{ blobId: string; sha256: string }>;
+  get(blobId: string): Promise<{ body: Uint8Array; sha256: string } | null>;
+  delete(blobId: string): Promise<void>;
+};
+
 export function createStorageDriver(env: NodeJS.ProcessEnv = process.env): StorageDriver {
   const mode = (env.MAIL_STORAGE ?? "local").trim().toLowerCase();
   if (mode === "s3") {
-    return new S3CompatibleStorageDriver({
+    return createS3Driver({
       bucket: env.MAIL_S3_BUCKET?.trim() || "cumulus-mail-preview",
       endpoint: env.MAIL_S3_ENDPOINT?.trim() || undefined,
-      region: env.MAIL_S3_REGION?.trim() || "auto",
+      region: env.MAIL_S3_REGION?.trim() || "us-east-1",
+      accessKeyId: env.MAIL_S3_ACCESS_KEY_ID?.trim(),
+      secretAccessKey: env.MAIL_S3_SECRET_ACCESS_KEY?.trim(),
+      loopbackOnly: env.MAIL_S3_LOOPBACK_ONLY === "1",
     });
   }
   const root = env.MAIL_BLOB_DIR?.trim() || join(process.cwd(), ".data", "mail-blobs");
-  return new LocalDiskStorageDriver(root);
+  return createFilesystemDriver(root);
 }
 
-/** Bind the process driver to a tenant id that came from a verified session. */
-export function openTenantStorage(tenantId: string, driver: StorageDriver = createStorageDriver()): StorageAdapter {
-  return bindTenantStorage(driver, tenantId);
+/** Encrypt every byte before it reaches the driver. Decrypt on read. */
+export function createSealedDriver(inner: StorageDriver, masterKey: Uint8Array): StorageDriver {
+  return {
+    kind: inner.kind,
+    async put(tenantId, blobId, bytes) {
+      await inner.put(tenantId, blobId, seal(masterKey, tenantId, bytes));
+    },
+    async get(tenantId, blobId) {
+      return openSeal(masterKey, tenantId, await inner.get(tenantId, blobId));
+    },
+    async delete(tenantId, blobId) {
+      await inner.delete(tenantId, blobId);
+    },
+    async probe() {
+      const blobId = "cc".padEnd(32, "0");
+      await this.put("probe", blobId, Buffer.from("probe"));
+      const got = await this.get("probe", blobId);
+      await this.delete("probe", blobId);
+      return Buffer.from(got).toString() === "probe";
+    },
+  };
+}
+
+/**
+ * Blobs for one verified tenant. `tenantId` is closed over here. Callers pass
+ * a blob id, not a tenant.
+ */
+export function openTenantStorage(tenantId: string, inner: StorageDriver = createStorageDriver()): TenantBlobs {
+  const driver = createSealedDriver(inner, masterKeyFromEnv());
+  return {
+    async put(plaintext) {
+      const blobId = newBlobId();
+      const sha256 = await sha256Hex(plaintext);
+      await driver.put(tenantId, blobId, plaintext);
+      return { blobId, sha256 };
+    },
+    async get(blobId) {
+      try {
+        const body = await driver.get(tenantId, blobId);
+        return { body, sha256: await sha256Hex(body) };
+      } catch (error) {
+        if (error instanceof BlobNotFoundError || (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    },
+    async delete(blobId) {
+      await driver.delete(tenantId, blobId);
+    },
+  };
 }

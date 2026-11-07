@@ -1,4 +1,4 @@
-import { checksumOf, sha256Hex, type StorageAdapter } from "../storage/adapter.ts";
+import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { newId } from "./bytes.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { applyRules, isCumulus } from "./logic.ts";
@@ -7,7 +7,7 @@ import type { MailQuery } from "./query.ts";
 import { insertAttachment, insertMessage, loadAttachmentMap, type StoredAttachment } from "./records.ts";
 import { createSuppressionList } from "./suppression.ts";
 
-export type TenantStorage = (tenantId: string) => StorageAdapter;
+export type TenantStorage = (tenantId: string) => TenantBlobs;
 
 const HELD = "Held in the outbox. This preview does not send outside Cumulus.";
 
@@ -66,18 +66,14 @@ async function copyInto(
     const stored = await storageFor(senderTenant).get(file.objectKey);
     if (!stored) continue;
     const attachmentId = `a-${id}-${index}`;
-    const objectKey = `messages/${id}/attachments/${attachmentId}`;
-    await storageFor(destTenant).put(objectKey, stored.body, {
-      contentType: stored.contentType,
-      checksumSha256: stored.checksumSha256,
-    });
+    const saved = await storageFor(destTenant).put(stored.body);
     await insertAttachment(db, destTenant, id, {
       id: attachmentId,
       name: file.name,
       size: stored.body.byteLength,
-      contentType: stored.contentType,
-      sha256: stored.checksumSha256,
-      objectKey,
+      contentType: file.contentType ?? "application/octet-stream",
+      sha256: saved.sha256,
+      objectKey: saved.blobId,
     });
   }
 }
@@ -193,13 +189,6 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
   }
 }
 
-export async function putBytes(
-  storage: StorageAdapter,
-  objectKey: string,
-  body: Uint8Array,
-  contentType: string,
-): Promise<{ sha256: string }> {
-  const checksumSha256 = await checksumOf(body);
-  await storage.put(objectKey, body, { contentType, checksumSha256 });
-  return { sha256: checksumSha256 };
+export async function putBytes(storage: TenantBlobs, body: Uint8Array): Promise<{ blobId: string; sha256: string }> {
+  return storage.put(body);
 }

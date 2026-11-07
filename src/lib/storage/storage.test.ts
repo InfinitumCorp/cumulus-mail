@@ -1,84 +1,76 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { masterKeyFromEnv, openSeal, seal } from "./crypto.ts";
 import {
-  ChecksumMismatchError,
-  TenantAccessError,
-  bindTenantStorage,
-  checksumOf,
-} from "./adapter.ts";
-import { createStorageDriver, LocalDiskStorageDriver, S3CompatibleStorageDriver } from "./index.ts";
+  blobFile,
+  createFilesystemDriver,
+  createS3Driver,
+  newBlobId,
+} from "./driver.ts";
+import { createSealedDriver } from "./index.ts";
+
+if (!process.env.MAIL_BLOB_KEY) process.env.MAIL_BLOB_KEY = "cd".repeat(32);
 
 const root = await mkdtemp(join(tmpdir(), "cumulus-storage-"));
 after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const bytes = new TextEncoder().encode("forecast appendix");
+const plaintext = new TextEncoder().encode("forecast appendix");
 
-test("local disk writes are checksummed, atomic, and tenant scoped", async () => {
-  const driver = new LocalDiskStorageDriver(root);
-  const alice = bindTenantStorage(driver, "tenant-a");
-  const bob = bindTenantStorage(driver, "tenant-b");
-  const checksum = await checksumOf(bytes);
-  await alice.put("notes/forecast.txt", bytes, { contentType: "text/plain", checksumSha256: checksum });
-  const stored = await alice.get("notes/forecast.txt");
-  assert.equal(stored?.key, "tenant/tenant-a/notes/forecast.txt");
-  assert.equal(stored?.checksumSha256, checksum);
-  assert.equal(new TextDecoder().decode(stored?.body), "forecast appendix");
-  const meta = await alice.head("notes/forecast.txt");
-  assert.equal(meta?.size, bytes.byteLength);
-  const listed = await alice.list("notes");
-  assert.deepEqual(listed.map((item) => item.objectKey), ["notes/forecast.txt"]);
-  assert.equal((await bob.get("notes/forecast.txt")), null);
-  assert.equal((await bob.list()).length, 0);
-
-  await assert.rejects(
-    () => alice.put("notes/bad.txt", bytes, { contentType: "text/plain", checksumSha256: "00".repeat(32) }),
-    ChecksumMismatchError,
-  );
-  assert.equal((await alice.list()).length, 1);
-
-  await assert.rejects(() => alice.get("../../tenant/tenant-b/secret"), TenantAccessError);
-  await assert.rejects(() => alice.get("tenant/tenant-b/secret"), TenantAccessError);
-
-  const url = await alice.signedShareUrl("notes/forecast.txt", 60);
-  assert.match(url, /^stub:\/\/cumulus-share\/tenant\/tenant-a\/notes\/forecast.txt\?exp=\d+&signed=0$/);
-
-  const file = join(root, "tenant", "tenant-a", "notes", "forecast.txt");
-  await writeFile(file, "tampered");
-  await assert.rejects(() => alice.get("notes/forecast.txt"), ChecksumMismatchError);
+test("filesystem driver matches Drive put/get/delete/probe and hides ciphertext", async () => {
+  const inner = createFilesystemDriver(root);
+  assert.equal(await inner.probe(), true);
+  const sealed = createSealedDriver(inner, masterKeyFromEnv());
+  const blobId = newBlobId();
+  await sealed.put("tenant-a", blobId, plaintext);
+  const onDisk = await readFile(blobFile(root, "tenant-a", blobId));
+  assert.equal(onDisk.includes(Buffer.from(plaintext)), false);
+  const opened = await sealed.get("tenant-a", blobId);
+  assert.equal(Buffer.from(opened).toString(), "forecast appendix");
+  await sealed.delete("tenant-a", blobId);
 });
 
-test("the default driver is local disk and the S3 driver is a stub", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "cumulus-default-"));
+test("AES-256-GCM detects tampering and rejects another tenant key", async () => {
+  const master = masterKeyFromEnv();
+  const sealed = seal(master, "tenant-a", plaintext);
+  assert.equal(Buffer.from(openSeal(master, "tenant-a", sealed)).toString(), "forecast appendix");
+  const tampered = new Uint8Array(sealed);
+  tampered[20] ^= 0xff;
+  assert.throws(() => openSeal(master, "tenant-a", tampered));
+  assert.throws(() => openSeal(master, "tenant-b", sealed));
+});
+
+test("the S3 driver matches Drive's options and does not send", async () => {
+  assert.throws(() => createS3Driver({ bucket: "mail", endpoint: "https://abc.supabase.co", loopbackOnly: false }), /Supabase/);
+  assert.throws(
+    () => createS3Driver({ bucket: "mail", endpoint: "https://s3.amazonaws.com", loopbackOnly: true }),
+    /loopback/,
+  );
+  const driver = createS3Driver({
+    bucket: "cumulus-mail-preview",
+    endpoint: "http://127.0.0.1:9000",
+    region: "us-east-1",
+    accessKeyId: "test",
+    secretAccessKey: "test",
+    loopbackOnly: true,
+  });
+  assert.equal(driver.kind, "s3");
+  let fetched = false;
+  const original = globalThis.fetch;
+  globalThis.fetch = (() => {
+    fetched = true;
+    return Promise.reject(new Error("network disabled"));
+  }) as typeof fetch;
   try {
-    const local = createStorageDriver({ MAIL_BLOB_DIR: dir });
-    assert.equal(local instanceof LocalDiskStorageDriver, true);
-    const s3 = createStorageDriver({ MAIL_STORAGE: "s3", MAIL_S3_BUCKET: "cumulus-mail-preview" });
-    assert.equal(s3 instanceof S3CompatibleStorageDriver, true);
-    let fetched = false;
-    const original = globalThis.fetch;
-    globalThis.fetch = ((..._args: unknown[]) => {
-      fetched = true;
-      return Promise.reject(new Error("network disabled"));
-    }) as typeof fetch;
-    try {
-      const checksum = await checksumOf(bytes);
-      await assert.rejects(
-        () => s3.put("tenant/tenant-a/x", bytes, { contentType: "text/plain", checksumSha256: checksum }),
-        /stub/,
-      );
-      const adapter = bindTenantStorage(s3, "tenant-a");
-      const url = await adapter.signedShareUrl("notes/x");
-      assert.match(url, /^stub:\/\/cumulus-share\/tenant\/tenant-a\/notes\/x\?/);
-      assert.equal(fetched, false);
-    } finally {
-      globalThis.fetch = original;
-    }
+    await assert.rejects(() => driver.put("tenant-a", newBlobId(), plaintext), /does not send/);
+    await assert.rejects(() => driver.ensureBucket(), /does not send/);
+    await assert.rejects(() => driver.probe(), /does not send/);
+    assert.equal(fetched, false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    globalThis.fetch = original;
   }
 });

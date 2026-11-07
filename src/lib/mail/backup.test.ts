@@ -85,8 +85,11 @@ test("export and import round-trip the mailbox and blobs without crossing tenant
   assert.equal(beaAfter.me.email, bea.email);
   assert.equal(beaAfter.messages.some((item) => item.subject === "Keep this"), true);
   assert.equal((await readSnapshot(db, "bak-ada")).me.email, ada.email);
-  const beaKeys = await storageFor("bak-bea").list();
-  assert.equal(beaKeys.every((item) => item.tenantId === "bak-bea"), true);
+  const beaBlobs = await db.query<{ object_key: string }>(
+    `select object_key from cumulus_mail.attachments where tenant_id = $1`,
+    ["bak-bea"],
+  );
+  assert.equal(await storageFor("bak-ada").get(beaBlobs[0]?.object_key ?? ""), null);
   assert.equal(beaBefore >= 0, true);
 
   const broken = {

@@ -1,9 +1,6 @@
-import {
-  checksumOf,
-  sanitizeContentType,
-  type StorageAdapter,
-} from "../storage/adapter.ts";
+import { sanitizeContentType } from "../storage/adapter.ts";
 import { assertTenantId, TenantAccessError } from "../storage/adapter.ts";
+import type { TenantBlobs } from "../storage/index.ts";
 import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
@@ -82,17 +79,15 @@ export async function writeSnapshot(
         const bytes = base64ToBytes(file.dataBase64);
         if (bytes.byteLength > MAX_ATTACHMENT) throw new Error("Attachment is too large");
         const id = file.id && byId.get(file.id)?.messageId === message.id ? file.id : file.id && !byId.has(file.id) ? assertId(file.id, "attachment id") : newId("att");
-        const objectKey = `messages/${message.id}/attachments/${id}`;
-        const checksumSha256 = await checksumOf(bytes);
         const contentType = sanitizeContentType(file.contentType);
-        await storage.put(objectKey, bytes, { contentType, checksumSha256 });
+        const saved = await storage.put(bytes);
         const stored: StoredAttachment = {
           id,
           name,
           size: bytes.byteLength,
           contentType,
-          sha256: checksumSha256,
-          objectKey,
+          sha256: saved.sha256,
+          objectKey: saved.blobId,
         };
         storedFiles.push({ messageId: message.id, file: stored });
         clean.push(withoutBytes(stored));
@@ -135,13 +130,14 @@ export async function writeSnapshot(
     signature: snapshot.signature.slice(0, 4000),
     rules: snapshot.rules.filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label"),
   };
+  const before = await blobIds(db, tenantId);
   await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw);
   await deliverPending(db, storageFor, tenantId);
-  await discardUnreferenced(db, storage, tenantId);
+  await discardUnreferenced(db, storage, tenantId, before);
   return readSnapshot(db, tenantId);
 }
 
-async function discardUnreferenced(db: MailQuery, storage: StorageAdapter, tenantId: string): Promise<void> {
+async function blobIds(db: MailQuery, tenantId: string): Promise<Set<string>> {
   const attachments = await db.query<{ object_key: string }>(
     `select object_key from cumulus_mail.attachments where tenant_id = $1`,
     [tenantId],
@@ -150,19 +146,24 @@ async function discardUnreferenced(db: MailQuery, storage: StorageAdapter, tenan
     `select raw_key from cumulus_mail.messages where tenant_id = $1 and raw_key is not null`,
     [tenantId],
   );
-  const keep = new Set<string>([
-    ...attachments.map((row) => row.object_key),
-    ...raws.map((row) => row.raw_key),
-  ]);
-  const heads = await storage.list();
-  for (const head of heads) {
-    if (!keep.has(head.objectKey)) await storage.delete(head.objectKey);
+  return new Set([...attachments.map((row) => row.object_key), ...raws.map((row) => row.raw_key)]);
+}
+
+async function discardUnreferenced(
+  db: MailQuery,
+  storage: TenantBlobs,
+  tenantId: string,
+  before: Set<string>,
+): Promise<void> {
+  const keep = await blobIds(db, tenantId);
+  for (const blobId of before) {
+    if (!keep.has(blobId)) await storage.delete(blobId);
   }
 }
 
 export async function readAttachment(
   db: MailQuery,
-  storage: StorageAdapter,
+  storage: TenantBlobs,
   tenantId: string,
   messageId: string,
   attachmentId: string,
@@ -180,7 +181,7 @@ export async function readAttachment(
   if (!row?.object_key) return null;
   const stored = await storage.get(row.object_key);
   if (!stored) return null;
-  if (stored.checksumSha256 !== row.sha256) {
+  if (stored.sha256 !== row.sha256) {
     throw new Error("Stored attachment checksum does not match its record");
   }
   return { name: row.name, contentType: row.content_type, bytes: stored.body };

@@ -74,8 +74,13 @@ test("inbound mail is stored for the envelope recipient only", async () => {
   assert.ok(file?.id);
   const stored = await readAttachment(db, storageFor("tenant-ada-in"), "tenant-ada-in", message.id, file.id);
   assert.equal(new TextDecoder().decode(stored?.bytes), "hello");
-  const rawObject = await storageFor("tenant-ada-in").get(`inbound/${message.id}/raw`);
+  const rawRows = await db.query<{ raw_key: string }>(
+    `select raw_key from cumulus_mail.messages where tenant_id = $1 and id = $2`,
+    ["tenant-ada-in", message.id],
+  );
+  const rawObject = await storageFor("tenant-ada-in").get(rawRows[0]?.raw_key ?? "");
   assert.equal(rawObject?.body.byteLength, raw.byteLength);
+  assert.equal(await storageFor("tenant-bea-in").get(rawRows[0]?.raw_key ?? ""), null);
 
   const bea = await readSnapshot(db, "tenant-bea-in");
   assert.equal(bea.messages.some((item) => item.subject === "Notes"), false);

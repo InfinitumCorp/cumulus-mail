@@ -31,6 +31,7 @@ const TITLES: Record<BoxId, string> = {
   drafts: "Drafts",
   archive: "Archive",
   trash: "Trash",
+  quarantine: "Quarantine",
 };
 
 export function MessageList({

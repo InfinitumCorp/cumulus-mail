@@ -1,11 +1,5 @@
-import {
-  checksumOf,
-  normalizeObjectKey,
-  sanitizeContentType,
-  ChecksumMismatchError,
-  type StorageAdapter,
-} from "../storage/adapter.ts";
-import { assertTenantId } from "../storage/adapter.ts";
+import { checksumOf, ChecksumMismatchError, sanitizeContentType, assertTenantId } from "../storage/adapter.ts";
+import type { TenantBlobs } from "../storage/index.ts";
 import { bytesToBase64, base64ToBytes } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
@@ -45,7 +39,7 @@ export type MailboxBackup = MailboxSnapshot & {
 
 export async function exportMailbox(
   db: MailQuery,
-  storage: StorageAdapter,
+  storage: TenantBlobs,
   tenantId: string,
 ): Promise<MailboxBackup> {
   assertTenantId(tenantId);
@@ -66,21 +60,26 @@ export async function exportMailbox(
       });
     }
   }
-  const blobs: BackupBlob[] = [];
-  for (const head of await storage.list()) {
-    const stored = await storage.get(head.objectKey);
-    if (!stored) continue;
-    blobs.push({
-      objectKey: head.objectKey,
-      sha256: head.checksumSha256,
-      contentType: head.contentType,
-      dataBase64: bytesToBase64(stored.body),
-    });
-  }
   const rawRows = await previousRawKeys(db, tenantId);
   const rawKeys = [...rawRows.entries()]
     .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0)
     .map(([messageId, objectKey]) => ({ messageId, objectKey }));
+  const blobs: BackupBlob[] = [];
+  const seen = new Set<string>();
+  const described = new Map(attachments.map((file) => [file.objectKey, file.contentType]));
+  for (const raw of rawKeys) described.set(raw.objectKey, "message/rfc822");
+  for (const [objectKey, contentType] of described) {
+    if (!objectKey || seen.has(objectKey)) continue;
+    seen.add(objectKey);
+    const stored = await storage.get(objectKey);
+    if (!stored) continue;
+    blobs.push({
+      objectKey,
+      sha256: stored.sha256,
+      contentType,
+      dataBase64: bytesToBase64(stored.body),
+    });
+  }
   const delivered = await db.query<{ message_id: string }>(
     `select message_id from cumulus_mail.deliveries where sender_tenant = $1`,
     [tenantId],
@@ -106,15 +105,13 @@ export async function importMailbox(
   assertTenantId(tenantId);
   if (backup.version !== 1) throw new Error("Unsupported mailbox backup");
   const storage = storageFor(tenantId);
+  const idMap = new Map<string, string>();
   for (const blob of backup.blobs) {
-    const objectKey = normalizeObjectKey(blob.objectKey);
     const bytes = base64ToBytes(blob.dataBase64);
     const checksumSha256 = await checksumOf(bytes);
-    if (checksumSha256 !== blob.sha256.toLowerCase()) throw new ChecksumMismatchError(objectKey);
-    await storage.put(objectKey, bytes, {
-      contentType: sanitizeContentType(blob.contentType),
-      checksumSha256,
-    });
+    if (checksumSha256 !== blob.sha256.toLowerCase()) throw new ChecksumMismatchError(blob.objectKey);
+    const saved = await storage.put(bytes);
+    idMap.set(blob.objectKey, saved.blobId);
   }
 
   await db.query(`delete from cumulus_mail.suppressions where tenant_id = $1`, [tenantId]);
@@ -130,16 +127,16 @@ export async function importMailbox(
   }
 
   const rawKeys = new Map<string, string | null>();
-  for (const entry of backup.rawKeys ?? []) rawKeys.set(entry.messageId, normalizeObjectKey(entry.objectKey));
+  for (const entry of backup.rawKeys ?? []) rawKeys.set(entry.messageId, idMap.get(entry.objectKey) ?? null);
   const files = (backup.attachments ?? []).map((file) => ({
     messageId: file.messageId,
     file: {
       id: file.id,
       name: file.name,
       size: file.size,
-      contentType: file.contentType,
+      contentType: sanitizeContentType(file.contentType),
       sha256: file.sha256,
-      objectKey: normalizeObjectKey(file.objectKey),
+      objectKey: idMap.get(file.objectKey) ?? file.objectKey,
     },
   }));
   const current = await readSnapshot(db, tenantId);

@@ -1,21 +1,28 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
-import { LocalDiskStorageDriver } from "../storage/local-disk.ts";
-import { openTenantStorage } from "../storage/index.ts";
+import { createFilesystemDriver, openTenantStorage, type StorageDriver } from "../storage/index.ts";
 import type { TenantStorage } from "./delivery.ts";
 import type { MailProfile } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 
+if (!process.env.MAIL_BLOB_KEY) process.env.MAIL_BLOB_KEY = "ab".repeat(32);
+
 export async function createHarness() {
   const pg = new PGlite();
   await pg.waitReady;
-  const sql = readFileSync(new URL("../../../migrations/0002_cumulus_mail.sql", import.meta.url), "utf8");
-  await pg.exec(sql);
-  const dir = await mkdtemp(join(tmpdir(), "cumulus-mail-"));
-  const driver = new LocalDiskStorageDriver(dir);
+  const migrationsDir = fileURLToPath(new URL("../../../migrations/", import.meta.url));
+  const files = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  for (const name of files) {
+    await pg.exec(readFileSync(join(migrationsDir, name), "utf8"));
+  }
+  const root = await mkdtemp(join(tmpdir(), "cumulus-mail-"));
+  const driver: StorageDriver = createFilesystemDriver(root);
   const db: MailQuery = {
     query: async <T>(text: string, params: unknown[] = []) => {
       const result = await pg.query<T>(text, params);
@@ -26,10 +33,11 @@ export async function createHarness() {
   return {
     db,
     driver,
+    root,
     storageFor,
     async close() {
       await pg.close();
-      await rm(dir, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     },
   };
 }

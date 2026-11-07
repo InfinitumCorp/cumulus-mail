@@ -7,6 +7,7 @@ import {
   Inbox,
   ListTodo,
   Send,
+  ShieldAlert,
   Star,
   Trash2,
   Users,
@@ -26,6 +27,7 @@ const ICONS = {
   drafts: FileText,
   archive: Archive,
   trash: Trash2,
+  quarantine: ShieldAlert,
 } as const;
 
 type Props = {

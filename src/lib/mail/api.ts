@@ -26,7 +26,7 @@ export const getMailbox = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const { readMailboxForSession } = await import("./mailbox.server");
-    return readMailboxForSession(context.userId);
+    return readMailboxForSession(context.userId, context.bearerToken);
   });
 
 export const putMailbox = createServerFn({ method: "POST" })
@@ -34,7 +34,7 @@ export const putMailbox = createServerFn({ method: "POST" })
   .validator(asSnapshot)
   .handler(async ({ context, data }) => {
     const { writeMailboxForSession } = await import("./mailbox.server");
-    return writeMailboxForSession(context.userId, data);
+    return writeMailboxForSession(context.userId, data, context.bearerToken);
   });
 
 export const getAttachment = createServerFn({ method: "POST" })
@@ -49,14 +49,14 @@ export const getAttachment = createServerFn({ method: "POST" })
   })
   .handler(async ({ context, data }) => {
     const { readAttachmentForSession } = await import("./mailbox.server");
-    return readAttachmentForSession(context.userId, data.messageId, data.attachmentId);
+    return readAttachmentForSession(context.userId, data.messageId, data.attachmentId, context.bearerToken);
   });
 
 export const exportMailboxBackup = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const { exportMailboxForSession } = await import("./mailbox.server");
-    return exportMailboxForSession(context.userId);
+    return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
 export const importMailboxBackup = createServerFn({ method: "POST" })
@@ -64,7 +64,7 @@ export const importMailboxBackup = createServerFn({ method: "POST" })
   .validator(asBackup)
   .handler(async ({ context, data }) => {
     const { importMailboxForSession } = await import("./mailbox.server");
-    return importMailboxForSession(context.userId, data);
+    return importMailboxForSession(context.userId, data, context.bearerToken);
   });
 
 export const submitAbuseReport = createServerFn({ method: "POST" })
@@ -79,7 +79,51 @@ export const submitAbuseReport = createServerFn({ method: "POST" })
   })
   .handler(async ({ context, data }) => {
     const { submitAbuseForSession } = await import("./mailbox.server");
-    return submitAbuseForSession(context.userId, data);
+    return submitAbuseForSession(context.userId, data, context.bearerToken);
+  });
+
+export const createShareLink = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { messageId?: unknown; attachmentId?: unknown; ttlMs?: unknown };
+    if (typeof value?.messageId !== "string" || typeof value.attachmentId !== "string") {
+      throw new Error("Missing attachment");
+    }
+    const ttlMs = typeof value.ttlMs === "number" ? value.ttlMs : 60 * 60 * 1000;
+    if (!Number.isFinite(ttlMs) || ttlMs < 1_000 || ttlMs > 7 * 24 * 60 * 60 * 1000) {
+      throw new Error("Share link lifetime is out of range");
+    }
+    return { messageId: value.messageId, attachmentId: value.attachmentId, ttlMs };
+  })
+  .handler(async ({ context, data }) => {
+    const { issueShareForSession } = await import("./mailbox.server");
+    return issueShareForSession(context.userId, data.messageId, data.attachmentId, data.ttlMs, context.bearerToken);
+  });
+
+export const openShareLink = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { token?: unknown };
+    if (typeof value?.token !== "string" || !value.token.includes(".")) throw new Error("Missing share token");
+    return { token: value.token };
+  })
+  .handler(async ({ data }) => {
+    const { openShareToken } = await import("./mailbox.server");
+    return openShareToken(data.token);
+  });
+
+export const revokeShareLink = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { jti?: unknown };
+    if (typeof value?.jti !== "string" || !/^[a-f0-9]{32}$/.test(value.jti)) throw new Error("Missing share id");
+    return { jti: value.jti };
+  })
+  .handler(async ({ context, data }) => {
+    const { revokeShareForSession } = await import("./mailbox.server");
+    return revokeShareForSession(context.userId, data.jti, context.bearerToken);
   });
 
 export const acceptDeliveryStatus = createServerFn({ method: "POST" })
@@ -92,5 +136,5 @@ export const acceptDeliveryStatus = createServerFn({ method: "POST" })
   })
   .handler(async ({ context, data }) => {
     const { acceptDsnForSession } = await import("./mailbox.server");
-    return acceptDsnForSession(context.userId, data.raw);
+    return acceptDsnForSession(context.userId, data.raw, context.bearerToken);
   });

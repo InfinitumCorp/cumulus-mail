@@ -84,8 +84,11 @@ test("mail and blobs for one tenant are invisible to another", async () => {
   const beaView = await openMailbox(db, "tenant-bea", bea);
   assert.equal(beaView.messages.some((message) => message.id === "m-ada-1"), false);
   assert.equal(await readAttachment(db, storageFor("tenant-bea"), "tenant-bea", "m-ada-1", file.id), null);
-  assert.equal((await storageFor("tenant-bea").get(`messages/m-ada-1/attachments/${file.id}`)), null);
-  assert.equal((await storageFor("tenant-bea").list()).some((item) => item.tenantId !== "tenant-bea"), false);
+  const adaBlobs = await db.query<{ object_key: string }>(
+    `select object_key from cumulus_mail.attachments where tenant_id = $1`,
+    ["tenant-ada"],
+  );
+  assert.equal(await storageFor("tenant-bea").get(adaBlobs[0]?.object_key ?? ""), null);
 
   await assert.rejects(
     () => writeSnapshot(db, storageFor, "tenant-bea", { ...beaView, aliases: ["ada@cumuluscloud.app"] }),

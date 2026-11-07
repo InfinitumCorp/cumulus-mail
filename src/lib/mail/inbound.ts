@@ -1,4 +1,5 @@
-import { checksumOf, sha256Hex, type StorageAdapter } from "../storage/adapter.ts";
+import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
+import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { createBounceHandler } from "./dsn.ts";
@@ -22,6 +23,7 @@ export async function ingestInboundEmail(
   db: MailQuery,
   storageFor: TenantStorage,
   message: InboundEmail,
+  resolver: DNSResolver = emptyResolver,
 ): Promise<{ stored: string[] }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
@@ -36,12 +38,9 @@ export async function ingestInboundEmail(
   if (existing.length > 0) return { stored: [id] };
 
   const parsed = parseMime(message.raw);
-  const storage: StorageAdapter = storageFor(tenantId);
-  const rawKey = `inbound/${id}/raw`;
-  await storage.put(rawKey, message.raw, {
-    contentType: "message/rfc822",
-    checksumSha256: await checksumOf(message.raw),
-  });
+  const storage: TenantBlobs = storageFor(tenantId);
+  const rawSaved = await storage.put(message.raw);
+  const rawKey = rawSaved.blobId;
 
   const headerType = `${parsed.headers["content-type"] ?? ""} ${parsed.contentType}`;
   if (/multipart\/report|message\/delivery-status/i.test(headerType)) {
@@ -51,29 +50,29 @@ export async function ingestInboundEmail(
   const attachments = [];
   for (const [index, file] of parsed.attachments.entries()) {
     const attachmentId = `a-${id}-${index}`;
-    const objectKey = `messages/${id}/attachments/${attachmentId}`;
-    const checksumSha256 = await checksumOf(file.bytes);
-    await storage.put(objectKey, file.bytes, {
-      contentType: file.contentType || "application/octet-stream",
-      checksumSha256,
-    });
+    const saved = await storage.put(file.bytes);
     attachments.push({
       id: attachmentId,
       name: file.name,
       size: file.bytes.byteLength,
       contentType: file.contentType || "application/octet-stream",
-      sha256: checksumSha256,
-      objectKey,
+      sha256: saved.sha256,
+      objectKey: saved.blobId,
     });
   }
 
   const from = parsed.from.email
     ? parsed.from
     : { name: message.from.split("@")[0] || message.from, email: message.from };
+  const auth = await authenticateInbound(
+    message.raw,
+    { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
+    resolver,
+  );
   const draft: MailMessage = {
     id,
     threadId: id,
-    folder: "inbox",
+    folder: auth.disposition === "quarantine" ? "quarantine" : "inbox",
     from,
     to: parsed.to.length ? parsed.to : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
     cc: parsed.cc,
@@ -84,6 +83,7 @@ export async function ingestInboundEmail(
     starred: false,
     labels: [],
     attachments: attachments.map(({ objectKey: _objectKey, ...file }) => file),
+    auth,
   };
   const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
     `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,

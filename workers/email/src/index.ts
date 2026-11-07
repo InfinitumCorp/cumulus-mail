@@ -1,3 +1,4 @@
+import { resolverFromEnv } from "../../../src/lib/mail/authenticate.ts";
 import type { TenantStorage } from "../../../src/lib/mail/delivery.ts";
 import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
@@ -25,6 +26,8 @@ export type EmailEnv = {
   MAIL_DOMAIN?: string;
   /** Web host for the app. Defaults to mail.cumuluscloud.app. Not a secret. */
   MAIL_APP_HOST?: string;
+  /** Set to "live" to query DNS for SPF, DKIM, and DMARC. Default does not. */
+  MAIL_AUTH_DNS?: string;
 };
 
 async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
@@ -47,7 +50,7 @@ export async function handleEmail(message: EmailMessage, env: EmailEnv): Promise
     to: recipient,
     raw: await rawBytes(message.raw),
   };
-  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound);
+  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, resolverFromEnv(env));
 }
 
 export default {
