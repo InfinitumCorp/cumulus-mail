@@ -43,7 +43,7 @@ jobs:
           docker run -d --name cumulus-minio -p 9000:9000 \
             -e MINIO_ROOT_USER=cumulus \
             -e MINIO_ROOT_PASSWORD=cumulussecret \
-            minio/minio:latest server /data --console-address :9001
+            quay.io/minio/minio:latest server /data --console-address :9001
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:9000/minio/health/live; then
               exit 0
