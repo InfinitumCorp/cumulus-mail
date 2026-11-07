@@ -263,7 +263,7 @@ export function MailApp() {
       return;
     }
     const id = `m-${Date.now().toString(36)}`;
-    remember("Message sent.");
+    remember("Saved in this browser. Not sent.");
     if (composer.draftId) remove(composer.draftId);
     const delivery = planDelivery([...to, ...cc]);
     const sent = {
@@ -419,6 +419,9 @@ export function MailApp() {
 
   return (
     <div className="mail-shell">
+      <p className="border-b border-line px-3 py-2 font-mono text-xs text-muted md:px-5" role="status">
+        Local demo. Messages stay in this browser. Nothing is sent, encrypted, or stored with Drive.
+      </p>
       <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
         <div className="flex items-center gap-2">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">

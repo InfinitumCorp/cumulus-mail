@@ -1,7 +1,7 @@
-import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
+import { Archive, ChevronLeft, Clock, Forward, ListTodo, Paperclip, Reply, ReplyAll, Sparkles, Star, Trash2 } from "lucide-react";
 import type { MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
-import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -47,9 +47,9 @@ export function Reader(props: Props) {
       ) : (
         <div className="flex flex-1 flex-col justify-end px-6 py-10 md:px-12 md:py-14">
           <p className="font-mono text-xs uppercase tracking-wide text-accent">Cumulus://Mail</p>
-          <h2 className="mt-4 max-w-xl text-4xl leading-none tracking-tight md:text-6xl">Private by default.</h2>
+          <h2 className="mt-4 max-w-xl text-4xl leading-none tracking-tight md:text-6xl">Local demo.</h2>
           <p className="mt-5 max-w-md text-base leading-normal text-muted">
-            Every mailbox is encrypted at rest. Mail between Cumulus accounts is end-to-end. Never scanned for ads. Never sold.
+            Open a sample message, or compose one. It stays in this browser. Nothing is encrypted or delivered.
           </p>
         </div>
       )}
@@ -89,7 +89,6 @@ function Opened({
   knownContact,
   onSaveContact,
 }: Props & { message: MailMessage }) {
-  const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
   return (
     <>
@@ -151,10 +150,7 @@ function Opened({
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
           <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
           <h2 className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
-          <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
-            {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
-            {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
-          </p>
+          <p className="mt-4 text-sm text-muted">Local demo. This copy is not encrypted and was not delivered.</p>
           {message.delivery?.length ? (
             <ul className="mt-3 space-y-1">
               {message.delivery.map((hop) => (

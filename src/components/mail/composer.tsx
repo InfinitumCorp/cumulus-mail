@@ -61,7 +61,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
     let note = "";
     for (const file of list) {
       if (file.size > MAX_FILE) {
-        note = "Files stay under 25 MB. Larger ones belong in Drive.";
+        note = "Files stay under 25 MB. Only the name and size are kept.";
         continue;
       }
       if (next.length >= MAX_FILES) {
@@ -122,14 +122,14 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
       {error ? <p className="px-4 pb-2 text-sm text-ink">{error}</p> : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3">
         <button type="submit" className="inline-flex h-11 items-center bg-ink px-5 text-sm text-paper transition-colors hover:bg-accent">
-          Send
+          Save locally
         </button>
         <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm hover:border-ink" onClick={onSave}>
           Save draft
         </button>
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={() => picker.current?.click()}>
           <Paperclip className="size-4" />
-          Drive file
+          Attach
         </button>
         <input ref={picker} type="file" className="sr-only" multiple onChange={(event) => addFiles(event.target.files)} />
         <button

@@ -135,8 +135,8 @@ export function planDelivery(people: Person[]): DeliveryHop[] {
     seen.add(email);
     hops.push(
       isCumulus(email)
-        ? { email, status: "inside", detail: "Delivered inside Cumulus. End-to-end." }
-        : { email, status: "outbound", detail: "Accepted. Leaves Cumulus encrypted." },
+        ? { email, status: "inside", detail: "Saved in this browser. Not delivered." }
+        : { email, status: "outbound", detail: "Saved in this browser. Not sent." },
     );
   }
   return hops;

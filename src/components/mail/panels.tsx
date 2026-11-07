@@ -7,7 +7,7 @@ export function CalendarPanel({ events }: { events: CalEvent[] }) {
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
         <p className="font-mono text-xs uppercase tracking-wide text-muted">Calendar</p>
         <h2 className="mt-3 text-4xl tracking-tight">Coming up</h2>
-        <p className="mt-3 max-w-lg text-muted">Encrypted with this mailbox. Spectre sees titles and times only while the Firmament grant stands.</p>
+        <p className="mt-3 max-w-lg text-muted">Sample holds in this demo. Nothing here syncs to a calendar.</p>
         <ol className="mt-8">
           {events.map((event) => (
             <li key={event.id} className="grid gap-2 border-t border-line py-6 md:grid-cols-[200px_1fr] md:gap-8">
@@ -141,6 +141,7 @@ export function AccountPanel({
         <div className="px-5 py-6">
           <h2 id="account-title" className="text-3xl tracking-tight">{ME.name}</h2>
           <p className="mt-2 font-mono text-sm text-muted">{ME.cid}</p>
+          <p className="mt-3 text-sm text-muted">Sample account in this browser. It is not a Cumulus://ID sign-in, and this quota is not shared with Drive.</p>
           <dl className="mt-8 border-t border-line text-sm">
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Address</dt>
@@ -220,7 +221,7 @@ export function AccountPanel({
             </div>
           </dl>
           <p className="mt-6 text-sm leading-normal text-muted">
-            Every mailbox is encrypted at rest. Mail between Cumulus://Mail accounts is end-to-end encrypted. Cumulus://Mail is never scanned for ads and never sold.
+            Aliases, the signature, and rules are saved in this browser with the sample mailbox. They do not affect delivery.
           </p>
         </div>
       </div>

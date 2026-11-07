@@ -305,14 +305,14 @@ export const SEED_CONTACTS: Contact[] = [
     name: "Leah Okonkwo",
     email: "leah@cumulusmail.cloud",
     org: "Infinitum",
-    note: "Drive shares stay inside Cumulus.",
+    note: "Sample contact stored in this browser.",
   },
   {
     id: "c-priya",
     name: "Priya Nair",
     email: "priya@vyral.london",
     org: "VYRAL London",
-    note: "External. Mail to this address is not end-to-end.",
+    note: "External sample contact. A message to this address still stays in this browser.",
   },
   {
     id: "c-daniel",

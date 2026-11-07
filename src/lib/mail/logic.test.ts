@@ -12,6 +12,9 @@ test("Cumulus recipients stay inside and everyone else is outbound", () => {
   assert.equal(hops.length, 2);
   assert.equal(hops[0]?.status, "inside");
   assert.equal(hops[1]?.status, "outbound");
+  assert.match(hops[0]?.detail ?? "", /Not delivered/);
+  assert.match(hops[1]?.detail ?? "", /Not sent/);
+  assert.equal(/encrypt|delivered inside/i.test(hops.map((hop) => hop.detail).join(" ")), false);
 });
 
 test("from: finds a sender and has:file finds an attachment", () => {

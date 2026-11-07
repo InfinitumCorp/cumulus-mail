@@ -98,9 +98,9 @@ export function Sidebar({ open, view, box, messages, openTasks, onClose, onView,
       ) : (
         <p className="px-4 py-6 text-sm leading-normal text-muted">
           {view === "calendar"
-            ? "Holds that belong to this CID. Spectre can read titles only while you allow it."
+            ? "Sample holds in this demo. They are not a synced calendar."
             : view === "contacts"
-              ? "People already in this mailbox. External addresses leave the encrypted channel."
+              ? "Sample people stored in this browser."
               : "Architect keeps the task. It does not send the mail."}
         </p>
       )}
@@ -110,7 +110,7 @@ export function Sidebar({ open, view, box, messages, openTasks, onClose, onView,
         <span className="mt-3 block h-1 bg-line" aria-hidden="true">
           <span className="block h-1 bg-accent" style={{ width: `${used.pct}%` }} />
         </span>
-        <span className="mt-2 block text-xs text-muted">{used.label} shared with Drive</span>
+        <span className="mt-2 block text-xs text-muted">{used.label} in this browser</span>
       </button>
     </aside>
   );
