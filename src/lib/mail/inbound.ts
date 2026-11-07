@@ -1,0 +1,103 @@
+import { checksumOf, sha256Hex, type StorageAdapter } from "../storage/adapter.ts";
+import type { TenantStorage } from "./delivery.ts";
+import { findTenantByAddress } from "./directory.ts";
+import { createBounceHandler } from "./dsn.ts";
+import { applyRules } from "./logic.ts";
+import { parseMime } from "./mime.ts";
+import type { MailMessage, MailRule } from "./model.ts";
+import type { MailQuery } from "./query.ts";
+import { insertAttachment, insertMessage } from "./records.ts";
+
+export type InboundEmail = {
+  from: string;
+  to: string;
+  raw: Uint8Array;
+};
+
+/**
+ * Store one inbound message for the local mailbox that owns the envelope
+ * recipient. A tenant id in the MIME headers is ignored.
+ */
+export async function ingestInboundEmail(
+  db: MailQuery,
+  storageFor: TenantStorage,
+  message: InboundEmail,
+): Promise<{ stored: string[] }> {
+  const recipient = message.to.trim().toLowerCase();
+  const tenantId = await findTenantByAddress(db, recipient);
+  if (!tenantId) return { stored: [] };
+
+  const digest = await sha256Hex(message.raw);
+  const id = `in-${digest.slice(0, 32)}`;
+  const existing = await db.query<{ id: string }>(
+    `select id from cumulus_mail.messages where tenant_id = $1 and id = $2 limit 1`,
+    [tenantId, id],
+  );
+  if (existing.length > 0) return { stored: [id] };
+
+  const parsed = parseMime(message.raw);
+  const storage: StorageAdapter = storageFor(tenantId);
+  const rawKey = `inbound/${id}/raw`;
+  await storage.put(rawKey, message.raw, {
+    contentType: "message/rfc822",
+    checksumSha256: await checksumOf(message.raw),
+  });
+
+  const headerType = `${parsed.headers["content-type"] ?? ""} ${parsed.contentType}`;
+  if (/multipart\/report|message\/delivery-status/i.test(headerType)) {
+    await createBounceHandler(db, tenantId).accept(new TextDecoder().decode(message.raw));
+  }
+
+  const attachments = [];
+  for (const [index, file] of parsed.attachments.entries()) {
+    const attachmentId = `a-${id}-${index}`;
+    const objectKey = `messages/${id}/attachments/${attachmentId}`;
+    const checksumSha256 = await checksumOf(file.bytes);
+    await storage.put(objectKey, file.bytes, {
+      contentType: file.contentType || "application/octet-stream",
+      checksumSha256,
+    });
+    attachments.push({
+      id: attachmentId,
+      name: file.name,
+      size: file.bytes.byteLength,
+      contentType: file.contentType || "application/octet-stream",
+      sha256: checksumSha256,
+      objectKey,
+    });
+  }
+
+  const from = parsed.from.email
+    ? parsed.from
+    : { name: message.from.split("@")[0] || message.from, email: message.from };
+  const draft: MailMessage = {
+    id,
+    threadId: id,
+    folder: "inbox",
+    from,
+    to: parsed.to.length ? parsed.to : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
+    cc: parsed.cc,
+    subject: parsed.subject || "(no subject)",
+    body: parsed.text.slice(0, 1_000_000),
+    at: new Date().toISOString(),
+    unread: true,
+    starred: false,
+    labels: [],
+    attachments: attachments.map(({ objectKey: _objectKey, ...file }) => file),
+  };
+  const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
+    `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
+    [tenantId],
+  );
+  const rules: MailRule[] = ruleRows
+    .filter((row) => row.action === "star" || row.action === "archive" || row.action === "label")
+    .map((row) => ({
+      id: row.id,
+      from: row.from_match,
+      action: row.action as MailRule["action"],
+      label: row.label ?? undefined,
+    }));
+  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  for (const file of attachments) await insertAttachment(db, tenantId, id, file);
+  return { stored: [id] };
+}

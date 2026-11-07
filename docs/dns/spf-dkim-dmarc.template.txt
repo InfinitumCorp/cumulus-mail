@@ -1,0 +1,14 @@
+; Cumulus://Mail DNS template for the Cloudflare zone cumuluscloud.app.
+; Not published. Applying this file is a separate, unapproved step.
+; The web app host is mail.cumuluscloud.app. This file has no MX records.
+
+; SPF. Cloudflare Email Routing's include. -all rejects other senders.
+; https://developers.cloudflare.com/email-routing/setup/email-records/
+cumuluscloud.app. 3600 IN TXT "v=spf1 include:_spf.mx.cloudflare.net -all"
+
+; DKIM. Cloudflare issues the selector in the Email Routing / Email Workers
+; dashboard. The p= value below is a placeholder, not a real public key.
+cfemail._domainkey.cumuluscloud.app. 3600 IN TXT "v=DKIM1; k=rsa; p=REPLACE_WITH_CLOUDFLARE_DKIM_PUBLIC_KEY"
+
+; DMARC. Aggregate and forensic reports stay on the same zone.
+_dmarc.cumuluscloud.app. 3600 IN TXT "v=DMARC1; p=reject; rua=mailto:dmarc@cumuluscloud.app; ruf=mailto:dmarc@cumuluscloud.app; adkim=s; aspf=s; fo=1; pct=100"
