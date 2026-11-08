@@ -44,7 +44,7 @@ test("AES-256-GCM detects tampering and rejects another tenant key", async () =>
   assert.throws(() => openSeal(master, "tenant-b", sealed));
 });
 
-test("the S3 driver matches Drive's options and refuses a live endpoint", () => {
+test("the S3 driver matches Drive's options and refuses a live endpoint", async () => {
   assert.throws(() => createS3Driver({ bucket: "mail", endpoint: "https://abc.supabase.co", loopbackOnly: false }), /Supabase/);
   assert.throws(
     () => createS3Driver({ bucket: "mail", endpoint: "https://s3.amazonaws.com", loopbackOnly: true }),
@@ -62,4 +62,32 @@ test("the S3 driver matches Drive's options and refuses a live endpoint", () => 
   assert.equal(driver.bucket, "cumulus-mail-preview");
   assert.equal(typeof driver.ensureBucket, "function");
   assert.equal(typeof driver.put, "function");
+  assert.equal(driver.client.config.forcePathStyle, true);
+  assert.equal(await driver.client.config.requestChecksumCalculation(), "WHEN_REQUIRED");
+  assert.equal(await driver.client.config.responseChecksumValidation(), "WHEN_REQUIRED");
+});
+
+test("an allowed Supabase Storage endpoint keeps path style and required-only checksums", async () => {
+  const previous = process.env.CUMULUS_ALLOW_SUPABASE;
+  process.env.CUMULUS_ALLOW_SUPABASE = "1";
+  try {
+    const driver = createS3Driver({
+      bucket: "cumulus-mail",
+      endpoint: "https://example.supabase.co/storage/v1/s3",
+      region: "eu-central-1",
+      accessKeyId: "test",
+      secretAccessKey: "test",
+      loopbackOnly: false,
+    });
+    assert.equal(driver.client.config.forcePathStyle, true);
+    assert.equal(await driver.client.config.region(), "eu-central-1");
+    const endpoint = driver.client.config.endpoint;
+    assert.ok(endpoint);
+    assert.equal((await endpoint()).path, "/storage/v1/s3");
+    assert.equal(await driver.client.config.requestChecksumCalculation(), "WHEN_REQUIRED");
+    assert.equal(await driver.client.config.responseChecksumValidation(), "WHEN_REQUIRED");
+  } finally {
+    if (previous === undefined) delete process.env.CUMULUS_ALLOW_SUPABASE;
+    else process.env.CUMULUS_ALLOW_SUPABASE = previous;
+  }
 });

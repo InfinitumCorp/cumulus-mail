@@ -8,14 +8,14 @@ Outbound mail stays held. The inbound worker has no send binding. Do not add one
 
 Deploy the head of branch `cursor/mail-inbound-runtime-5933` (pull request 6).
 
-The application code is commit `fb47aeb1b574803b11f69f72593cb6c0b3e7c5f2`. This document is the only change after that commit. After you fetch the branch, the exact head is:
+After you fetch the branch, the exact head is `git rev-parse HEAD`. It must contain this handoff:
 
 ```sh
 git rev-parse HEAD
-git merge-base --is-ancestor fb47aeb1b574803b11f69f72593cb6c0b3e7c5f2 HEAD
+git merge-base --is-ancestor f597369740e9f97837417b88a034a394d3e84ae8 HEAD
 ```
 
-The ancestor check must succeed. Do not deploy `main` or an older preview commit. Do not deploy from a tree that has uncommitted edits.
+The ancestor check must succeed. Do not deploy `main` or an older preview commit. Do not deploy from a tree that has uncommitted edits. Storage in this handoff is Supabase Storage. Do not use R2.
 
 ## 2. What runs where
 
@@ -27,11 +27,11 @@ The mailbox API is the TanStack Start server functions in `src/lib/mail/api.ts`:
 
 `vite.config.ts` builds that server with Nitro preset `vercel`. That preset does not produce a Cloudflare Worker. For Workers, change the Nitro preset to `cloudflare-module` and deploy that output as the API Worker. Leave the preset change and the deploy to the operator. This handoff does not make that change.
 
-The API reads Postgres through `DATABASE_URL` (`src/lib/db.ts`, package `pg`). On Workers, `pg` cannot open a raw socket to Postgres. Put Hyperdrive in front of the Postgres database and set `DATABASE_URL` to the Hyperdrive connection string before the app reads it. Hyperdrive is the adapter that matches this code.
+The API reads Postgres through `DATABASE_URL` (`src/lib/db.ts`, package `pg`). On Workers, `pg` cannot open a raw socket to Postgres. Use the free Cloudflare Hyperdrive plan in front of the shared Supabase Postgres, and set `DATABASE_URL` to that Hyperdrive binding's connection string before the app reads it. Hyperdrive is the adapter that matches this code. Details are in section 3.
 
-D1 is not a substitute. The schema is Postgres (`cumulus_mail`, migrations `0002` through `0005`, including `create schema` and `timestamptz`). Those files do not run on D1 without a port that this tree does not contain.
+D1 is not a substitute. The schema is Postgres (`cumulus_mail`, including `create schema` and `timestamptz`). Those files do not run on D1 without a port that this tree does not contain.
 
-Apply the migrations with `npm run db:migrate` from a machine that can reach the database. With `DATABASE_URL` unset, that command skips. The embedded PGLite database is only the local fallback. Do not use it for this deploy.
+Do not run `npm run db:migrate` against the shared database until the migrations in section 3 are approved. With `DATABASE_URL` unset, that command skips. The embedded PGLite database is only the local fallback. Do not use it for this deploy.
 
 `VITE_AUTH_ENABLED=false` together with `DATABASE_URL` refuses every request. A real database requires auth on, plus the Better Auth variables in the table below.
 
@@ -48,7 +48,7 @@ The template is not a deploy:
 - no send binding
 - no secrets
 
-`email()` stores a message only when `env.ingest` is set to `{ db, storageFor }` using the same query and storage interface as the API. If `ingest` is missing, the handler throws and stores nothing. The template does not declare that binding. Wire Postgres (through Hyperdrive) and R2 into `ingest` before any mail is attached to the worker. Do not declare an MX or an Email Routing route until the smoke test below has passed.
+`email()` stores a message only when `env.ingest` is set to `{ db, storageFor }` using the same query and storage interface as the API. If `ingest` is missing, the handler throws and stores nothing. The template does not declare that binding. Wire Hyperdrive and Supabase Storage into `ingest` before any mail is attached to the worker. Do not declare an MX or an Email Routing route until the smoke test below has passed.
 
 The handler accepts a recipient only when the address ends with `MAIL_DOMAIN` (default `cumuluscloud.app`). SPF, DKIM, and DMARC run only when `MAIL_AUTH_DNS=live`. Leave that unset for the smoke test so the worker does not query DNS.
 
@@ -58,11 +58,27 @@ The browser UI is the Vite client. It loads the mailbox by calling the API (`get
 
 The web host the app expects is `mail.cumuluscloud.app` (`MAIL_APP_HOST` / `VITE_MAIL_APP_HOST`). A `pages.dev` or workers hostname is enough for the smoke test. Do not add MX to make the UI load.
 
-## 3. R2 storage
+## 3. Supabase Storage and Postgres
 
-Blob bytes use the S3 driver (`MAIL_STORAGE=s3`), which is AWS SDK v3 with path-style keys and checksums set to `WHEN_REQUIRED`. R2 is that driver pointed at Cloudflare's S3 endpoint.
+No R2. Blob bytes and the mailbox database both stay on the free Supabase project. Cloudflare is only Hyperdrive, the API Worker, and the static host.
 
-Create one R2 bucket. Set `MAIL_S3_BUCKET` to its name. If `MAIL_S3_BUCKET` is unset, the code uses `cumulus-mail-preview`. Create the bucket yourself. The app's `ensureBucket()` will create a missing bucket only when the credentials allow it. Prefer creating `cumulus-mail` and setting `MAIL_S3_BUCKET` to that name.
+### Storage
+
+Use the existing S3 driver (`MAIL_STORAGE=s3`). It is AWS SDK v3. For Supabase Storage set:
+
+| Setting | Value |
+| --- | --- |
+| `MAIL_S3_ENDPOINT` | `https://<project>.supabase.co/storage/v1/s3` |
+| `MAIL_S3_REGION` | the project region, for example the region shown for that project |
+| `MAIL_S3_BUCKET` | a private bucket used only by Mail, such as `cumulus-mail` |
+| `CUMULUS_ALLOW_SUPABASE` | `1` |
+| `MAIL_S3_LOOPBACK_ONLY` | unset. `1` refuses every host that is not loopback |
+| Path style | already `forcePathStyle: true`, so the bucket stays on the path under `/storage/v1/s3` |
+| Checksums | already `WHEN_REQUIRED` for both request and response. The default AWS SDK flexible checksums are not accepted by this endpoint |
+
+`<project>` is the Supabase project ref. The driver refuses every `*.supabase.co` host until `CUMULUS_ALLOW_SUPABASE=1`. That flag is the gate. Leave it unset until this project is the one you mean to use. Do not point the endpoint at a second Supabase project.
+
+Create the bucket in the Supabase dashboard as private. Do not rely on `ensureBucket()`. If `MAIL_S3_BUCKET` is unset, the code uses `cumulus-mail-preview`. Set the name explicitly.
 
 Object key, for every attachment and every raw MIME blob:
 
@@ -70,22 +86,40 @@ Object key, for every attachment and every raw MIME blob:
 tenants/<tenantId>/<blobId>
 ```
 
-`tenantId` matches `[A-Za-z0-9_-]{1,80}`. `blobId` is 32 lowercase hex characters. The bytes on R2 are AES-256-GCM ciphertext. The plaintext SHA-256 stays in Postgres. Do not turn on `MAIL_S3_LOOPBACK_ONLY` for R2. That flag allows only `127.0.0.1`, `localhost`, and `[::1]`.
+`tenantId` matches `[A-Za-z0-9_-]{1,80}`. `blobId` is 32 lowercase hex characters. A read for a different tenant id is a different key, so it does not return the object. The bytes in the bucket are AES-256-GCM ciphertext. The plaintext SHA-256 stays in Postgres.
 
-S3 settings for R2:
+The API and `env.ingest.storageFor` must use this same driver and bucket. A blob written by the inbound handler is read by the API.
 
-| Setting | Value |
+The access key and secret are a Supabase Storage S3 key with object read and write on that one bucket. They are `MAIL_S3_ACCESS_KEY_ID` and `MAIL_S3_SECRET_ACCESS_KEY`.
+
+### Database
+
+Hyperdrive's origin is the shared Supabase Postgres pooler, not a new database. Configure Hyperdrive with this origin string. Do not put this string in the Worker. The password stays in Hyperdrive.
+
+```text
+postgresql://postgres.<project-ref>:<database-password>@<pooler-host>:5432/postgres?sslmode=require
+```
+
+`<pooler-host>` is the host Supabase shows for the pooler, such as `aws-0-<region>.pooler.supabase.com` or `aws-1-<region>.pooler.supabase.com`.
+
+Use pooler port **5432** (session mode). Hyperdrive already pools. This app's `pg` pool speaks the extended query protocol, which session mode accepts. Port **6543** is transaction mode. Do not use it. Transaction mode does not support the prepared statements this client sends.
+
+SSL is `sslmode=require`. `src/lib/db.ts` passes that connection string to `pg` and does not disable certificate checks. Do not set `sslmode=disable` or `rejectUnauthorized: false`.
+
+On the Worker, `DATABASE_URL` is the Hyperdrive binding's connection string, not the Supabase URL above.
+
+### Migrations that need approval
+
+Nothing in this handoff applies them. `npm run db:migrate` writes them when `DATABASE_URL` is set. Do not run it until these four files are approved for the shared database:
+
+| File | What it changes |
 | --- | --- |
-| `MAIL_S3_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
-| `MAIL_S3_REGION` | `auto` |
-| `MAIL_S3_BUCKET` | the bucket name you created |
-| Path style | already forced by the driver |
-| Checksums | already `WHEN_REQUIRED` |
-| Access key | an R2 S3 token with object read and write on that bucket |
+| `migrations/0002_cumulus_mail.sql` | Creates schema `cumulus_mail` and the mailbox tables. |
+| `migrations/0003_mail_auth_share.sql` | Adds `messages.auth_json` and `share_grants`. |
+| `migrations/0004_message_metadata.sql` | Adds snippet and header columns and the blind-index tables. |
+| `migrations/0005_profile_and_routes.sql` | Adds `address_routes` and drops the global address index. |
 
-`<ACCOUNT_ID>` is the Cloudflare account id. Do not point this endpoint at `*.supabase.co`. The driver refuses that host unless `CUMULUS_ALLOW_SUPABASE=1`, which this deploy must not set.
-
-The same key layout and the same driver are what the API and `env.ingest.storageFor` must use. A blob written by the inbound handler is read by the API.
+`migrations/auth/0001_auth.sql` is not in that list. The migrator does not apply it unless it is copied into `migrations/`. Approving the four files above does not approve the auth schema.
 
 ## 4. Environment variables
 
@@ -95,14 +129,15 @@ No values belong in this file. Mark secret names as secrets in the Worker and in
 
 | Name | Kind | Role |
 | --- | --- | --- |
-| `DATABASE_URL` | secret | Postgres via Hyperdrive. Required. Auth refuses to start against a real database when sign-in is off. |
+| `DATABASE_URL` | secret | Hyperdrive connection string for the shared Supabase Postgres. Not the pooler URL. Auth refuses to start against a real database when sign-in is off. |
 | `MAIL_BLOB_KEY` | secret | 32 bytes, hex (64 chars) or base64. Per-tenant AES-256-GCM for blobs, subjects, addresses, snippets, headers, display names, signatures, and authentication results. |
-| `MAIL_STORAGE` | plain | `s3` for R2. Unset means local disk, which Workers do not have. |
-| `MAIL_S3_BUCKET` | plain | R2 bucket name. |
-| `MAIL_S3_ENDPOINT` | plain | R2 S3 endpoint. The account id inside it is not a key, but treat the URL as account configuration. |
-| `MAIL_S3_REGION` | plain | `auto` for R2. Unset selects `us-east-1`, which is the wrong region for R2. |
-| `MAIL_S3_ACCESS_KEY_ID` | secret | R2 S3 access key id. |
-| `MAIL_S3_SECRET_ACCESS_KEY` | secret | R2 S3 secret. |
+| `MAIL_STORAGE` | plain | `s3` for Supabase Storage. Unset means local disk, which Workers do not have. |
+| `MAIL_S3_BUCKET` | plain | Private Mail-only bucket name. |
+| `MAIL_S3_ENDPOINT` | plain | `https://<project>.supabase.co/storage/v1/s3`. The project ref in the host is account configuration, not a key. |
+| `MAIL_S3_REGION` | plain | The Supabase project region. Unset selects `us-east-1`. |
+| `MAIL_S3_ACCESS_KEY_ID` | secret | Supabase Storage S3 access key id. |
+| `MAIL_S3_SECRET_ACCESS_KEY` | secret | Supabase Storage S3 secret. |
+| `CUMULUS_ALLOW_SUPABASE` | plain | Must be `1` before the driver will use a `*.supabase.co` endpoint. Unset refuses the host. |
 | `MAIL_DOMAIN` | plain | `cumuluscloud.app`. Also a `[vars]` entry on the inbound worker. |
 | `MAIL_APP_HOST` | plain | `mail.cumuluscloud.app`. Also a `[vars]` entry on the inbound worker. |
 | `VITE_MAIL_DOMAIN` | plain | Same domain, baked into the browser build. |
@@ -123,8 +158,7 @@ No values belong in this file. Mark secret names as secrets in the Worker and in
 | `XAI_API_KEY` | secret | Optional. SCALVS drafts. Mail works without it. |
 | `VITE_STUN_URLS` | plain | Optional WebRTC STUN list. Not used by mail storage. |
 | `MAIL_BLOB_DIR` | plain | Local disk directory. Ignore it when `MAIL_STORAGE=s3`. |
-| `MAIL_S3_LOOPBACK_ONLY` | plain | Must be unset or not `1` for R2. |
-| `CUMULUS_ALLOW_SUPABASE` | plain | Must be unset. `1` would allow a Supabase S3 host. Do not set it. |
+| `MAIL_S3_LOOPBACK_ONLY` | plain | Must be unset or not `1`. `1` refuses the Supabase host. |
 
 ### Not production settings
 
@@ -136,15 +170,17 @@ No values belong in this file. Mark secret names as secrets in the Worker and in
 | `GROK_CONNECTORS_URL` | plain | Preview connectors. Not required for this mailbox. |
 | `GROK_CONNECTOR_ACCESS_TOKEN` | secret | Preview connectors. Do not copy a preview token into this deploy. |
 
-The inbound template's `[vars]` are only `MAIL_DOMAIN` and `MAIL_APP_HOST`. Add `MAIL_AUTH_DNS` there only when you are ready for live DNS. Do not put `MAIL_BLOB_KEY`, `DATABASE_URL`, or the R2 secret in the template file.
+The inbound template's `[vars]` are only `MAIL_DOMAIN` and `MAIL_APP_HOST`. Add `MAIL_AUTH_DNS` there only when you are ready for live DNS. Do not put `MAIL_BLOB_KEY`, `DATABASE_URL`, or the Storage secret in the template file.
 
 ## 5. Smoke test, before any MX
 
-Do this after the API Worker, the static UI, Hyperdrive, and R2 are up, and before Email Routing is attached. Do not add an MX record. Do not apply `docs/dns/spf-dkim-dmarc.template.txt`. Do not set `MAIL_AUTH_DNS`.
+Do this after the API Worker, the static UI, Hyperdrive, and the private Storage bucket exist, and before Email Routing is attached. Do not add an MX record. Do not apply `docs/dns/spf-dkim-dmarc.template.txt`. Do not set `MAIL_AUTH_DNS`.
+
+`node scripts/smoke.mjs` reads environment variables only. With the storage, database, and issuer variables unset, it prints three skip lines and exits 0. It does not contact Supabase or the identity host. CI runs it that way. When those variables are set, the same script writes and deletes one probe object, checks that the other tenant cannot read it, checks the database connection and that the four approved migrations are present, and fetches OIDC discovery. A configured storage run needs `node --experimental-strip-types scripts/smoke.mjs`. Do not point it at a project that has not been approved. This handoff does not run it against a live project.
 
 Use the mailbox address `smoke@cumuluscloud.app`. It is only an address inside the app. The public internet cannot deliver to it until MX exists, which is the point of this test.
 
-1. From a checkout of the head commit, with `DATABASE_URL`, `MAIL_BLOB_KEY`, and the R2 variables exported in the shell and `MAIL_STORAGE=s3`, run `npm run db:migrate`. It must apply `migrations/0002_cumulus_mail.sql` through `migrations/0005_profile_and_routes.sql`.
+1. From a checkout of the head commit, run `node scripts/smoke.mjs` with no Supabase variables and confirm the three skip lines. After the migrations are approved and the bucket exists, export `DATABASE_URL`, `CUMULUS_ALLOW_SUPABASE=1`, `CUMULUS_OIDC_ISSUER`, and the Storage variables, then run `node --experimental-strip-types scripts/smoke.mjs`. Do not run `npm run db:migrate` until section 3 is approved.
 2. Open the UI on the Pages or Workers Assets URL. Sign in. Confirm the mailbox loads and that sending is not required to load it.
 3. Provision `smoke@cumuluscloud.app` by opening that mailbox once through the API (the first read creates it). If the signed-in user is a different address, use that address in step 4 instead, and still do not publish MX.
 4. Inject one message by calling the same `handleEmail` function the Worker exports. Run this from the checkout, with the same environment, and with no `MAIL_AUTH_DNS`:
@@ -188,7 +224,7 @@ EOF
 ```
 
 5. Reload the UI for that mailbox. The inbox must show **Smoke test** and the body `Stored without MX.` A second signed-in mailbox must not show it.
-6. In R2, confirm the new object key is `tenants/<tenantId>/<32 hex chars>` and that the object body is not the plaintext sentence.
+6. In the Supabase bucket, confirm the new object key is `tenants/<tenantId>/<32 hex chars>` and that the object body is not the plaintext sentence.
 7. In Postgres, confirm `cumulus_mail.messages.subject` for that row does not contain `Smoke test`.
 8. Compose from the UI to `outside@example.test`. It must remain in the outbox. The hop detail must be `Held in the outbox. This preview does not send outside Cumulus.` Nothing is transmitted. The inbound worker still has no send binding.
 9. Only after steps 1 through 8 pass, and only as a separate decision, add MX and the records in `docs/dns/spf-dkim-dmarc.template.txt`, then set `MAIL_AUTH_DNS=live` and attach Email Routing to `cumulus-mail-inbound`. This document does not perform that step.
@@ -200,4 +236,4 @@ Outbound mail stays held and disabled.
 - Mail to a non-Cumulus address is stored on the sender's mailbox with status `outbound` and the detail in step 8. It is not sent.
 - The inbound worker template has no send binding and must not gain one.
 - Do not add an Email Routing destination that forwards or sends.
-- Do not set MX in order to "finish" this handoff. MX is allowed only after the smoke test has verified the API, the UI, Postgres, and R2.
+- Do not set MX in order to finish this handoff. MX is allowed only after the smoke test has verified the API, the UI, Postgres, and Supabase Storage.
