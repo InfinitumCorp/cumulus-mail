@@ -111,22 +111,26 @@ export function AccountPanel({
   quotaLabel,
   signature,
   rules,
+  geoRouting = false,
   onClose,
   onAddAlias,
   onSignature,
   onAddRule,
   onRemoveRule,
+  onGeoRouting,
 }: {
   me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
   signature: string;
   rules: MailRule[];
+  geoRouting?: boolean;
   onClose: () => void;
   onAddAlias: (alias: string) => void;
   onSignature: (signature: string) => void;
   onAddRule: (rule: MailRule) => void;
   onRemoveRule: (id: string) => void;
+  onGeoRouting: (enabled: boolean) => void;
 }) {
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
@@ -179,6 +183,23 @@ export function AccountPanel({
                   aria-label="Signature"
                   className="min-h-24 w-full border border-line bg-transparent px-3 py-2 text-sm outline-none"
                 />
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Routing</dt>
+              <dd>
+                <button
+                  type="button"
+                  aria-pressed={geoRouting}
+                  aria-label="Geo routing"
+                  className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink"
+                  onClick={() => onGeoRouting(!geoRouting)}
+                >
+                  {geoRouting ? "On" : "Off"}
+                </button>
+                <p className="mt-2 text-sm text-muted">
+                  Annotates inbound mail with country and site category when the server flag is on. Off leaves delivery unchanged.
+                </p>
               </dd>
             </div>
             <div className="border-b border-line py-4">

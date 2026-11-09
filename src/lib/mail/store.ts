@@ -29,6 +29,7 @@ type MailStore = MailboxSnapshot & {
   addContact: (contact: Contact) => void;
   snooze: (id: string, until: string) => void;
   setSignature: (signature: string) => void;
+  setGeoRouting: (geoRouting: boolean) => void;
   addRule: (rule: MailRule) => void;
   removeRule: (id: string) => void;
   replaceMessages: (messages: MailMessage[]) => void;
@@ -53,6 +54,7 @@ function blank(): MailboxSnapshot {
     contacts: SEED_CONTACTS,
     signature: "Alex Reid\nalex@cumuluscloud.app",
     rules: [],
+    geoRouting: false,
   };
 }
 
@@ -66,6 +68,7 @@ function pick(state: MailStore): MailboxSnapshot {
     contacts: state.contacts,
     signature: state.signature,
     rules: state.rules,
+    geoRouting: state.geoRouting === true,
   };
 }
 
@@ -169,6 +172,9 @@ export const useMail = create<MailStore>((set, get) => ({
   },
   setSignature: (signature) => {
     commit(set, get, { signature });
+  },
+  setGeoRouting: (geoRouting) => {
+    commit(set, get, { geoRouting: geoRouting === true });
   },
   addRule: (rule) => {
     commit(set, get, { rules: [...get().rules, rule] });

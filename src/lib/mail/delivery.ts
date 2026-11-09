@@ -1,3 +1,4 @@
+import { applyGeoHook, domainOf } from "../geo/hook.ts";
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { newId } from "./bytes.ts";
 import { findTenantByAddress } from "./directory.ts";
@@ -51,17 +52,16 @@ async function copyInto(
   const id = await copyId(senderTenant, message.id, destTenant);
   if (await alreadyStored(db, destTenant, id)) return;
   const rules = await rulesFor(db, destTenant);
-  const delivered = applyRules(
-    {
-      ...message,
-      id,
-      folder: "inbox",
-      unread: true,
-      starred: false,
-      delivery: [{ email: message.from.email, status: "inside", detail: "Delivered inside Cumulus." }],
-    },
-    rules,
-  );
+  const copied = {
+    ...message,
+    id,
+    folder: "inbox" as const,
+    unread: true,
+    starred: false,
+    delivery: [{ email: message.from.email, status: "inside" as const, detail: "Delivered inside Cumulus." }],
+  };
+  const routed = await applyGeoHook(db, destTenant, copied, { domain: domainOf(message.from.email) });
+  const delivered = applyRules(routed, rules);
   await insertMessage(db, destTenant, delivered, null);
   for (const [index, file] of files.entries()) {
     const stored = await storageFor(senderTenant).get(file.objectKey);

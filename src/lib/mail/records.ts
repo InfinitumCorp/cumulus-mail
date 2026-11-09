@@ -1,4 +1,4 @@
-import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, Person } from "./model.ts";
+import type { ArchitectTask, Attachment, Contact, GeoAnnotation, MailMessage, MailRule, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
@@ -27,6 +27,7 @@ type MessageRow = {
   auth_json: string | null;
   snippet_enc: string | null;
   headers_enc: string | null;
+  geo_json: string | null;
 };
 
 type AttachmentRow = {
@@ -53,9 +54,27 @@ function storedText(tenantId: string, value: string | null): string {
   return openText(tenantId, value);
 }
 
+function asGeo(value: unknown): GeoAnnotation | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as { country?: unknown; categories?: unknown };
+  const country = typeof row.country === "string" && row.country.trim() ? row.country.trim().slice(0, 32) : null;
+  const categories = Array.isArray(row.categories)
+    ? [
+        ...new Set(
+          row.categories
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim().slice(0, 64))
+            .filter(Boolean),
+        ),
+      ].slice(0, 32)
+    : [];
+  return { country, categories };
+}
+
 export function rowToMessage(row: MessageRow, attachments: Attachment[], tenantId: string): MailMessage {
   const headersRaw = row.headers_enc ? storedText(tenantId, row.headers_enc) : "";
   const headers = headersRaw ? parseJson<Record<string, string>>(headersRaw, {}) : undefined;
+  const geo = row.geo_json ? asGeo(parseJson(openText(tenantId, row.geo_json), null)) : undefined;
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -74,6 +93,7 @@ export function rowToMessage(row: MessageRow, attachments: Attachment[], tenantI
     snoozeUntil: row.snooze_until ?? undefined,
     auth: row.auth_json ? parseJson(openText(tenantId, row.auth_json), undefined) : undefined,
     headers,
+    ...(geo ? { geo } : {}),
   };
 }
 
@@ -110,8 +130,9 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     plan: string;
     quota_gb: number;
     signature: string;
+    geo_routing: boolean;
   }>(
-    `select address, display_name, cid, plan, quota_gb, signature
+    `select address, display_name, cid, plan, quota_gb, signature, geo_routing
      from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
@@ -121,7 +142,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   const messages = await db.query<MessageRow>(
     `select id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body, sent_at,
             unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-            snippet_enc, headers_enc
+            snippet_enc, headers_enc, geo_json
      from cumulus_mail.messages where tenant_id = $1`,
     [tenantId],
   );
@@ -173,6 +194,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     })),
     contacts,
     signature: openText(tenantId, box.signature),
+    geoRouting: box.geo_routing === true,
     rules: rules
       .filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label")
       .map((rule) => ({
@@ -210,9 +232,9 @@ export async function insertMessage(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
        sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-       snippet_enc, headers_enc
+       snippet_enc, headers_enc, geo_json
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -232,7 +254,8 @@ export async function insertMessage(
        raw_key = coalesce(excluded.raw_key, cumulus_mail.messages.raw_key),
        auth_json = excluded.auth_json,
        snippet_enc = excluded.snippet_enc,
-       headers_enc = excluded.headers_enc`,
+       headers_enc = excluded.headers_enc,
+       geo_json = excluded.geo_json`,
     [
       tenantId,
       message.id,
@@ -254,6 +277,15 @@ export async function insertMessage(
       message.auth ? sealText(tenantId, JSON.stringify(message.auth)) : null,
       sealText(tenantId, snippet),
       headerJson ? sealText(tenantId, headerJson) : null,
+      message.geo
+        ? sealText(
+            tenantId,
+            JSON.stringify({
+              country: message.geo.country,
+              categories: message.geo.categories,
+            }),
+          )
+        : null,
     ],
   );
   await db.query(`delete from cumulus_mail.message_blind where tenant_id = $1 and message_id = $2`, [
@@ -281,7 +313,7 @@ export async function readMessages(db: MailQuery, tenantId: string): Promise<Mai
   const messages = await db.query<MessageRow>(
     `select id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body, sent_at,
             unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-            snippet_enc, headers_enc
+            snippet_enc, headers_enc, geo_json
      from cumulus_mail.messages where tenant_id = $1`,
     [tenantId],
   );
@@ -354,8 +386,8 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.rules where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
     await db.query(
-      `update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`,
-      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000))],
+      `update cumulus_mail.mailboxes set signature = $2, geo_routing = $3 where tenant_id = $1`,
+      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000)), snapshot.geoRouting === true],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);

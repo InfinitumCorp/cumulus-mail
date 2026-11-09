@@ -128,6 +128,7 @@ export async function writeSnapshot(
     messages,
     aliases,
     signature: snapshot.signature.slice(0, 4000),
+    geoRouting: snapshot.geoRouting === true,
     rules: snapshot.rules.filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label"),
   };
   const before = await blobIds(db, tenantId);

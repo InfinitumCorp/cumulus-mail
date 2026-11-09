@@ -1,3 +1,4 @@
+import { applyGeoHook, domainOf } from "../geo/hook.ts";
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
 import type { TenantStorage } from "./delivery.ts";
@@ -24,6 +25,7 @@ export async function ingestInboundEmail(
   storageFor: TenantStorage,
   message: InboundEmail,
   resolver: DNSResolver = emptyResolver,
+  hookEnv?: { INFINITUM_GEO_ENABLED?: string },
 ): Promise<{ stored: string[] }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
@@ -64,9 +66,10 @@ export async function ingestInboundEmail(
   const from = parsed.from.email
     ? parsed.from
     : { name: message.from.split("@")[0] || message.from, email: message.from };
+  const senderIp = "192.0.2.10";
   const auth = await authenticateInbound(
     message.raw,
-    { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
+    { sender: message.from, ip: senderIp, helo: "inbound.example.test" },
     resolver,
   );
   const draft: MailMessage = {
@@ -98,7 +101,14 @@ export async function ingestInboundEmail(
       action: row.action as MailRule["action"],
       label: row.label ?? undefined,
     }));
-  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  const annotated = await applyGeoHook(
+    db,
+    tenantId,
+    draft,
+    { ip: senderIp, domain: domainOf(from.email) },
+    { explicitEnv: hookEnv?.INFINITUM_GEO_ENABLED },
+  );
+  await insertMessage(db, tenantId, applyRules(annotated, rules), rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
   return { stored: [id] };
 }

@@ -70,6 +70,8 @@ test("inbound mail is stored for the envelope recipient only", async () => {
   const message = ada.messages.find((item) => item.subject === "Notes");
   assert.ok(message);
   assert.equal(message.body, "Hello from outside.");
+  assert.equal(message.geo, undefined);
+  assert.equal(ada.geoRouting, false);
   const file = message.attachments?.[0];
   assert.ok(file?.id);
   const stored = await readAttachment(db, storageFor("tenant-ada-in"), "tenant-ada-in", message.id, file.id);
