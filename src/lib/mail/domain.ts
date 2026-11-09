@@ -4,11 +4,13 @@ export const DEFAULT_MAIL_DOMAIN = "cumuluscloud.app";
 /** Default web host for the mail app. Override with MAIL_APP_HOST or VITE_MAIL_APP_HOST. */
 export const DEFAULT_MAIL_APP_HOST = "mail.cumuluscloud.app";
 
-function envValue(name: string): string | undefined {
-  const fromProcess = typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined;
+function envValue(name: "MAIL_DOMAIN" | "MAIL_APP_HOST"): string | undefined {
+  const fromProcess = typeof process !== "undefined" ? process.env[name]?.trim() : undefined;
   if (fromProcess) return fromProcess;
-  const meta = import.meta as { env?: Record<string, string | undefined> };
-  return meta.env?.[name]?.trim() || meta.env?.[`VITE_${name}`]?.trim() || undefined;
+  if (name === "MAIL_DOMAIN") {
+    return import.meta.env?.MAIL_DOMAIN?.trim() || import.meta.env?.VITE_MAIL_DOMAIN?.trim() || undefined;
+  }
+  return import.meta.env?.MAIL_APP_HOST?.trim() || import.meta.env?.VITE_MAIL_APP_HOST?.trim() || undefined;
 }
 
 function hostName(value: string, fallback: string): string {

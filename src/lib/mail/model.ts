@@ -18,6 +18,12 @@ export type MailAuth = {
   disposition: "deliver" | "quarantine";
 };
 
+/** Present only when geo routing is on for this message. Absent means the feature was off. */
+export type GeoAnnotation = {
+  country: string | null;
+  categories: string[];
+};
+
 export type BoxId = FolderId | "starred" | "outbox" | "snoozed";
 
 export type RuleAction = "star" | "archive" | "label";
@@ -64,6 +70,8 @@ export type MailMessage = {
   auth?: MailAuth;
   /** MIME headers. Stored encrypted. Absent on messages composed in the app. */
   headers?: Record<string, string>;
+  /** Country and site category. Omitted when geo routing is off. */
+  geo?: GeoAnnotation;
 };
 
 export type ArchitectTask = {

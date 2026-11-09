@@ -159,6 +159,12 @@ function Opened({
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
           </p>
+          {message.geo ? (
+            <p className="mt-2 font-mono text-xs text-muted">
+              Geo {message.geo.country ?? "unknown"}
+              {message.geo.categories.length ? ` · ${message.geo.categories.join(", ")}` : ""}
+            </p>
+          ) : null}
           {message.delivery?.length ? (
             <ul className="mt-3 space-y-1">
               {message.delivery.map((hop) => (

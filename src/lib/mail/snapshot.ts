@@ -25,6 +25,8 @@ export type MailboxSnapshot = {
   contacts: Contact[];
   signature: string;
   rules: MailRule[];
+  /** Mailbox preference. Missing means off, which is the default. */
+  geoRouting?: boolean;
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);

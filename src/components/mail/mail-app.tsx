@@ -51,6 +51,8 @@ export function MailApp() {
   const contacts = useMail((s) => s.contacts);
   const signature = useMail((s) => s.signature);
   const rules = useMail((s) => s.rules);
+  const geoRouting = useMail((s) => s.geoRouting);
+  const setGeoRouting = useMail((s) => s.setGeoRouting);
   const me = useMail((s) => s.me);
   const syncError = useMail((s) => s.syncError);
   const hydrate = useMail((s) => s.hydrate);
@@ -660,11 +662,13 @@ export function MailApp() {
           quotaLabel={quota(messages, me.quotaGb).label}
           signature={signature}
           rules={rules}
+          geoRouting={geoRouting === true}
           onClose={() => setAccountOpen(false)}
           onAddAlias={addAlias}
           onSignature={setSignature}
           onAddRule={addRule}
           onRemoveRule={removeRule}
+          onGeoRouting={setGeoRouting}
         />
       ) : null}
       {undo ? (

@@ -9,6 +9,7 @@ dist
 .env
 .env.*
 .data
+# Fetched v2fly geoip.dat and geosite.dat live under .data/geo. Do not commit them.
 .DS_Store
 AGENTS.md
 .node_modules.lock

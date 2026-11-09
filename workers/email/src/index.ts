@@ -30,6 +30,11 @@ export type EmailEnv = {
   MAIL_AUTH_DNS?: string;
   /** Fixture resolver for tests. Production leaves this unset. */
   resolver?: DNSResolver;
+  /**
+   * Opt-in geo annotation. Unset leaves mail unchanged.
+   * Accepted values that turn it on: 1, true, on, yes.
+   */
+  INFINITUM_GEO_ENABLED?: string;
 };
 
 async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
@@ -52,7 +57,9 @@ export async function handleEmail(message: EmailMessage, env: EmailEnv): Promise
     to: recipient,
     raw: await rawBytes(message.raw),
   };
-  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, env.resolver ?? resolverFromEnv(env));
+  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, env.resolver ?? resolverFromEnv(env), {
+    INFINITUM_GEO_ENABLED: env.INFINITUM_GEO_ENABLED,
+  });
 }
 
 export default {
