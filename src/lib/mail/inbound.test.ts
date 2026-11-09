@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { syntheticGeoDatasets } from "../geo/sample.ts";
 import { readAttachment } from "./mailbox.ts";
 import { parseMime } from "./mime.ts";
 import { ingestInboundEmail } from "./inbound.ts";
@@ -30,9 +31,9 @@ const RAW = [
   "",
   "Hello from outside.",
   "--abc",
-  "Content-Type: text/plain; name=\"note.txt\"",
+  'Content-Type: text/plain; name="note.txt"',
   "Content-Transfer-Encoding: base64",
-  "Content-Disposition: attachment; filename=\"note.txt\"",
+  'Content-Disposition: attachment; filename="note.txt"',
   "",
   "aGVsbG8=",
   "--abc--",
@@ -50,8 +51,16 @@ test("MIME parsing keeps the text and the attachment bytes", () => {
 
 test("inbound mail is stored for the envelope recipient only", async () => {
   const { db, storageFor } = harness;
-  await openMailbox(db, "tenant-ada-in", profile("tenant-ada-in", "ada.in@cumuluscloud.app", "Ada"));
-  await openMailbox(db, "tenant-bea-in", profile("tenant-bea-in", "bea.in@cumuluscloud.app", "Bea"));
+  await openMailbox(
+    db,
+    "tenant-ada-in",
+    profile("tenant-ada-in", "ada.in@cumuluscloud.app", "Ada"),
+  );
+  await openMailbox(
+    db,
+    "tenant-bea-in",
+    profile("tenant-bea-in", "bea.in@cumuluscloud.app", "Bea"),
+  );
   const raw = new TextEncoder().encode(RAW);
   const first = await ingestInboundEmail(db, storageFor, {
     from: "mira.chen@cumuluscloud.app",
@@ -70,9 +79,18 @@ test("inbound mail is stored for the envelope recipient only", async () => {
   const message = ada.messages.find((item) => item.subject === "Notes");
   assert.ok(message);
   assert.equal(message.body, "Hello from outside.");
+  assert.equal(message.headers?.["x-infinitum-geo-country"], undefined);
+  assert.equal(message.headers?.["x-infinitum-geo-site"], undefined);
+  assert.equal(message.folder, "inbox");
   const file = message.attachments?.[0];
   assert.ok(file?.id);
-  const stored = await readAttachment(db, storageFor("tenant-ada-in"), "tenant-ada-in", message.id, file.id);
+  const stored = await readAttachment(
+    db,
+    storageFor("tenant-ada-in"),
+    "tenant-ada-in",
+    message.id,
+    file.id,
+  );
   assert.equal(new TextDecoder().decode(stored?.bytes), "hello");
   const rawRows = await db.query<{ raw_key: string }>(
     `select raw_key from cumulus_mail.messages where tenant_id = $1 and id = $2`,
@@ -83,11 +101,55 @@ test("inbound mail is stored for the envelope recipient only", async () => {
   assert.equal(await storageFor("tenant-bea-in").get(rawRows[0]?.raw_key ?? ""), null);
 
   const bea = await readSnapshot(db, "tenant-bea-in");
-  assert.equal(bea.messages.some((item) => item.subject === "Notes"), false);
+  assert.equal(
+    bea.messages.some((item) => item.subject === "Notes"),
+    false,
+  );
   const missing = await ingestInboundEmail(db, storageFor, {
     from: "mira.chen@cumuluscloud.app",
     to: "nobody@cumuluscloud.app",
     raw,
   });
   assert.deepEqual(missing.stored, []);
+});
+
+test("inbound geo annotation stays off the stored message unless the flag is on", async () => {
+  const { db, storageFor } = harness;
+  await openMailbox(
+    db,
+    "tenant-ada-in",
+    profile("tenant-ada-in", "ada.in@cumuluscloud.app", "Ada"),
+  );
+  const raw = new TextEncoder().encode(
+    [
+      "From: Mira Chen <mira.chen@cumuluscloud.app>",
+      "To: Ada <ada.in@cumuluscloud.app>",
+      "Subject: Geo note",
+      "Content-Type: text/plain",
+      "",
+      "Annotated.",
+    ].join("\r\n"),
+  );
+  const logs: string[] = [];
+  const stored = await ingestInboundEmail(
+    db,
+    storageFor,
+    { from: "mira.chen@cumuluscloud.app", to: "ada.in@cumuluscloud.app", raw },
+    undefined,
+    {
+      env: { INFINITUM_GEO_ENABLED: "1" },
+      datasets: syntheticGeoDatasets(),
+      log: (line) => logs.push(line),
+    },
+  );
+  assert.equal(stored.stored.length, 1);
+  const ada = await readSnapshot(db, "tenant-ada-in");
+  const message = ada.messages.find((item) => item.subject === "Geo note");
+  assert.ok(message);
+  assert.equal(message.folder, "inbox");
+  assert.equal(message.auth?.disposition, "deliver");
+  assert.equal(message.auth?.policy, "none");
+  assert.equal(message.headers?.["x-infinitum-geo-country"], "US");
+  assert.equal(message.headers?.["x-infinitum-geo-site"], "cumulus");
+  assert.match(logs[0] ?? "", /country=US/);
 });

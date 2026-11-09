@@ -9,6 +9,7 @@ dist
 .env
 .env.*
 .data
+data/geo/
 .DS_Store
 AGENTS.md
 .node_modules.lock

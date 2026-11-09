@@ -1,3 +1,4 @@
+import { annotateMessage, emailDomain, type GeoHookOptions } from "../geo/hook.ts";
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
 import type { TenantStorage } from "./delivery.ts";
@@ -15,6 +16,9 @@ export type InboundEmail = {
   raw: Uint8Array;
 };
 
+/** Same documentation address passed to SPF. Geo annotation uses it and does not change that check. */
+const INBOUND_CLIENT_IP = "192.0.2.10";
+
 /**
  * Store one inbound message for the local mailbox that owns the envelope
  * recipient. A tenant id in the MIME headers is ignored.
@@ -24,6 +28,7 @@ export async function ingestInboundEmail(
   storageFor: TenantStorage,
   message: InboundEmail,
   resolver: DNSResolver = emptyResolver,
+  geo?: GeoHookOptions,
 ): Promise<{ stored: string[] }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
@@ -66,7 +71,7 @@ export async function ingestInboundEmail(
     : { name: message.from.split("@")[0] || message.from, email: message.from };
   const auth = await authenticateInbound(
     message.raw,
-    { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
+    { sender: message.from, ip: INBOUND_CLIENT_IP, helo: "inbound.example.test" },
     resolver,
   );
   const draft: MailMessage = {
@@ -74,7 +79,9 @@ export async function ingestInboundEmail(
     threadId: id,
     folder: auth.disposition === "quarantine" ? "quarantine" : "inbox",
     from,
-    to: parsed.to.length ? parsed.to : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
+    to: parsed.to.length
+      ? parsed.to
+      : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
     cc: parsed.cc,
     subject: parsed.subject || "(no subject)",
     body: parsed.text.slice(0, 1_000_000),
@@ -86,10 +93,19 @@ export async function ingestInboundEmail(
     auth,
     headers: parsed.headers,
   };
-  const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
-    `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
-    [tenantId],
+  const annotated = await annotateMessage(
+    draft,
+    { ip: INBOUND_CLIENT_IP, domain: emailDomain(from.email) },
+    geo,
   );
+  const ruleRows = await db.query<{
+    id: string;
+    from_match: string;
+    action: string;
+    label: string | null;
+  }>(`select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`, [
+    tenantId,
+  ]);
   const rules: MailRule[] = ruleRows
     .filter((row) => row.action === "star" || row.action === "archive" || row.action === "label")
     .map((row) => ({
@@ -98,7 +114,7 @@ export async function ingestInboundEmail(
       action: row.action as MailRule["action"],
       label: row.label ?? undefined,
     }));
-  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  await insertMessage(db, tenantId, applyRules(annotated, rules), rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
   return { stored: [id] };
 }

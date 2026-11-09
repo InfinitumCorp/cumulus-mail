@@ -1,3 +1,4 @@
+import { annotateDeliveryDetail, type GeoHookOptions } from "../geo/hook.ts";
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { newId } from "./bytes.ts";
 import { findTenantByAddress } from "./directory.ts";
@@ -5,23 +6,40 @@ import { sealText } from "./field-crypto.ts";
 import { applyRules, isCumulus } from "./logic.ts";
 import type { DeliveryHop, MailMessage, MailRule, Person } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, writeDelivery, type StoredAttachment } from "./records.ts";
+import {
+  insertAttachment,
+  insertMessage,
+  loadAttachmentMap,
+  readMessages,
+  writeDelivery,
+  type StoredAttachment,
+} from "./records.ts";
 import { createSuppressionList } from "./suppression.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
 
 const HELD = "Held in the outbox. This preview does not send outside Cumulus.";
 
-async function copyId(senderTenant: string, messageId: string, destTenant: string): Promise<string> {
-  const hex = await sha256Hex(new TextEncoder().encode(`${senderTenant}\n${messageId}\n${destTenant}`));
+async function copyId(
+  senderTenant: string,
+  messageId: string,
+  destTenant: string,
+): Promise<string> {
+  const hex = await sha256Hex(
+    new TextEncoder().encode(`${senderTenant}\n${messageId}\n${destTenant}`),
+  );
   return `d-${hex.slice(0, 32)}`;
 }
 
 async function rulesFor(db: MailQuery, tenantId: string): Promise<MailRule[]> {
-  const rows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
-    `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
-    [tenantId],
-  );
+  const rows = await db.query<{
+    id: string;
+    from_match: string;
+    action: string;
+    label: string | null;
+  }>(`select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`, [
+    tenantId,
+  ]);
   return rows
     .filter((row) => row.action === "star" || row.action === "archive" || row.action === "label")
     .map((row) => ({
@@ -58,7 +76,9 @@ async function copyInto(
       folder: "inbox",
       unread: true,
       starred: false,
-      delivery: [{ email: message.from.email, status: "inside", detail: "Delivered inside Cumulus." }],
+      delivery: [
+        { email: message.from.email, status: "inside", detail: "Delivered inside Cumulus." },
+      ],
     },
     rules,
   );
@@ -96,6 +116,7 @@ export async function deliverMessage(
   storageFor: TenantStorage,
   senderTenant: string,
   message: MailMessage,
+  geoOptions?: GeoHookOptions,
 ): Promise<DeliveryHop[]> {
   const suppressions = createSuppressionList(db, senderTenant);
   const files = (await loadAttachmentMap(db, senderTenant)).get(message.id) ?? [];
@@ -107,27 +128,61 @@ export async function deliverMessage(
         `insert into cumulus_mail.bounces (
            tenant_id, id, message_id, recipient, action, status, diagnostic
          ) values ($1,$2,$3,$4,'failed','5.7.1',$5)`,
-        [senderTenant, id, message.id, sealText(senderTenant, person.email), "Recipient is on the suppression list"],
+        [
+          senderTenant,
+          id,
+          message.id,
+          sealText(senderTenant, person.email),
+          "Recipient is on the suppression list",
+        ],
       );
-      hops.push({ email: person.email, status: "outbound", detail: "Suppressed. Not delivered." });
+      hops.push({
+        email: person.email,
+        status: "outbound",
+        detail: await annotateDeliveryDetail(
+          "Suppressed. Not delivered.",
+          person.email,
+          geoOptions,
+        ),
+      });
       continue;
     }
     if (!isCumulus(person.email)) {
-      hops.push({ email: person.email, status: "outbound", detail: HELD });
+      hops.push({
+        email: person.email,
+        status: "outbound",
+        detail: await annotateDeliveryDetail(HELD, person.email, geoOptions),
+      });
       continue;
     }
     const dest = await findTenantByAddress(db, person.email);
     if (!dest) {
-      hops.push({ email: person.email, status: "inside", detail: "No Cumulus mailbox for this address. Not delivered." });
+      hops.push({
+        email: person.email,
+        status: "inside",
+        detail: await annotateDeliveryDetail(
+          "No Cumulus mailbox for this address. Not delivered.",
+          person.email,
+          geoOptions,
+        ),
+      });
       continue;
     }
     await copyInto(db, storageFor, senderTenant, dest, message, files);
-    hops.push({ email: person.email, status: "inside", detail: "Delivered inside Cumulus." });
+    hops.push({
+      email: person.email,
+      status: "inside",
+      detail: await annotateDeliveryDetail("Delivered inside Cumulus.", person.email, geoOptions),
+    });
   }
   return hops;
 }
 
-export async function deliverPending(db: MailQuery, storageFor: TenantStorage, senderTenant: string): Promise<void> {
+export async function deliverPending(
+  db: MailQuery,
+  storageFor: TenantStorage,
+  senderTenant: string,
+): Promise<void> {
   const pending = await db.query<{ id: string }>(
     `select id from cumulus_mail.messages m
      where m.tenant_id = $1 and m.folder = 'sent' and not exists (
@@ -138,7 +193,11 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
   );
   if (pending.length === 0) return;
   const snapshotMessages = await readMessages(db, senderTenant);
-  const byId = new Map(snapshotMessages.filter((message) => message.folder === "sent").map((message) => [message.id, message]));
+  const byId = new Map(
+    snapshotMessages
+      .filter((message) => message.folder === "sent")
+      .map((message) => [message.id, message]),
+  );
   for (const item of pending) {
     const message = byId.get(item.id);
     if (!message) continue;
@@ -151,6 +210,9 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
   }
 }
 
-export async function putBytes(storage: TenantBlobs, body: Uint8Array): Promise<{ blobId: string; sha256: string }> {
+export async function putBytes(
+  storage: TenantBlobs,
+  body: Uint8Array,
+): Promise<{ blobId: string; sha256: string }> {
   return storage.put(body);
 }

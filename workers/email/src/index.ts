@@ -30,6 +30,13 @@ export type EmailEnv = {
   MAIL_AUTH_DNS?: string;
   /** Fixture resolver for tests. Production leaves this unset. */
   resolver?: DNSResolver;
+  /**
+   * Set to 1, true, yes, or on to annotate the sender country and site category.
+   * Default off. Does not change whether the message is stored or quarantined.
+   */
+  INFINITUM_GEO_ENABLED?: string;
+  /** Directory with geoip.dat and geosite.dat. Defaults to data/geo under the process working directory. */
+  INFINITUM_GEO_DIR?: string;
 };
 
 async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
@@ -37,9 +44,14 @@ async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
   return new Uint8Array(await new Response(raw).arrayBuffer());
 }
 
-export async function handleEmail(message: EmailMessage, env: EmailEnv): Promise<{ stored: string[] }> {
+export async function handleEmail(
+  message: EmailMessage,
+  env: EmailEnv,
+): Promise<{ stored: string[] }> {
   if (!env.ingest) {
-    throw new Error("Cumulus mail inbound ingest is not configured. This worker template is not deployed.");
+    throw new Error(
+      "Cumulus mail inbound ingest is not configured. This worker template is not deployed.",
+    );
   }
   const domain = (env.MAIL_DOMAIN || "cumuluscloud.app").trim().toLowerCase();
   const bracket = /<([^>]+)>/.exec(message.to);
@@ -52,7 +64,18 @@ export async function handleEmail(message: EmailMessage, env: EmailEnv): Promise
     to: recipient,
     raw: await rawBytes(message.raw),
   };
-  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, env.resolver ?? resolverFromEnv(env));
+  return ingestInboundEmail(
+    env.ingest.db,
+    env.ingest.storageFor,
+    inbound,
+    env.resolver ?? resolverFromEnv(env),
+    {
+      env: {
+        INFINITUM_GEO_ENABLED: env.INFINITUM_GEO_ENABLED,
+        INFINITUM_GEO_DIR: env.INFINITUM_GEO_DIR,
+      },
+    },
+  );
 }
 
 export default {
