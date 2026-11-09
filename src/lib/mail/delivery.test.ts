@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { bytesToBase64 } from "./bytes.ts";
+import { openText } from "./field-crypto.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
+import { createSuppressionList } from "./suppression.ts";
 import { readSnapshot } from "./records.ts";
 import { createHarness, profile } from "./test-support.ts";
 import type { MailboxSnapshot } from "./snapshot.ts";
@@ -88,10 +90,7 @@ test("a suppressed recipient is not delivered", async () => {
   const bea = profile("sup-bea", "sup.bea@cumuluscloud.app", "Bea");
   await openMailbox(db, "sup-ada", ada);
   await openMailbox(db, "sup-bea", bea);
-  await db.query(
-    `insert into cumulus_mail.suppressions (tenant_id, address, reason) values ($1, $2, 'abuse')`,
-    ["sup-ada", "sup.bea@cumuluscloud.app"],
-  );
+  await createSuppressionList(db, "sup-ada").add("sup.bea@cumuluscloud.app", "abuse");
   const sent = await writeSnapshot(db, storageFor, "sup-ada", snapshot(ada, [
     {
       id: "m-sup-1",
@@ -115,5 +114,6 @@ test("a suppressed recipient is not delivered", async () => {
     `select recipient from cumulus_mail.bounces where tenant_id = $1`,
     ["sup-ada"],
   );
-  assert.equal(bounces.some((row) => row.recipient === "sup.bea@cumuluscloud.app"), true);
+  assert.equal(bounces.some((row) => openText("sup-ada", row.recipient) === "sup.bea@cumuluscloud.app"), true);
+  assert.equal(bounces.some((row) => row.recipient.includes("sup.bea@cumuluscloud.app")), false);
 });

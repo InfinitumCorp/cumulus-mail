@@ -84,6 +84,7 @@ export async function ingestInboundEmail(
     labels: [],
     attachments: attachments.map(({ objectKey: _objectKey, ...file }) => file),
     auth,
+    headers: parsed.headers,
   };
   const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
     `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
