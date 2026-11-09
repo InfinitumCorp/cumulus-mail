@@ -111,22 +111,26 @@ export function AccountPanel({
   quotaLabel,
   signature,
   rules,
+  geoRouting = false,
   onClose,
   onAddAlias,
   onSignature,
   onAddRule,
   onRemoveRule,
+  onGeoRouting,
 }: {
   me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
   signature: string;
   rules: MailRule[];
+  geoRouting?: boolean;
   onClose: () => void;
   onAddAlias: (alias: string) => void;
   onSignature: (signature: string) => void;
   onAddRule: (rule: MailRule) => void;
   onRemoveRule: (id: string) => void;
+  onGeoRouting?: (geoRouting: boolean) => void;
 }) {
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
@@ -221,6 +225,24 @@ export function AccountPanel({
                   </button>
                 </form>
               </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted">Geo routing</dt>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={geoRouting}
+                  aria-label="Geo routing"
+                  className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink"
+                  onClick={() => onGeoRouting?.(!geoRouting)}
+                >
+                  {geoRouting ? "On" : "Off"}
+                </button>
+              </div>
+              <p className="mt-2 text-sm text-muted">
+                Off by default. When cyber geo routing is enabled on the server, this switch annotates inbound mail with country and site category. Delivery does not change.
+              </p>
             </div>
           </dl>
           <p className="mt-6 text-sm leading-normal text-muted">

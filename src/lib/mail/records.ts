@@ -1,4 +1,5 @@
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, Person } from "./model.ts";
+import { mailboxGeoEnabled } from "../geo/policy.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
@@ -110,8 +111,9 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     plan: string;
     quota_gb: number;
     signature: string;
+    geo_routing: unknown;
   }>(
-    `select address, display_name, cid, plan, quota_gb, signature
+    `select address, display_name, cid, plan, quota_gb, signature, geo_routing
      from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
@@ -173,6 +175,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     })),
     contacts,
     signature: openText(tenantId, box.signature),
+    geoRouting: mailboxGeoEnabled(box.geo_routing),
     rules: rules
       .filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label")
       .map((rule) => ({
@@ -354,8 +357,8 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.rules where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
     await db.query(
-      `update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`,
-      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000))],
+      `update cumulus_mail.mailboxes set signature = $2, geo_routing = $3 where tenant_id = $1`,
+      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000)), snapshot.geoRouting === true],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);

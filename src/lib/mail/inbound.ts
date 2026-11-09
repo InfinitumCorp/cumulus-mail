@@ -1,3 +1,4 @@
+import { applyGeoPolicy, infinitumGeoEnabled, mailboxGeoEnabled } from "../geo/policy.ts";
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
 import type { TenantStorage } from "./delivery.ts";
@@ -13,6 +14,8 @@ export type InboundEmail = {
   from: string;
   to: string;
   raw: Uint8Array;
+  /** Used only for the optional geo annotation. Authentication keeps its own envelope address. */
+  receivedIp?: string;
 };
 
 /**
@@ -86,6 +89,7 @@ export async function ingestInboundEmail(
     auth,
     headers: parsed.headers,
   };
+  const annotated = await annotateInbound(db, tenantId, draft, message.receivedIp);
   const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
     `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
     [tenantId],
@@ -98,7 +102,37 @@ export async function ingestInboundEmail(
       action: row.action as MailRule["action"],
       label: row.label ?? undefined,
     }));
-  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  await insertMessage(db, tenantId, applyRules(annotated, rules), rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
   return { stored: [id] };
+}
+
+/**
+ * Country and site-category labels, only when INFINITUM_GEO_ENABLED is on and
+ * the mailbox geo-routing switch is on. Otherwise the draft is returned as-is.
+ */
+async function annotateInbound(
+  db: MailQuery,
+  tenantId: string,
+  message: MailMessage,
+  receivedIp: string | undefined,
+): Promise<MailMessage> {
+  if (!infinitumGeoEnabled()) return message;
+  const prefs = await db.query<{ geo_routing: unknown }>(
+    `select geo_routing from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  if (!mailboxGeoEnabled(prefs[0]?.geo_routing)) return message;
+  const { geoDataDir, readGeoDatasets } = await import("../geo/runtime.ts");
+  const datasets = readGeoDatasets(geoDataDir());
+  if (!datasets) return message;
+  return applyGeoPolicy(message, {
+    envEnabled: true,
+    userEnabled: true,
+    ip: receivedIp ?? null,
+    domain: message.from.email,
+    geoip: datasets.geoip,
+    geosite: datasets.geosite,
+    log: (line) => console.info(line),
+  });
 }

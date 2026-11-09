@@ -51,6 +51,7 @@ export function MailApp() {
   const contacts = useMail((s) => s.contacts);
   const signature = useMail((s) => s.signature);
   const rules = useMail((s) => s.rules);
+  const geoRouting = useMail((s) => s.geoRouting);
   const me = useMail((s) => s.me);
   const syncError = useMail((s) => s.syncError);
   const hydrate = useMail((s) => s.hydrate);
@@ -66,6 +67,7 @@ export function MailApp() {
   const addContact = useMail((s) => s.addContact);
   const snooze = useMail((s) => s.snooze);
   const setSignature = useMail((s) => s.setSignature);
+  const setGeoRouting = useMail((s) => s.setGeoRouting);
   const addRule = useMail((s) => s.addRule);
   const removeRule = useMail((s) => s.removeRule);
   const replaceMessages = useMail((s) => s.replaceMessages);
@@ -660,9 +662,11 @@ export function MailApp() {
           quotaLabel={quota(messages, me.quotaGb).label}
           signature={signature}
           rules={rules}
+          geoRouting={geoRouting === true}
           onClose={() => setAccountOpen(false)}
           onAddAlias={addAlias}
           onSignature={setSignature}
+          onGeoRouting={setGeoRouting}
           onAddRule={addRule}
           onRemoveRule={removeRule}
         />

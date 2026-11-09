@@ -9,6 +9,9 @@ dist
 .env
 .env.*
 .data
+# Fetched v2fly geo datasets. data/geo/geo.lock.json stays in git.
+data/geo/*.dat
+data/geo/*.partial
 .DS_Store
 AGENTS.md
 .node_modules.lock

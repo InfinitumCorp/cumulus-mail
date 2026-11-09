@@ -25,6 +25,8 @@ export type MailboxSnapshot = {
   contacts: Contact[];
   signature: string;
   rules: MailRule[];
+  /** Cyber geo routing for this mailbox. Absent or false leaves mail unlabeled. */
+  geoRouting?: boolean;
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);
