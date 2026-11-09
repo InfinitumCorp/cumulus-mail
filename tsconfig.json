@@ -33,5 +33,6 @@
     "src",
     "server",
     "workers"
-  ]
+  ],
+  "exclude": ["src/i18n/*.js"]
 }

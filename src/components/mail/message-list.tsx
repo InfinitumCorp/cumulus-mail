@@ -144,10 +144,10 @@ export function MessageList({
                       <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at)}</span>
                     </span>
                     <span className={`mt-1 flex items-baseline gap-2 text-sm ${unread ? "text-ink" : "text-muted"}`}>
-                      <span className="truncate">{message.subject}</span>
+                      <span translate="no" className="truncate">{message.subject}</span>
                       {threadCount > 1 ? <span className="shrink-0 font-mono text-xs">{threadCount}</span> : null}
                     </span>
-                    <span className="mt-1 block truncate text-sm text-muted">{snippet}</span>
+                    <span translate="no" className="mt-1 block truncate text-sm text-muted">{snippet}</span>
                   </span>
                 </button>
                 <button
