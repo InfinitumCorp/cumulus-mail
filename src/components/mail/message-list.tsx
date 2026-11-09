@@ -1,11 +1,12 @@
 import { Star } from "lucide-react";
 import type { BoxId, MailMessage } from "@/lib/mail/model";
-import { formatShort, initials, rowTitle } from "@/lib/mail/logic";
+import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
 
 type Props = {
   box: BoxId;
   rows: MailMessage[];
   messages: MailMessage[];
+  meEmail?: string;
   selectedId: string | null;
   unreadOnly: boolean;
   picked: string[];
@@ -30,12 +31,14 @@ const TITLES: Record<BoxId, string> = {
   drafts: "Drafts",
   archive: "Archive",
   trash: "Trash",
+  quarantine: "Quarantine",
 };
 
 export function MessageList({
   box,
   rows,
   messages,
+  meEmail,
   selectedId,
   unreadOnly,
   picked,
@@ -115,7 +118,7 @@ export function MessageList({
             const unread = messages.some(
               (item) => item.threadId === message.threadId && item.unread && item.folder === message.folder,
             );
-            const snippet = message.body.replace(/\s+/g, " ").trim();
+            const snippet = messageSnippet(message.body);
             const selected = message.id === selectedId;
             return (
               <div
@@ -137,7 +140,7 @@ export function MessageList({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}>{rowTitle(message)}</span>
+                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}>{rowTitle(message, meEmail)}</span>
                       <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at)}</span>
                     </span>
                     <span className={`mt-1 flex items-baseline gap-2 text-sm ${unread ? "text-ink" : "text-muted"}`}>

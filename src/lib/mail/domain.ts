@@ -1,23 +1,32 @@
-/**
- * Sample mailbox domain for this local demo.
- * An exact host match is only a label. It does not encrypt, deliver, or trust a tenant.
- */
-export const SAMPLE_MAIL_DOMAIN = "cumuluscloud.app";
+/** Default mailbox domain. Override with MAIL_DOMAIN or VITE_MAIL_DOMAIN. */
+export const DEFAULT_MAIL_DOMAIN = "cumuluscloud.app";
 
-/**
- * Proposed service hostnames. DNS for these names is not verified here.
- * They are not trusted origins, not cookie domains, and not configured in this app.
- * Local development stays on loopback. Cloud and Drive auth live in another codebase.
- */
-export const PROPOSED_SERVICE_HOSTS = {
-  id: "id.cumuluscloud.app",
-  cloud: "cloud.cumuluscloud.app",
-  mail: "mail.cumuluscloud.app",
-} as const;
+/** Default web host for the mail app. Override with MAIL_APP_HOST or VITE_MAIL_APP_HOST. */
+export const DEFAULT_MAIL_APP_HOST = "mail.cumuluscloud.app";
 
-/** True when the address host is exactly the sample mailbox domain. */
-export function usesSampleMailDomain(email: string): boolean {
-  const at = email.lastIndexOf("@");
-  if (at <= 0) return false;
-  return email.slice(at + 1).trim().toLowerCase() === SAMPLE_MAIL_DOMAIN;
+function envValue(name: string): string | undefined {
+  const fromProcess = typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined;
+  if (fromProcess) return fromProcess;
+  const meta = import.meta as { env?: Record<string, string | undefined> };
+  return meta.env?.[name]?.trim() || meta.env?.[`VITE_${name}`]?.trim() || undefined;
+}
+
+function hostName(value: string, fallback: string): string {
+  const cleaned = value.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(cleaned)) {
+    return fallback;
+  }
+  return cleaned;
+}
+
+export function mailDomain(): string {
+  return hostName(envValue("MAIL_DOMAIN") ?? DEFAULT_MAIL_DOMAIN, DEFAULT_MAIL_DOMAIN);
+}
+
+export function mailAppHost(): string {
+  return hostName(envValue("MAIL_APP_HOST") ?? DEFAULT_MAIL_APP_HOST, DEFAULT_MAIL_APP_HOST);
+}
+
+export function mailboxAddress(localPart: string, domain = mailDomain()): string {
+  return `${localPart}@${domain}`;
 }

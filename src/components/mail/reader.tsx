@@ -1,7 +1,7 @@
-import { Archive, ChevronLeft, Clock, Forward, ListTodo, Paperclip, Reply, ReplyAll, Sparkles, Star, Trash2 } from "lucide-react";
-import type { MailMessage } from "@/lib/mail/model";
+import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
+import type { Attachment, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
-import { formatSize, formatWhen, initials } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -35,6 +35,8 @@ type Props = {
   onAssist: () => void;
   knownContact: boolean;
   onSaveContact: () => void;
+  meEmail?: string;
+  onOpenAttachment?: (file: Attachment, messageId: string) => void;
 };
 
 export function Reader(props: Props) {
@@ -47,9 +49,9 @@ export function Reader(props: Props) {
       ) : (
         <div className="flex flex-1 flex-col justify-end px-6 py-10 md:px-12 md:py-14">
           <p className="font-mono text-xs uppercase tracking-wide text-accent">Cumulus://Mail</p>
-          <h2 className="mt-4 max-w-xl text-4xl leading-none tracking-tight md:text-6xl">Local demo.</h2>
+          <h2 className="mt-4 max-w-xl text-4xl leading-none tracking-tight md:text-6xl">Private by default.</h2>
           <p className="mt-5 max-w-md text-base leading-normal text-muted">
-            Open a sample message, or compose one. It stays in this browser. Nothing is encrypted or delivered.
+            Every mailbox is encrypted at rest. Mail between Cumulus accounts is end-to-end. Never scanned for ads. Never sold.
           </p>
         </div>
       )}
@@ -88,7 +90,10 @@ function Opened({
   onAssist,
   knownContact,
   onSaveContact,
+  meEmail = ME.email,
+  onOpenAttachment,
 }: Props & { message: MailMessage }) {
+  const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
   return (
     <>
@@ -136,7 +141,7 @@ function Opened({
         <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onUnread}>
           Unread
         </button>
-        {message.from.email !== ME.email ? (
+        {message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
           <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onMute}>
             Mute
           </button>
@@ -150,7 +155,10 @@ function Opened({
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
           <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
           <h2 className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
-          <p className="mt-4 text-sm text-muted">Local demo. This copy is not encrypted and was not delivered.</p>
+          <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
+            {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
+            {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
+          </p>
           {message.delivery?.length ? (
             <ul className="mt-3 space-y-1">
               {message.delivery.map((hop) => (
@@ -203,10 +211,16 @@ function Opened({
                 {item.attachments?.length ? (
                   <ul className="mt-4 flex flex-wrap gap-2">
                     {item.attachments.map((file) => (
-                      <li key={file.name} className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm">
-                        <Paperclip className="size-3.5 text-muted" />
-                        {file.name}
-                        <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+                      <li key={file.id ?? file.name}>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm"
+                          onClick={() => onOpenAttachment?.(file, item.id)}
+                        >
+                          <Paperclip className="size-3.5 text-muted" />
+                          {file.name}
+                          <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>

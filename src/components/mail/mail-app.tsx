@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Menu, Search, SquarePen } from "lucide-react";
+import { getAttachment } from "@/lib/mail/api";
+import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
+import { startConjure, followConjure } from "@/lib/mail/conjure";
 import {
   briefKey,
   audienceLabel,
-  usesSampleMailDomain,
+  isCumulus,
   listThreads,
   parsePeople,
   peopleToField,
@@ -17,12 +20,11 @@ import {
   trashThreads,
   validEmail,
   withSignature,
-  applyRules,
   archiveThreads,
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, ME, type BoxId, type MailMessage, type MailRule, type ViewId } from "@/lib/mail/model";
+import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type ViewId } from "@/lib/mail/model";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
 import { MessageList } from "./message-list";
@@ -49,6 +51,8 @@ export function MailApp() {
   const contacts = useMail((s) => s.contacts);
   const signature = useMail((s) => s.signature);
   const rules = useMail((s) => s.rules);
+  const me = useMail((s) => s.me);
+  const syncError = useMail((s) => s.syncError);
   const hydrate = useMail((s) => s.hydrate);
   const markThreadRead = useMail((s) => s.markThreadRead);
   const toggleStar = useMail((s) => s.toggleStar);
@@ -144,7 +148,7 @@ export function MailApp() {
       } else if (event.key === "u" && reading) {
         event.preventDefault();
         remember("Marked as unread.");
-        replaceMessages(markThreadUnread(messages, reading.threadId));
+        replaceMessages(markThreadUnread(messages, reading.threadId, me.email));
         setSelectedId(null);
       } else if (event.key === "x" && (reading || rows[0])) {
         event.preventDefault();
@@ -193,8 +197,8 @@ export function MailApp() {
 
   function reply() {
     if (!reading) return;
-    const source = [...thread].reverse().find((message) => message.from.email !== ME.email) ?? reading;
-    const to = source.from.email === ME.email ? source.to : [source.from];
+    const source = [...thread].reverse().find((message) => message.from.email !== me.email) ?? reading;
+    const to = source.from.email === me.email ? source.to : [source.from];
     setComposeError("");
     setComposer({
       placement: "inline",
@@ -209,8 +213,8 @@ export function MailApp() {
 
   function replyAll() {
     if (!reading) return;
-    const source = [...thread].reverse().find((message) => message.from.email !== ME.email) ?? reading;
-    const mine = ME.email.toLowerCase();
+    const source = [...thread].reverse().find((message) => message.from.email !== me.email) ?? reading;
+    const mine = me.email.toLowerCase();
     const others = [...source.to, ...source.cc].filter((person) => person.email.toLowerCase() !== mine && person.email.toLowerCase() !== source.from.email.toLowerCase());
     const to = source.from.email.toLowerCase() === mine ? source.to : [source.from];
     const cc = source.from.email.toLowerCase() === mine ? source.cc.filter((person) => person.email.toLowerCase() !== mine) : others;
@@ -246,7 +250,7 @@ export function MailApp() {
     setComposer({ placement: "modal", to, cc: "", subject, body: "", attachments: [] });
   }
 
-  function send() {
+  async function send() {
     if (!composer) return;
     const to = parsePeople(composer.to);
     const cc = parsePeople(composer.cc);
@@ -263,14 +267,14 @@ export function MailApp() {
       return;
     }
     const id = `m-${Date.now().toString(36)}`;
-    remember("Saved in this browser. Not sent.");
+    remember("Message sent.");
     if (composer.draftId) remove(composer.draftId);
     const delivery = planDelivery([...to, ...cc]);
     const sent = {
       id,
       threadId: composer.threadId ?? id,
       folder: "sent" as const,
-      from: { name: ME.name, email: ME.email },
+      from: { name: me.name, email: me.email },
       to,
       cc,
       subject: composer.subject.trim() || "(no subject)",
@@ -284,9 +288,11 @@ export function MailApp() {
     };
     sent.body = withSignature(composer.body, signature);
     saveMessage(sent);
-    const mine = ME.email.toLowerCase();
-    if ([...to, ...cc].some((person) => person.email.toLowerCase() === mine)) {
-      saveMessage(applyRules({ ...sent, id: `${id}-in`, folder: "inbox", unread: true }, rules));
+    try {
+      await useMail.getState().flush();
+    } catch (error) {
+      setComposeError(error instanceof Error ? error.message : "Could not send.");
+      return;
     }
     setComposer(null);
     setComposeError("");
@@ -295,14 +301,14 @@ export function MailApp() {
     setSelectedId(id);
   }
 
-  function saveDraft() {
+  async function saveDraft() {
     if (!composer) return;
     const id = composer.draftId ?? `d-${Date.now().toString(36)}`;
     saveMessage({
       id,
       threadId: composer.threadId ?? id,
       folder: "drafts",
-      from: { name: ME.name, email: ME.email },
+      from: { name: me.name, email: me.email },
       to: parsePeople(composer.to),
       cc: parsePeople(composer.cc),
       subject: composer.subject.trim() || "(no subject)",
@@ -313,6 +319,12 @@ export function MailApp() {
       labels: [],
       attachments: composer.attachments,
     });
+    try {
+      await useMail.getState().flush();
+    } catch (error) {
+      setComposeError(error instanceof Error ? error.message : "Could not save the draft.");
+      return;
+    }
     setComposer(null);
     setComposeError("");
     setBox("drafts");
@@ -325,6 +337,25 @@ export function MailApp() {
     setAssisting(true);
     setComposeError("");
     try {
+      // "@conjure <question>" in the draft: run a live Conjure forecast and put it in the draft.
+      if (/(^|[^\w@./])@conjure(?![\w-]|\.[a-z])/i.test(composer.body)) {
+        const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
+        let result = await startConjure({ data: { text: composer.body, context: related.length ? transcript(related) : "" } });
+        if (result.error || !result.mention) {
+          setComposeError(result.error || "Write a question after @conjure.");
+          return;
+        }
+        const show = (text: string) => setComposer((current) => (current ? { ...current, body: `${current.body.replace(/\n*\[Conjure\][\s\S]*$/, "")}\n\n[Conjure]\n${text}` } : current));
+        show(result.text ?? "");
+        for (let i = 0; i < 300 && result.ticket && !["done", "failed", "cancelled"].includes(result.prediction?.status ?? ""); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const next = await followConjure({ data: { ticket: result.ticket } });
+          if (next.error) break;
+          result = { ...result, ...next };
+          show(next.text ?? "");
+        }
+        return;
+      }
       const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
       const source =
         related.length > 0
@@ -411,17 +442,39 @@ export function MailApp() {
       replaceMessages(trashThreads(messages, picked));
     } else {
       remember(count === 1 ? "Marked as unread." : `${count} conversations marked as unread.`);
-      replaceMessages(picked.reduce((next, threadId) => markThreadUnread(next, threadId), messages));
+      replaceMessages(picked.reduce((next, threadId) => markThreadUnread(next, threadId, me.email), messages));
     }
     setPicked([]);
     setSelectedId(null);
   }
 
+  function downloadBase64(name: string, contentType: string, dataBase64: string) {
+    const bytes = base64ToBytes(dataBase64);
+    const blob = new Blob([Uint8Array.from(bytes)], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function openAttachment(file: Attachment, messageId: string) {
+    try {
+      if (file.dataBase64) {
+        downloadBase64(file.name, file.contentType || "application/octet-stream", file.dataBase64);
+        return;
+      }
+      if (!file.id) return;
+      const result = await getAttachment({ data: { messageId, attachmentId: file.id } });
+      downloadBase64(result.name, result.contentType, result.dataBase64);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open the file.");
+    }
+  }
+
   return (
     <div className="mail-shell">
-      <p className="border-b border-line px-3 py-2 font-mono text-xs text-muted md:px-5" role="status">
-        Local demo. Messages stay in this browser. Nothing is sent, encrypted, or stored with Drive.
-      </p>
       <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
         <div className="flex items-center gap-2">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">
@@ -431,7 +484,7 @@ export function MailApp() {
             <p className="truncate text-xl tracking-tight">
               Cumulus<span className="font-mono text-accent">://</span>Mail
             </p>
-            <p className="truncate font-mono text-xs text-muted">{ME.email}</p>
+            <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
         </div>
         <label className="flex h-11 min-w-0 flex-1 items-center gap-2 border border-line px-3 md:max-w-xl">
@@ -454,12 +507,14 @@ export function MailApp() {
           Compose
         </button>
       </header>
+      {syncError ? <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p> : null}
       <div className="mail-body">
         <Sidebar
           open={navOpen}
           view={view}
           box={box}
           messages={messages}
+          me={me}
           openTasks={openTasks}
           onClose={() => setNavOpen(false)}
           onView={(next) => {
@@ -484,6 +539,7 @@ export function MailApp() {
               box={box}
               rows={rows}
               messages={messages}
+              meEmail={me.email}
               selectedId={reading?.id ?? null}
               unreadOnly={unreadOnly}
               picked={picked}
@@ -527,11 +583,11 @@ export function MailApp() {
               onUnread={() => {
                 if (!reading) return;
                 remember("Marked as unread.");
-                replaceMessages(markThreadUnread(messages, reading.threadId));
+                replaceMessages(markThreadUnread(messages, reading.threadId, me.email));
                 setSelectedId(null);
               }}
               onMute={() => {
-                if (!reading || reading.from.email === ME.email) return;
+                if (!reading || reading.from.email === me.email) return;
                 if (!rules.some((rule) => rule.action === "archive" && rule.from.toLowerCase() === reading.from.email.toLowerCase())) {
                   remember(`Mail from ${reading.from.name} will be archived.`);
                   addRule({ id: `r-${Date.now().toString(36)}`, from: reading.from.email, action: "archive" });
@@ -557,14 +613,16 @@ export function MailApp() {
               onSave={saveDraft}
               onCloseComposer={() => setComposer(null)}
               onAssist={() => void assist()}
-              knownContact={!reading || reading.from.email === ME.email || contacts.some((c) => c.email === reading.from.email)}
+              meEmail={me.email}
+              onOpenAttachment={(file, messageId) => void openAttachment(file, messageId)}
+              knownContact={!reading || reading.from.email === me.email || contacts.some((c) => c.email === reading.from.email)}
               onSaveContact={() => {
-                if (!reading || reading.from.email === ME.email) return;
+                if (!reading || reading.from.email === me.email) return;
                 addContact({
                   id: `c-${Date.now().toString(36)}`,
                   name: reading.from.name,
                   email: reading.from.email,
-                  org: usesSampleMailDomain(reading.from.email) ? "Cumulus://Mail" : "External",
+                  org: isCumulus(reading.from.email) ? "Cumulus://Mail" : "External",
                   note: "Saved from a message.",
                 });
               }}
@@ -597,8 +655,9 @@ export function MailApp() {
       ) : null}
       {accountOpen ? (
         <AccountPanel
+          me={me}
           aliases={aliases}
-          quotaLabel={quota(messages).label}
+          quotaLabel={quota(messages, me.quotaGb).label}
           signature={signature}
           rules={rules}
           onClose={() => setAccountOpen(false)}

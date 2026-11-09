@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Cumulus://Mail local demo. Messages stay in this browser and are not sent or encrypted.",
+          "Cumulus://Mail — private email with every Cumulus://ID. Encrypted at rest. Never scanned for ads.",
       },
       { name: "theme-color", content: "#ffffff" },
     ],

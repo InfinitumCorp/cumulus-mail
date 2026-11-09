@@ -1,8 +1,6 @@
-import { SAMPLE_MAIL_DOMAIN } from "./domain.ts";
-
 export const ME = {
   name: "Alex Reid",
-  email: `alex@${SAMPLE_MAIL_DOMAIN}`,
+  email: "alex@cumuluscloud.app",
   cid: "cid:alex",
   plan: "Free",
   quotaGb: 15,
@@ -10,7 +8,15 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash";
+export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
+
+export type MailAuth = {
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  policy: string;
+  disposition: "deliver" | "quarantine";
+};
 
 export type BoxId = FolderId | "starred" | "outbox" | "snoozed";
 
@@ -23,7 +29,15 @@ export type MailRule = {
   label?: string;
 };
 
-export type Attachment = { name: string; size: number };
+export type Attachment = {
+  name: string;
+  size: number;
+  id?: string;
+  contentType?: string;
+  sha256?: string;
+  /** Present only until the server has stored the bytes. */
+  dataBase64?: string;
+};
 
 export type DeliveryHop = {
   email: string;
@@ -47,6 +61,9 @@ export type MailMessage = {
   attachments?: Attachment[];
   delivery?: DeliveryHop[];
   snoozeUntil?: string;
+  auth?: MailAuth;
+  /** MIME headers. Stored encrypted. Absent on messages composed in the app. */
+  headers?: Record<string, string>;
 };
 
 export type ArchitectTask = {
@@ -307,14 +324,14 @@ export const SEED_CONTACTS: Contact[] = [
     name: "Leah Okonkwo",
     email: "leah@cumuluscloud.app",
     org: "Infinitum",
-    note: "Sample contact stored in this browser.",
+    note: "Drive shares stay inside Cumulus.",
   },
   {
     id: "c-priya",
     name: "Priya Nair",
     email: "priya@vyral.london",
     org: "VYRAL London",
-    note: "External sample contact. A message to this address still stays in this browser.",
+    note: "External. Mail to this address is not end-to-end.",
   },
   {
     id: "c-daniel",
@@ -369,4 +386,5 @@ export const BOXES: { id: BoxId; label: string }[] = [
   { id: "drafts", label: "Drafts" },
   { id: "archive", label: "Archive" },
   { id: "trash", label: "Trash" },
+  { id: "quarantine", label: "Quarantine" },
 ];

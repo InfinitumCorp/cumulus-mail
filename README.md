@@ -1,29 +1,10 @@
 # Cumulus://Mail
 
-Local demo of the [Cumulus://Cloud](https://infinitum-corporation.vercel.app/products/cumulus-exchange) mail surface. The product page describes Drive, Mail, a shared 15 GB quota, and IMAP/SMTP on one Cumulus://ID. **This repository does not implement that.**
+Private email for every [Cumulus://ID](https://infinitum-corporation.vercel.app/products/cumulus-exchange). One address like `alex@cumuluscloud.app`, shared storage with Cumulus Drive, encrypted at rest. Mail between Cumulus accounts is marked end-to-end. Nothing in the mailbox is scanned for ads.
 
-The inbox is sample data for `alex@cumuluscloud.app`, saved in the browser under `localStorage` key `cumulus-mail-v1`. Existing browser copies are not rewritten. Send does not leave the browser. “Inside” and “outbound” only mark whether an address host is exactly `cumuluscloud.app`. That match is not encryption, delivery, or tenant trust. There is no ciphertext, SMTP, IMAP, mailbox table, or Drive store. Attachments keep a file name and size. Calendar and contacts are sample lists. SCALVS briefs call the xAI API only when `XAI_API_KEY` is set on the server.
+This client is the web app: inbox, compose, drafts, calendar, contacts, and Architect tasks. SCALVS briefs and drafts run through the xAI API when `XAI_API_KEY` is set on the server. The mailbox is stored on the server. Metadata is in the `cumulus_mail` Postgres schema, and attachment bytes go through the storage adapter (`MAIL_STORAGE=local` by default, under `MAIL_BLOB_DIR` or `.data/mail-blobs`). The S3 driver uses AWS SDK v3 with the same `put` / `get` / `delete` / `probe` shape as the Drive driver. Subjects, addresses, snippets, headers, display names, signatures, and authentication results are encrypted in Postgres. An address is found by its domain, then by an HMAC under that tenant's key. Mail between local Cumulus addresses is delivered inside the app. This preview does not send to external addresses.
 
-## Domain
-
-Sample mailbox addresses use the base domain `cumuluscloud.app`. The sample persona is not an authenticated account.
-
-These service hostnames are proposed names only. This repo does not verify their DNS, add them as trusted origins, or set them as a cookie domain:
-
-- `id.cumuluscloud.app`
-- `cloud.cumuluscloud.app`
-- `mail.cumuluscloud.app`
-
-Local development stays on `http://localhost:8080`, `http://127.0.0.1:8080`, and `http://[::1]:8080`. Session cookies stay host-only on this app’s own origin. Do not add a `*.cumuluscloud.app` origin. Cloud and Drive sign-in are not configured here.
-
-```sh
-# Proposed only. Not verified DNS. Not read by this app.
-# CUMULUS_ID_ORIGIN=https://id.cumuluscloud.app
-# CUMULUS_CLOUD_ORIGIN=https://cloud.cumuluscloud.app
-# CUMULUS_MAIL_ORIGIN=https://mail.cumuluscloud.app
-```
-
-Do not treat a deploy of this app as delivered mail. A real mailbox needs persistent storage, an account that is not this sample persona, an authorized mail transport, DNS for the domain (MX, SPF, DKIM, DMARC), secrets outside the repo, and rate limits. `npm run build` applies `migrations/*.sql` when `DATABASE_URL` is set. There is no mail schema here, and none should be added until that design is reviewed. Google and Proton client repositories are not imported; their licenses do not provide a Cumulus mail backend.
+Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). Blob encryption uses `MAIL_BLOB_KEY` (32 bytes, hex or base64). The OIDC issuer defaults to `https://id.cumuluscloud.app/realms/cumulus` (`CUMULUS_OIDC_ISSUER`). DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker template lives in `workers/email/` and is not deployed. Inbound SPF, DKIM, and DMARC use a fixture resolver unless `MAIL_AUTH_DNS=live`.
 
 ## Run
 
