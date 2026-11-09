@@ -115,6 +115,9 @@ const baseURL = explicitBaseURL ?? {
 
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
 // Missing entries here surface as FORBIDDEN "Invalid origin".
+// id.cumuluscloud.app, cloud.cumuluscloud.app, and mail.cumuluscloud.app are not
+// listed. They are mailbox and identity hosts, not this app's cookie origin, and
+// a wildcard would collapse cookie separation across those hosts.
 const trustedOrigins: string[] = explicitBaseURL
   ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
   : [
