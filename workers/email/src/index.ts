@@ -1,4 +1,4 @@
-import { resolverFromEnv } from "../../../src/lib/mail/authenticate.ts";
+import { resolverFromEnv, type DNSResolver } from "../../../src/lib/mail/authenticate.ts";
 import type { TenantStorage } from "../../../src/lib/mail/delivery.ts";
 import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
@@ -28,6 +28,8 @@ export type EmailEnv = {
   MAIL_APP_HOST?: string;
   /** Set to "live" to query DNS for SPF, DKIM, and DMARC. Default does not. */
   MAIL_AUTH_DNS?: string;
+  /** Fixture resolver for tests. Production leaves this unset. */
+  resolver?: DNSResolver;
 };
 
 async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
@@ -50,7 +52,7 @@ export async function handleEmail(message: EmailMessage, env: EmailEnv): Promise
     to: recipient,
     raw: await rawBytes(message.raw),
   };
-  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, resolverFromEnv(env));
+  return ingestInboundEmail(env.ingest.db, env.ingest.storageFor, inbound, env.resolver ?? resolverFromEnv(env));
 }
 
 export default {

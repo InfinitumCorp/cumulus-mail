@@ -1,4 +1,5 @@
 import { newId } from "./bytes.ts";
+import { sealText } from "./field-crypto.ts";
 import type { BounceHandler, BounceReceipt } from "./hooks.ts";
 import type { MailQuery } from "./query.ts";
 import { createSuppressionList } from "./suppression.ts";
@@ -71,7 +72,7 @@ export function createBounceHandler(db: MailQuery, tenantId: string): BounceHand
           `insert into cumulus_mail.bounces (
              tenant_id, id, message_id, recipient, action, status, diagnostic
            ) values ($1,$2,$3,$4,$5,$6,$7)`,
-          [tenantId, id, null, report.recipient, report.action, report.status, report.diagnostic.slice(0, 2000)],
+          [tenantId, id, null, sealText(tenantId, report.recipient), report.action, report.status, report.diagnostic.slice(0, 2000)],
         );
         if (suppressed) await suppressions.add(report.recipient, `dsn:${report.status}`);
         receipts.push({ ...report, suppressed });

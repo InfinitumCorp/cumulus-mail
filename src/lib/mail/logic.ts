@@ -148,6 +148,11 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** The one-line preview the message list renders. */
+export function messageSnippet(body: string): string {
+  return body.replace(/\s+/g, " ").trim();
+}
+
 function haystack(message: MailMessage): string {
   const files = (message.attachments ?? []).map((file) => file.name);
   return [
