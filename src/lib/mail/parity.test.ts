@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bridgeDesign } from "./bridge.ts";
+import { isDriveShareHref, stubCloudLinks } from "./cloud-link.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { identityPosture } from "./identity.ts";
@@ -12,7 +13,7 @@ import { decryptWith, encryptFor, generateMailKey } from "./openpgp.ts";
 import { openWithPassword, sealWithPassword, spendRead } from "./protect.ts";
 import { burnProtectedLink, issueProtectedLink, readProtectedLink } from "./protect-store.ts";
 import { readMessages, readSettings, readSnapshot, writeSettings } from "./records.ts";
-import { releaseDue } from "./schedule.ts";
+import { releaseDue, sanitizeExtra } from "./schedule.ts";
 import { assessPhishing, classifyLink, stripRemoteImages } from "./safety.ts";
 import { buildSearchIndex, indexContainsPlaintext, queryIndex } from "./search-index.ts";
 import { defaultSettings, expectedTxt, keepVerified, TXT_VALUE } from "./settings.ts";
@@ -21,6 +22,15 @@ import type { MailboxSnapshot } from "./snapshot.ts";
 import { createHarness, profile } from "./test-support.ts";
 
 const fast = { expiresAt: "2099-01-01T00:00:00.000Z", reads: 2, selfDestruct: false, iterations: 1000 };
+
+test("large-file links point at Cumulus://Cloud Drive", async () => {
+  const link = await stubCloudLinks(Date.parse("2026-11-10T00:00:00.000Z")).create({ name: "brief.pdf", size: 30_000_000 }, 60_000);
+  assert.equal(link.href.startsWith("https://drive.cumuluscloud.app/s/"), true);
+  assert.equal(isDriveShareHref(link.href), true);
+  assert.equal(sanitizeExtra({ cloudLinks: [link] })?.cloudLinks?.[0]?.href, link.href);
+  const rejected = "https://cloud.cumuluscloud.app/s/" + "ab".repeat(16);
+  assert.equal(sanitizeExtra({ cloudLinks: [{ ...link, href: rejected }] })?.cloudLinks, undefined);
+});
 
 test("a password seals the body and a wrong password does not open it", async () => {
   const envelope = await sealWithPassword("appendix inside", "correct-horse", fast);

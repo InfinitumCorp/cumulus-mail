@@ -54,7 +54,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Cross-device content-search index | deferred | Proton’s downloadable index needs a client-held mailbox key. |
 | Attachments up to 25 MB | existing | |
 | Attachment share links | existing | |
-| Large files via Cumulus://Cloud | added | Over 25 MB becomes `https://cloud.cumuluscloud.app/s/…`. |
+| Large files via Cumulus://Cloud | added | Over 25 MB becomes `https://drive.cumuluscloud.app/s/…`. |
 | Uploading those bytes to Drive | deferred | The stub does not transfer the file. No Drive API is called. |
 | Read receipts | added | Request in the composer. The reader can send or ignore. |
 | Remote image blocking | added | `<img src="https://…">` is stripped. On by default. |

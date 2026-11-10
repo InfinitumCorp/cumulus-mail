@@ -1,6 +1,5 @@
+import { isDriveShareHref } from "./cloud-link.ts";
 import type { MailMessage, MessageExtra } from "./model.ts";
-
-const CLOUD_LINK = /^https:\/\/cloud\.cumuluscloud\.app\/s\/[a-f0-9]{32}$/;
 
 export function sanitizeExtra(extra: MessageExtra | undefined): MessageExtra | undefined {
   if (!extra) return undefined;
@@ -23,7 +22,7 @@ export function sanitizeExtra(extra: MessageExtra | undefined): MessageExtra | u
   }
   if (extra.pgp) next.pgp = true;
   if (extra.autoReply) next.autoReply = true;
-  const links = (extra.cloudLinks ?? []).filter((link) => CLOUD_LINK.test(link.href)).slice(0, 8);
+  const links = (extra.cloudLinks ?? []).filter((link) => isDriveShareHref(link.href)).slice(0, 8);
   if (links.length) {
     next.cloudLinks = links.map((link) => ({
       name: link.name.slice(0, 180),
