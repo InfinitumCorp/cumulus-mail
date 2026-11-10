@@ -4,8 +4,12 @@ import { findTenantByAddress } from "./directory.ts";
 import { sealText } from "./field-crypto.ts";
 import { applyRules, isCumulus } from "./logic.ts";
 import type { DeliveryHop, MailMessage, MailRule, Person } from "./model.ts";
+import { issueProtectedLink } from "./protect-store.ts";
 import type { MailQuery } from "./query.ts";
-import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, writeDelivery, type StoredAttachment } from "./records.ts";
+import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, readProfile, readSettings, writeDelivery, writeSettings, type StoredAttachment } from "./records.ts";
+import { isHeld } from "./schedule.ts";
+import { applySieve } from "./sieve.ts";
+import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
@@ -51,16 +55,20 @@ async function copyInto(
   const id = await copyId(senderTenant, message.id, destTenant);
   if (await alreadyStored(db, destTenant, id)) return;
   const rules = await rulesFor(db, destTenant);
-  const delivered = applyRules(
-    {
-      ...message,
-      id,
-      folder: "inbox",
-      unread: true,
-      starred: false,
-      delivery: [{ email: message.from.email, status: "inside", detail: "Delivered inside Cumulus." }],
-    },
-    rules,
+  const settings = await readSettings(db, destTenant);
+  const delivered = applySieve(
+    applyRules(
+      {
+        ...message,
+        id,
+        folder: "inbox",
+        unread: true,
+        starred: false,
+        delivery: [{ email: message.from.email, status: "inside", detail: "Delivered inside Cumulus." }],
+      },
+      rules,
+    ),
+    settings.sieve,
   );
   await insertMessage(db, destTenant, delivered, null);
   for (const [index, file] of files.entries()) {
@@ -113,7 +121,16 @@ export async function deliverMessage(
       continue;
     }
     if (!isCumulus(person.email)) {
-      hops.push({ email: person.email, status: "outbound", detail: HELD });
+      if (message.extra?.protection) {
+        const link = await issueProtectedLink(db, senderTenant, message.extra.protection);
+        hops.push({
+          email: person.email,
+          status: "outbound",
+          detail: `Password-protected. ${link.href} External SMTP is not configured.`,
+        });
+      } else {
+        hops.push({ email: person.email, status: "outbound", detail: HELD });
+      }
       continue;
     }
     const dest = await findTenantByAddress(db, person.email);
@@ -123,6 +140,35 @@ export async function deliverMessage(
     }
     await copyInto(db, storageFor, senderTenant, dest, message, files);
     hops.push({ email: person.email, status: "inside", detail: "Delivered inside Cumulus." });
+    if (!message.extra?.autoReply && dest !== senderTenant) {
+      const settings = await readSettings(db, dest);
+      if (shouldAutoReply(settings, message.from.email)) {
+        const profile = await readProfile(db, dest);
+        if (profile) {
+          await insertMessage(
+            db,
+            senderTenant,
+            {
+              id: newId("ar"),
+              threadId: message.threadId,
+              folder: "inbox",
+              from: { name: profile.name, email: profile.email },
+              to: [{ name: message.from.name, email: message.from.email }],
+              cc: [],
+              subject: settings.autoReply.subject || "Away",
+              body: settings.autoReply.body,
+              at: new Date().toISOString(),
+              unread: true,
+              starred: false,
+              labels: ["Auto-reply"],
+              extra: { autoReply: true },
+            },
+            null,
+          );
+          await writeSettings(db, dest, noteAutoReply(settings, message.from.email));
+        }
+      }
+    }
   }
   return hops;
 }
@@ -141,7 +187,8 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
   const byId = new Map(snapshotMessages.filter((message) => message.folder === "sent").map((message) => [message.id, message]));
   for (const item of pending) {
     const message = byId.get(item.id);
-    if (!message) continue;
+    if (!message || isHeld(message)) continue;
+    if (message.extra?.scheduleAt && Date.parse(message.extra.scheduleAt) > Date.now()) continue;
     const hops = await deliverMessage(db, storageFor, senderTenant, message);
     await writeDelivery(db, senderTenant, message.id, hops);
     await db.query(

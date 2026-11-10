@@ -152,6 +152,7 @@ export async function importMailbox(
       contacts: backup.contacts,
       signature: backup.signature,
       rules: backup.rules,
+      settings: backup.settings,
     },
     files,
     rawKeys,

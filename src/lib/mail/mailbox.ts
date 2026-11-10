@@ -8,6 +8,7 @@ import { addressOwnedByOther } from "./directory.ts";
 import { validEmail } from "./logic.ts";
 import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
+import { releaseDue } from "./schedule.ts";
 import {
   loadAttachmentMap,
   previousRawKeys,
@@ -63,7 +64,7 @@ export async function writeSnapshot(
   const storage = storageFor(tenantId);
   const messages: MailMessage[] = [];
 
-  for (const incoming of snapshot.messages) {
+  for (const incoming of releaseDue(snapshot.messages)) {
     assertId(incoming.id, "message id");
     assertId(incoming.threadId, "thread id");
     const message: MailMessage =

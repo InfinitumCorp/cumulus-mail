@@ -1,6 +1,7 @@
 import { assertTenantId } from "../storage/adapter.ts";
 import { blindIndex } from "./field-crypto.ts";
 import type { MailQuery } from "./query.ts";
+import { catchAllAddress, stripPlus } from "./routing.ts";
 
 /**
  * Routing an address cannot start from a master-key index: the HMAC key is
@@ -62,7 +63,16 @@ async function matchRoute(db: MailQuery, email: string): Promise<string | null> 
 export async function findTenantByAddress(db: MailQuery, address: string): Promise<string | null> {
   const email = address.trim().toLowerCase();
   if (!email) return null;
-  return matchRoute(db, email);
+  const exact = await matchRoute(db, email);
+  if (exact) return exact;
+  const base = stripPlus(email);
+  if (base !== email) {
+    const plus = await matchRoute(db, base);
+    if (plus) return plus;
+  }
+  const domain = addressDomain(email);
+  if (!domain) return null;
+  return matchRoute(db, catchAllAddress(domain));
 }
 
 export async function addressOwnedByOther(db: MailQuery, address: string, tenantId: string): Promise<boolean> {

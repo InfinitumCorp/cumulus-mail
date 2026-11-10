@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { Paperclip, Sparkles, X } from "lucide-react";
 import { bytesToBase64 } from "@/lib/mail/bytes";
-import type { Attachment } from "@/lib/mail/model";
+import { stubCloudLinks } from "@/lib/mail/cloud-link";
+import type { Attachment, CloudLinkRef } from "@/lib/mail/model";
 import { formatSize } from "@/lib/mail/logic";
 
 const MAX_FILE = 25 * 1024 * 1024;
@@ -16,6 +17,12 @@ export type DraftForm = {
   subject: string;
   body: string;
   attachments: Attachment[];
+  passwordProtected?: boolean;
+  password?: string;
+  selfDestruct?: boolean;
+  requestReceipt?: boolean;
+  scheduleAt?: string;
+  cloudLinks?: CloudLinkRef[];
 };
 
 type Props = {
@@ -59,10 +66,13 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
   async function addFiles(list: FileList | null) {
     if (!list) return;
     const next = [...form.attachments];
+    const links = [...(form.cloudLinks ?? [])];
     let note = "";
     for (const file of list) {
       if (file.size > MAX_FILE) {
-        note = "Files stay under 25 MB. Larger ones belong in Drive.";
+        const link = await stubCloudLinks().create({ name: file.name, size: file.size }, 7 * 24 * 60 * 60 * 1000);
+        links.push(link);
+        note = "Files over 25 MB are a Cumulus://Cloud link. This preview does not upload the bytes.";
         continue;
       }
       if (next.length >= MAX_FILES) {
@@ -78,7 +88,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
       });
     }
     setFileNote(note);
-    onChange({ ...form, attachments: next });
+    onChange({ ...form, attachments: next, cloudLinks: links });
     if (picker.current) picker.current.value = "";
   }
 
@@ -126,7 +136,64 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
         </ul>
       ) : null}
       {fileNote ? <p className="px-4 pb-2 text-sm">{fileNote}</p> : null}
+      {form.cloudLinks?.length ? (
+        <ul className="flex flex-wrap gap-2 px-4 pb-3">
+          {form.cloudLinks.map((link) => (
+            <li key={link.href} className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm">
+              <span className="max-w-48 truncate">{link.name}</span>
+              <span className="font-mono text-xs text-muted">{formatSize(link.size)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {error ? <p className="px-4 pb-2 text-sm text-ink">{error}</p> : null}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-2">
+        <label className="inline-flex h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(form.passwordProtected)}
+            onChange={(event) => onChange({ ...form, passwordProtected: event.target.checked })}
+          />
+          Password
+        </label>
+        {form.passwordProtected ? (
+          <>
+            <input
+              type="password"
+              aria-label="Message password"
+              value={form.password ?? ""}
+              onChange={(event) => onChange({ ...form, password: event.target.value })}
+              className="h-11 w-40 border border-line bg-transparent px-3 text-sm outline-none"
+            />
+            <label className="inline-flex h-11 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={Boolean(form.selfDestruct)}
+                onChange={(event) => onChange({ ...form, selfDestruct: event.target.checked })}
+              />
+              Self-destruct
+            </label>
+          </>
+        ) : null}
+        <label className="inline-flex h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(form.requestReceipt)}
+            onChange={(event) => onChange({ ...form, requestReceipt: event.target.checked })}
+          />
+          Receipt
+        </label>
+        <label className="inline-flex h-11 items-center gap-2 text-sm">
+          Send later
+          <input
+            type="datetime-local"
+            aria-label="Send later"
+            value={form.scheduleAt ?? ""}
+            onChange={(event) => onChange({ ...form, scheduleAt: event.target.value })}
+            className="h-11 border border-line bg-transparent px-2 text-sm"
+          />
+        </label>
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3">
         <button type="submit" className="inline-flex h-11 items-center bg-ink px-5 text-sm text-paper transition-colors hover:bg-accent">
           Send

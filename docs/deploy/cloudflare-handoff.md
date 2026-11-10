@@ -110,7 +110,7 @@ On the Worker, `DATABASE_URL` is the Hyperdrive binding's connection string, not
 
 ### Migrations that need approval
 
-Nothing in this handoff applies them. `npm run db:migrate` writes them when `DATABASE_URL` is set. Do not run it until these four files are approved for the shared database:
+Nothing in this handoff applies them. `npm run db:migrate` writes them when `DATABASE_URL` is set. Do not run it until these five files are approved for the shared database:
 
 | File | What it changes |
 | --- | --- |
@@ -118,8 +118,9 @@ Nothing in this handoff applies them. `npm run db:migrate` writes them when `DAT
 | `migrations/0003_mail_auth_share.sql` | Adds `messages.auth_json` and `share_grants`. |
 | `migrations/0004_message_metadata.sql` | Adds snippet and header columns and the blind-index tables. |
 | `migrations/0005_profile_and_routes.sql` | Adds `address_routes` and drops the global address index. |
+| `migrations/0006_parity_settings.sql` | Adds sealed mailbox settings, message extras, contact private fields, and password-protected links. |
 
-`migrations/auth/0001_auth.sql` is not in that list. The migrator does not apply it unless it is copied into `migrations/`. Approving the four files above does not approve the auth schema.
+`migrations/auth/0001_auth.sql` is not in that list. The migrator does not apply it unless it is copied into `migrations/`. Approving the five files above does not approve the auth schema.
 
 ## 4. Environment variables
 

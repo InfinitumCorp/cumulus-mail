@@ -16,6 +16,12 @@ import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailboxAddress } from "./domain.ts";
+import { publishAddress } from "./directory.ts";
+import { resolverFromEnv } from "./authenticate.ts";
+import { refreshDomainVerification } from "./domains.ts";
+import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
+import { catchAllAddress } from "./routing.ts";
+import { readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -197,4 +203,45 @@ export async function acceptDsnForSession(
   await openMailbox(db, tenantId, profile);
   const receipts = await createBounceHandler(db, tenantId).accept(raw);
   return { accepted: receipts.length };
+}
+
+export async function checkDomainForSession(
+  contextUserId: string,
+  domain: string,
+  bearerToken?: string,
+): Promise<{ verified: boolean; txtName: string; txtValue: string }> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const settings = await readSettings(db, tenantId);
+  const current = settings.domains.find((item) => item.domain === domain);
+  if (!current) throw new Error("Add that domain in the account panel first.");
+  const checked = await refreshDomainVerification({ ...settings, domains: [current] }, resolverFromEnv());
+  const verified = checked.domains[0]?.verified === true;
+  await writeSettings(db, tenantId, {
+    ...settings,
+    domains: settings.domains.map((item) => (item.domain === domain ? { ...item, verified } : item)),
+  });
+  if (verified && current.catchAll) await publishAddress(db, tenantId, catchAllAddress(domain));
+  return { verified, txtName: current.txtName, txtValue: current.txtValue };
+}
+
+export async function readProtectedForToken(token: string): Promise<{
+  envelope: NonNullable<import("./model.ts").MessageExtra["protection"]>;
+  readsLeft: number;
+  selfDestruct: boolean;
+  expiresAt: string;
+}> {
+  const view = await readProtectedLink(await database(), token);
+  return {
+    envelope: view.envelope,
+    readsLeft: view.readsLeft,
+    selfDestruct: view.selfDestruct,
+    expiresAt: view.expiresAt,
+  };
+}
+
+export async function burnProtectedForToken(token: string): Promise<{ burned: true }> {
+  await burnProtectedLink(await database(), token);
+  return { burned: true };
 }
