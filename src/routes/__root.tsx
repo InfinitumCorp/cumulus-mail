@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { AmplitudeInit } from "@/lib/amplitude-init";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Cumulus://Mail";
@@ -32,6 +33,7 @@ export const Route = createRootRoute({
       </head>
       <body>
         <PreviewHostBridge />
+        <AmplitudeInit />
         <AuthProvider>
           <Outlet />
         </AuthProvider>

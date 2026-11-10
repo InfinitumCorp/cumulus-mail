@@ -21,6 +21,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@amplitude/analytics-browser": "^2.49.2",
     "@aws-sdk/client-s3": "^3.930.0",
     "@electric-sql/pglite": "^0.5.4",
     "@hookform/resolvers": "^5.7.0",
