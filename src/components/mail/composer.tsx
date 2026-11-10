@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Paperclip, Sparkles, X } from "lucide-react";
+import { bytesToBase64 } from "@/lib/mail/bytes";
 import type { Attachment } from "@/lib/mail/model";
 import { formatSize } from "@/lib/mail/logic";
 
@@ -55,7 +56,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
   const picker = useRef<HTMLInputElement>(null);
   const [fileNote, setFileNote] = useState("");
 
-  function addFiles(list: FileList | null) {
+  async function addFiles(list: FileList | null) {
     if (!list) return;
     const next = [...form.attachments];
     let note = "";
@@ -68,7 +69,13 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
         note = "Eight files is the limit on a message.";
         break;
       }
-      next.push({ name: file.name, size: file.size });
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      next.push({
+        name: file.name,
+        size: bytes.byteLength,
+        contentType: file.type || "application/octet-stream",
+        dataBase64: bytesToBase64(bytes),
+      });
     }
     setFileNote(note);
     onChange({ ...form, attachments: next });
@@ -131,7 +138,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
           <Paperclip className="size-4" />
           Drive file
         </button>
-        <input ref={picker} type="file" className="sr-only" multiple onChange={(event) => addFiles(event.target.files)} />
+        <input ref={picker} type="file" className="sr-only" multiple onChange={(event) => void addFiles(event.target.files)} />
         <button
           type="button"
           className="inline-flex h-11 items-center gap-2 px-3 text-sm text-accent disabled:opacity-50"

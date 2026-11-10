@@ -1,3 +1,4 @@
+import { mailDomain } from "./domain.ts";
 import {
   ME,
   type BoxId,
@@ -7,10 +8,8 @@ import {
   type Person,
 } from "./model.ts";
 
-const CUMULUS = "@cumulusmail.cloud";
-
-export function isCumulus(email: string): boolean {
-  return email.toLowerCase().endsWith(CUMULUS);
+export function isCumulus(email: string, domain = mailDomain()): boolean {
+  return email.toLowerCase().endsWith(`@${domain}`);
 }
 
 export function isE2E(message: MailMessage): boolean {
@@ -80,9 +79,10 @@ export function trashThreads(messages: MailMessage[], threadIds: string[]): Mail
   );
 }
 
-export function markThreadUnread(messages: MailMessage[], threadId: string): MailMessage[] {
+export function markThreadUnread(messages: MailMessage[], threadId: string, meEmail: string = ME.email): MailMessage[] {
+  const mine = meEmail.toLowerCase();
   const received = messages
-    .filter((message) => message.threadId === threadId && message.from.email !== ME.email && message.folder !== "trash")
+    .filter((message) => message.threadId === threadId && message.from.email.toLowerCase() !== mine && message.folder !== "trash")
     .sort((a, b) => (a.at < b.at ? 1 : -1))[0];
   const target = received ?? messages.filter((message) => message.threadId === threadId).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
   if (!target) return messages;
@@ -136,7 +136,7 @@ export function planDelivery(people: Person[]): DeliveryHop[] {
     hops.push(
       isCumulus(email)
         ? { email, status: "inside", detail: "Delivered inside Cumulus. End-to-end." }
-        : { email, status: "outbound", detail: "Accepted. Leaves Cumulus encrypted." },
+        : { email, status: "outbound", detail: "Held in the outbox. This preview does not send outside Cumulus." },
     );
   }
   return hops;
@@ -146,6 +146,11 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The one-line preview the message list renders. */
+export function messageSnippet(body: string): string {
+  return body.replace(/\s+/g, " ").trim();
 }
 
 function haystack(message: MailMessage): string {
@@ -231,23 +236,23 @@ export function draftCount(messages: MailMessage[]): number {
   return messages.filter((m) => m.folder === "drafts").length;
 }
 
-export function rowTitle(message: MailMessage): string {
-  if (message.from.email === ME.email) {
+export function rowTitle(message: MailMessage, meEmail: string = ME.email): string {
+  if (message.from.email.toLowerCase() === meEmail.toLowerCase()) {
     const to = message.to[0]?.name || message.to[0]?.email || "someone";
     return `To ${to}`;
   }
   return message.from.name;
 }
 
-export function quota(messages: MailMessage[]): { label: string; pct: number } {
+export function quota(messages: MailMessage[], quotaGb: number = ME.quotaGb): { label: string; pct: number } {
   const extra = messages.reduce((n, message) => {
     const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
     return n + message.subject.length + message.body.length + files;
   }, 0);
   const bytes = 2.41e9 + extra;
   const gb = bytes / 1e9;
-  const pct = Math.min(100, (gb / ME.quotaGb) * 100);
-  return { label: `${gb.toFixed(2)} GB of ${ME.quotaGb} GB`, pct };
+  const pct = Math.min(100, (gb / quotaGb) * 100);
+  return { label: `${gb.toFixed(2)} GB of ${quotaGb} GB`, pct };
 }
 
 export function parsePeople(value: string): Person[] {

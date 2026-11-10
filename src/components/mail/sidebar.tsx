@@ -1,3 +1,4 @@
+import { FirmSuite } from "@/lib/firm/FirmSuite";
 import {
   Archive,
   ArrowUpRight,
@@ -7,6 +8,7 @@ import {
   Inbox,
   ListTodo,
   Send,
+  ShieldAlert,
   Star,
   Trash2,
   Users,
@@ -15,6 +17,7 @@ import {
 import { ME, BOXES, type BoxId, type ViewId } from "@/lib/mail/model";
 import { draftCount, quota, unreadInBox } from "@/lib/mail/logic";
 import type { MailMessage } from "@/lib/mail/model";
+import type { MailProfile } from "@/lib/mail/snapshot";
 
 const ICONS = {
   inbox: Inbox,
@@ -25,6 +28,7 @@ const ICONS = {
   drafts: FileText,
   archive: Archive,
   trash: Trash2,
+  quarantine: ShieldAlert,
 } as const;
 
 type Props = {
@@ -32,6 +36,7 @@ type Props = {
   view: ViewId;
   box: BoxId;
   messages: MailMessage[];
+  me?: MailProfile;
   openTasks: number;
   onClose: () => void;
   onView: (view: ViewId) => void;
@@ -39,8 +44,8 @@ type Props = {
   onAccount: () => void;
 };
 
-export function Sidebar({ open, view, box, messages, openTasks, onClose, onView, onBox, onAccount }: Props) {
-  const used = quota(messages);
+export function Sidebar({ open, view, box, messages, me = ME, openTasks, onClose, onView, onBox, onAccount }: Props) {
+  const used = quota(messages, me.quotaGb);
   const views: { id: ViewId; label: string; count?: number }[] = [
     { id: "mail", label: "Mail" },
     { id: "calendar", label: "Calendar" },
@@ -104,9 +109,12 @@ export function Sidebar({ open, view, box, messages, openTasks, onClose, onView,
               : "Architect keeps the task. It does not send the mail."}
         </p>
       )}
-      <button type="button" onClick={onAccount} className="mt-auto w-full border-t border-line px-4 py-4 text-left">
-        <span className="block text-sm">{ME.name}</span>
-        <span className="mt-1 block truncate font-mono text-xs text-muted">{ME.email}</span>
+      <div className="mt-auto px-4 pb-4">
+        <FirmSuite product="cumulus-mail" compact />
+      </div>
+      <button type="button" onClick={onAccount} className="w-full border-t border-line px-4 py-4 text-left">
+        <span className="block text-sm">{me.name}</span>
+        <span className="mt-1 block truncate font-mono text-xs text-muted">{me.email}</span>
         <span className="mt-3 block h-1 bg-line" aria-hidden="true">
           <span className="block h-1 bg-accent" style={{ width: `${used.pct}%` }} />
         </span>

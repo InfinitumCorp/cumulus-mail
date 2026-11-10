@@ -15,6 +15,8 @@ export default tseslint.config(
       ".nitro/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
+      // Copy of infinitum-nexus/packages/firm/suite, linted and tested there.
+      "src/lib/firm/firm-suite.js",
     ],
   },
   js.configs.recommended,

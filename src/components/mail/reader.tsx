@@ -1,5 +1,5 @@
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
-import type { MailMessage } from "@/lib/mail/model";
+import type { Attachment, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
@@ -35,6 +35,8 @@ type Props = {
   onAssist: () => void;
   knownContact: boolean;
   onSaveContact: () => void;
+  meEmail?: string;
+  onOpenAttachment?: (file: Attachment, messageId: string) => void;
 };
 
 export function Reader(props: Props) {
@@ -88,6 +90,8 @@ function Opened({
   onAssist,
   knownContact,
   onSaveContact,
+  meEmail = ME.email,
+  onOpenAttachment,
 }: Props & { message: MailMessage }) {
   const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
@@ -137,7 +141,7 @@ function Opened({
         <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onUnread}>
           Unread
         </button>
-        {message.from.email !== ME.email ? (
+        {message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
           <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onMute}>
             Mute
           </button>
@@ -207,10 +211,16 @@ function Opened({
                 {item.attachments?.length ? (
                   <ul className="mt-4 flex flex-wrap gap-2">
                     {item.attachments.map((file) => (
-                      <li key={file.name} className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm">
-                        <Paperclip className="size-3.5 text-muted" />
-                        {file.name}
-                        <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+                      <li key={file.id ?? file.name}>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 items-center gap-2 border border-line px-2 text-sm"
+                          onClick={() => onOpenAttachment?.(file, item.id)}
+                        >
+                          <Paperclip className="size-3.5 text-muted" />
+                          {file.name}
+                          <span className="font-mono text-xs text-muted">{formatSize(file.size)}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
