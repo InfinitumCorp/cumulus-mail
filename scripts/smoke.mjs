@@ -9,6 +9,11 @@
  * A Supabase host also requires CUMULUS_ALLOW_SUPABASE=1.
  * Database runs only when DATABASE_URL is set.
  * OIDC discovery runs only when CUMULUS_OIDC_ISSUER is set.
+ * The app default issuer is the live Cognito issuer in
+ * src/lib/auth/issuer-defaults.mjs. Set CUMULUS_OIDC_ISSUER to that value
+ * to check discovery. Unset skips the network call.
+ * The real-database inbound probe runs only when MAIL_INBOUND_LIVE=1.
+ * See scripts/inbound-live.mjs. It is off for CI.
  *
  * Storage imports the TypeScript driver, so a configured storage check needs:
  *   node --experimental-strip-types scripts/smoke.mjs
@@ -20,12 +25,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
+import { inboundLiveEnabled, runInboundLive } from "./inbound-live.mjs";
 
 const MAIL_MIGRATIONS = [
   "0002_cumulus_mail.sql",
   "0003_mail_auth_share.sql",
   "0004_message_metadata.sql",
   "0005_profile_and_routes.sql",
+  "0006_mail_rls.sql",
 ];
 
 function trim(env, name) {
@@ -37,12 +44,13 @@ export function smokePlan(env = process.env) {
   return {
     storage: Boolean(
       trim(env, "MAIL_S3_ENDPOINT") &&
-        trim(env, "MAIL_S3_BUCKET") &&
-        trim(env, "MAIL_S3_ACCESS_KEY_ID") &&
-        trim(env, "MAIL_S3_SECRET_ACCESS_KEY"),
+      trim(env, "MAIL_S3_BUCKET") &&
+      trim(env, "MAIL_S3_ACCESS_KEY_ID") &&
+      trim(env, "MAIL_S3_SECRET_ACCESS_KEY"),
     ),
     database: Boolean(trim(env, "DATABASE_URL")),
     oidc: Boolean(trim(env, "CUMULUS_OIDC_ISSUER")),
+    inbound: inboundLiveEnabled(env),
   };
 }
 
@@ -156,6 +164,14 @@ export async function runSmoke(env = process.env) {
   else {
     try {
       await checkOidc(env);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (!plan.inbound) console.log("[smoke] inbound skipped (MAIL_INBOUND_LIVE is not 1)");
+  else {
+    try {
+      await runInboundLive(env);
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
     }

@@ -1,14 +1,24 @@
 import { createLocalJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { applyWorkerBindings } from "../cloudflare-env.ts";
+import { DEFAULT_CUMULUS_ISSUER, jwksUrlForIssuer } from "./issuer-defaults.mjs";
 
-/** Keycloak-style realm for Cumulus://ID. Override with CUMULUS_OIDC_ISSUER. */
-export const DEFAULT_CUMULUS_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
+export { DEFAULT_CUMULUS_ISSUER };
 
+/** Cumulus://ID issuer. Override with CUMULUS_OIDC_ISSUER. Defaults to Cognito. */
 export function cumulusIssuer(env: NodeJS.ProcessEnv = process.env): string {
+  applyWorkerBindings();
   return (env.CUMULUS_OIDC_ISSUER?.trim() || DEFAULT_CUMULUS_ISSUER).replace(/\/+$/, "");
 }
 
-export function cumulusJwksUrl(issuer = cumulusIssuer()): string {
-  return `${issuer}/protocol/openid-connect/certs`;
+/** JWKS for the configured issuer. Override with CUMULUS_OIDC_JWKS_URL. */
+export function cumulusJwksUrl(
+  issuer = cumulusIssuer(),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  applyWorkerBindings();
+  const override = env.CUMULUS_OIDC_JWKS_URL?.trim();
+  if (override) return override.replace(/\/+$/, "");
+  return jwksUrlForIssuer(issuer);
 }
 
 export type VerifiedMailToken = {
@@ -29,7 +39,8 @@ export async function verifyCumulusToken(
   const { payload } = await jwtVerify(token, options.keys, { issuer });
   const tenantId = payload.tenant_id;
   if (typeof tenantId !== "string" || !tenantId) throw new Error("Verified token has no tenant_id");
-  if (typeof payload.sub !== "string" || !payload.sub) throw new Error("Verified token has no subject");
+  if (typeof payload.sub !== "string" || !payload.sub)
+    throw new Error("Verified token has no subject");
   return { tenantId, subject: payload.sub, issuer };
 }
 

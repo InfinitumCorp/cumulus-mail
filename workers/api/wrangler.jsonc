@@ -1,0 +1,47 @@
+{
+  // API worker only. Name is `cumulus-mail-api`, not `cumulus-mail`.
+  // No routes and no custom domain: this must not bind mail.cumuluscloud.app
+  // or replace the page that worker already serves.
+  // Serve it on workers.dev, or call its server routes from another host.
+  // Do not add send_email or R2.
+  //
+  // Secrets (`wrangler secret put`):
+  //   MAIL_BLOB_KEY
+  //   SUPABASE_S3_ACCESS_KEY_ID
+  //   SUPABASE_S3_SECRET_ACCESS_KEY
+  //   BETTER_AUTH_SECRET
+  //   GROK_AUTH_CLIENT_SECRET   (only if that broker is used)
+  //
+  // DATABASE_URL is not a secret here. The Hyperdrive binding supplies it.
+  // Set BETTER_AUTH_URL to this worker's workers.dev origin, not mail.cumuluscloud.app.
+  // Replace REPLACE_WITH_HYPERDRIVE_ID with the same Hyperdrive id as the inbound worker.
+  "name": "cumulus-mail-api",
+  "main": "../../.output/server/index.mjs",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "no_bundle": true,
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+    }
+  ],
+  "vars": {
+    "CUMULUS_RUNTIME": "cloudflare",
+    "MAIL_STORAGE": "s3",
+    "MAIL_DOMAIN": "cumuluscloud.app",
+    "MAIL_APP_HOST": "mail.cumuluscloud.app",
+    "CUMULUS_ALLOW_SUPABASE": "1",
+    "CUMULUS_OIDC_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
+    "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "SUPABASE_S3_REGION": "us-east-1",
+    "SUPABASE_S3_BUCKET": "cumulus-mail",
+    "VITE_AUTH_ENABLED": "true"
+  }
+}

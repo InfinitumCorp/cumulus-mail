@@ -48,6 +48,12 @@ export function newBlobId(): string {
   return randomBytes(16).toString("hex");
 }
 
+/** Object key for one blob. Tenant and blob id are checked before the key is built. */
+export function blobObjectKey(tenantId: string, blobId: string): string {
+  assertIds(tenantId, blobId);
+  return `tenants/${tenantId}/${blobId}`;
+}
+
 function location(root: string, tenantId: string, blobId: string): string {
   assertIds(tenantId, blobId);
   const base = resolve(root);
@@ -115,7 +121,11 @@ function endpointHost(endpoint: string | undefined): string {
 function missingObject(error: unknown): boolean {
   if (error instanceof NoSuchKey) return true;
   const named = error as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return named.name === "NoSuchKey" || named.name === "NotFound" || named.$metadata?.httpStatusCode === 404;
+  return (
+    named.name === "NoSuchKey" ||
+    named.name === "NotFound" ||
+    named.$metadata?.httpStatusCode === 404
+  );
 }
 
 /**
@@ -153,10 +163,7 @@ export function createS3Driver(options: S3DriverOptions): S3StorageDriver {
     responseChecksumValidation: "WHEN_REQUIRED",
   });
   const bucket = options.bucket;
-  const keyFor = (tenantId: string, blobId: string) => {
-    assertIds(tenantId, blobId);
-    return `tenants/${tenantId}/${blobId}`;
-  };
+  const keyFor = (tenantId: string, blobId: string) => blobObjectKey(tenantId, blobId);
   return {
     kind: "s3",
     client,

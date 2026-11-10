@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { applyWorkerBindings } from "../cloudflare-env.ts";
 import { sha256Hex } from "./adapter.ts";
 import { openSeal, seal, masterKeyFromEnv } from "./crypto.ts";
 import {
@@ -10,7 +11,13 @@ import {
 } from "./driver.ts";
 
 export type { StorageDriver, S3DriverOptions, S3StorageDriver } from "./driver.ts";
-export { BlobNotFoundError, createFilesystemDriver, createS3Driver, newBlobId } from "./driver.ts";
+export {
+  BlobNotFoundError,
+  blobObjectKey,
+  createFilesystemDriver,
+  createS3Driver,
+  newBlobId,
+} from "./driver.ts";
 export { masterKeyFromEnv, openSeal, seal, tenantKey } from "./crypto.ts";
 export { ChecksumMismatchError, TenantAccessError, assertTenantId, sha256Hex } from "./adapter.ts";
 
@@ -21,14 +28,17 @@ export type TenantBlobs = {
 };
 
 export function createStorageDriver(env: NodeJS.ProcessEnv = process.env): StorageDriver {
+  applyWorkerBindings();
   const mode = (env.MAIL_STORAGE ?? "local").trim().toLowerCase();
   if (mode === "s3") {
     return createS3Driver({
-      bucket: env.MAIL_S3_BUCKET?.trim() || "cumulus-mail-preview",
-      endpoint: env.MAIL_S3_ENDPOINT?.trim() || undefined,
-      region: env.MAIL_S3_REGION?.trim() || "us-east-1",
-      accessKeyId: env.MAIL_S3_ACCESS_KEY_ID?.trim(),
-      secretAccessKey: env.MAIL_S3_SECRET_ACCESS_KEY?.trim(),
+      bucket:
+        env.MAIL_S3_BUCKET?.trim() || env.SUPABASE_S3_BUCKET?.trim() || "cumulus-mail-preview",
+      endpoint: env.MAIL_S3_ENDPOINT?.trim() || env.SUPABASE_S3_ENDPOINT?.trim() || undefined,
+      region: env.MAIL_S3_REGION?.trim() || env.SUPABASE_S3_REGION?.trim() || "us-east-1",
+      accessKeyId: env.MAIL_S3_ACCESS_KEY_ID?.trim() || env.SUPABASE_S3_ACCESS_KEY_ID?.trim(),
+      secretAccessKey:
+        env.MAIL_S3_SECRET_ACCESS_KEY?.trim() || env.SUPABASE_S3_SECRET_ACCESS_KEY?.trim(),
       loopbackOnly: env.MAIL_S3_LOOPBACK_ONLY === "1",
     });
   }
@@ -63,7 +73,10 @@ export function createSealedDriver(inner: StorageDriver, masterKey: Uint8Array):
  * Blobs for one verified tenant. `tenantId` is closed over here. Callers pass
  * a blob id, not a tenant.
  */
-export function openTenantStorage(tenantId: string, inner: StorageDriver = createStorageDriver()): TenantBlobs {
+export function openTenantStorage(
+  tenantId: string,
+  inner: StorageDriver = createStorageDriver(),
+): TenantBlobs {
   const driver = createSealedDriver(inner, masterKeyFromEnv());
   return {
     async put(plaintext) {
@@ -77,7 +90,11 @@ export function openTenantStorage(tenantId: string, inner: StorageDriver = creat
         const body = await driver.get(tenantId, blobId);
         return { body, sha256: await sha256Hex(body) };
       } catch (error) {
-        if (error instanceof BlobNotFoundError || (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        if (
+          error instanceof BlobNotFoundError ||
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+          return null;
         throw error;
       }
     },
