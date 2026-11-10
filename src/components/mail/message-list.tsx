@@ -1,6 +1,6 @@
 import { Star } from "lucide-react";
 import type { BoxId, MailMessage } from "@/lib/mail/model";
-import { formatShort, initials, rowTitle } from "@/lib/mail/logic";
+import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
 
 type Props = {
   box: BoxId;
@@ -118,7 +118,7 @@ export function MessageList({
             const unread = messages.some(
               (item) => item.threadId === message.threadId && item.unread && item.folder === message.folder,
             );
-            const snippet = message.body.replace(/\s+/g, " ").trim();
+            const snippet = messageSnippet(message.body);
             const selected = message.id === selectedId;
             return (
               <div

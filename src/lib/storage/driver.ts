@@ -1,6 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  NoSuchKey,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 
 /**
  * Same call shape as Drive's storage driver in cumulus-exchange
@@ -89,6 +98,8 @@ export type S3DriverOptions = {
 };
 
 export type S3StorageDriver = StorageDriver & {
+  client: S3Client;
+  bucket: string;
   ensureBucket(): Promise<void>;
 };
 
@@ -101,12 +112,23 @@ function endpointHost(endpoint: string | undefined): string {
   }
 }
 
+function missingObject(error: unknown): boolean {
+  if (error instanceof NoSuchKey) return true;
+  const named = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return named.name === "NoSuchKey" || named.name === "NotFound" || named.$metadata?.httpStatusCode === 404;
+}
+
 /**
- * Same options and methods as Drive's `createS3Driver`, including
- * `ensureBucket`. This preview does not construct an S3 client and does not
- * send. Drive's copy sends `PutObjectCommand`, `GetObjectCommand`, and
- * `DeleteObjectCommand` with `Key: tenants/${tenantId}/${blobId}`, and it
- * defaults `region` to `us-east-1`.
+ * Same options and methods as Drive's `createS3Driver`. Bytes go to
+ * `tenants/${tenantId}/${blobId}` through AWS SDK v3. `loopbackOnly` refuses
+ * any endpoint that is not local. A `*.supabase.co` host is refused unless
+ * `CUMULUS_ALLOW_SUPABASE=1`.
+ *
+ * Supabase Storage's S3 endpoint is `https://<project>.supabase.co/storage/v1/s3`.
+ * That host needs `forcePathStyle` so the bucket stays in the path, and
+ * `requestChecksumCalculation` / `responseChecksumValidation` of `WHEN_REQUIRED`.
+ * AWS SDK v3's default flexible checksums are not accepted there. Both are set
+ * below. Outbound mail does not use this driver.
  */
 export function createS3Driver(options: S3DriverOptions): S3StorageDriver {
   const host = endpointHost(options.endpoint);
@@ -119,32 +141,72 @@ export function createS3Driver(options: S3DriverOptions): S3StorageDriver {
     }
   }
   if (!options.bucket?.trim()) throw new Error("S3 driver requires a bucket");
-  const region = options.region || "us-east-1";
-  const refuse = async (): Promise<never> => {
-    throw new Error(
-      `S3 driver for bucket "${options.bucket}" (${region}) matches Drive's put/get/delete and does not send.`,
-    );
+  const client = new S3Client({
+    region: options.region || "us-east-1",
+    endpoint: options.endpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: options.accessKeyId ?? "",
+      secretAccessKey: options.secretAccessKey ?? "",
+    },
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
+  });
+  const bucket = options.bucket;
+  const keyFor = (tenantId: string, blobId: string) => {
+    assertIds(tenantId, blobId);
+    return `tenants/${tenantId}/${blobId}`;
   };
   return {
     kind: "s3",
+    client,
+    bucket,
     async ensureBucket() {
-      await refuse();
+      try {
+        await client.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch {
+        await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
     },
-    async put(tenantId, blobId) {
-      assertIds(tenantId, blobId);
-      await refuse();
+    async put(tenantId, blobId, bytes) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: keyFor(tenantId, blobId),
+          Body: bytes,
+        }),
+      );
     },
-    async get(tenantId, blobId): Promise<Uint8Array> {
-      assertIds(tenantId, blobId);
-      return refuse();
+    async get(tenantId, blobId) {
+      try {
+        const out = await client.send(
+          new GetObjectCommand({
+            Bucket: bucket,
+            Key: keyFor(tenantId, blobId),
+          }),
+        );
+        if (!out.Body) throw new BlobNotFoundError(blobId);
+        return Buffer.from(await out.Body.transformToByteArray());
+      } catch (error) {
+        if (missingObject(error)) throw new BlobNotFoundError(blobId);
+        throw error;
+      }
     },
     async delete(tenantId, blobId) {
-      assertIds(tenantId, blobId);
-      await refuse();
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: keyFor(tenantId, blobId),
+        }),
+      );
     },
     async probe() {
       await this.ensureBucket();
-      return false;
+      const blobId = "bb".padEnd(32, "0");
+      await this.put("probe", blobId, Buffer.from("probe"));
+      const got = await this.get("probe", blobId);
+      await this.delete("probe", blobId);
+      return got.toString() === "probe";
     },
   };
 }

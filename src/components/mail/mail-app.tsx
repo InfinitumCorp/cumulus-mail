@@ -3,6 +3,7 @@ import { Menu, Search, SquarePen } from "lucide-react";
 import { getAttachment } from "@/lib/mail/api";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
+import { startConjure, followConjure } from "@/lib/mail/conjure";
 import {
   briefKey,
   audienceLabel,
@@ -336,6 +337,25 @@ export function MailApp() {
     setAssisting(true);
     setComposeError("");
     try {
+      // "@conjure <question>" in the draft: run a live Conjure forecast and put it in the draft.
+      if (/(^|[^\w@./])@conjure(?![\w-]|\.[a-z])/i.test(composer.body)) {
+        const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
+        let result = await startConjure({ data: { text: composer.body, context: related.length ? transcript(related) : "" } });
+        if (result.error || !result.mention) {
+          setComposeError(result.error || "Write a question after @conjure.");
+          return;
+        }
+        const show = (text: string) => setComposer((current) => (current ? { ...current, body: `${current.body.replace(/\n*\[Conjure\][\s\S]*$/, "")}\n\n[Conjure]\n${text}` } : current));
+        show(result.text ?? "");
+        for (let i = 0; i < 300 && result.ticket && !["done", "failed", "cancelled"].includes(result.prediction?.status ?? ""); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const next = await followConjure({ data: { ticket: result.ticket } });
+          if (next.error) break;
+          result = { ...result, ...next };
+          show(next.text ?? "");
+        }
+        return;
+      }
       const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
       const source =
         related.length > 0

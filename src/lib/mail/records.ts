@@ -1,5 +1,8 @@
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
+import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
+import { blindIndex, openText, sealText } from "./field-crypto.ts";
+import { messageSnippet } from "./logic.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
@@ -22,6 +25,8 @@ type MessageRow = {
   delivery_json: string | null;
   raw_key: string | null;
   auth_json: string | null;
+  snippet_enc: string | null;
+  headers_enc: string | null;
 };
 
 type AttachmentRow = {
@@ -44,24 +49,31 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
-export function rowToMessage(row: MessageRow, attachments: Attachment[]): MailMessage {
+function storedText(tenantId: string, value: string | null): string {
+  return openText(tenantId, value);
+}
+
+export function rowToMessage(row: MessageRow, attachments: Attachment[], tenantId: string): MailMessage {
+  const headersRaw = row.headers_enc ? storedText(tenantId, row.headers_enc) : "";
+  const headers = headersRaw ? parseJson<Record<string, string>>(headersRaw, {}) : undefined;
   return {
     id: row.id,
     threadId: row.thread_id,
     folder: asFolder(row.folder),
-    from: { name: row.from_name, email: row.from_email },
-    to: asPeople(parseJson<Person[]>(row.to_json, [])),
-    cc: asPeople(parseJson<Person[]>(row.cc_json, [])),
-    subject: row.subject,
-    body: row.body,
+    from: { name: storedText(tenantId, row.from_name), email: storedText(tenantId, row.from_email) },
+    to: asPeople(parseJson<Person[]>(storedText(tenantId, row.to_json), [])),
+    cc: asPeople(parseJson<Person[]>(storedText(tenantId, row.cc_json), [])),
+    subject: storedText(tenantId, row.subject),
+    body: storedText(tenantId, row.body),
     at: row.sent_at,
     unread: row.unread === true,
     starred: row.starred === true,
     labels: parseJson<string[]>(row.labels_json, []).filter((label) => typeof label === "string"),
     attachments: attachments.length ? attachments : undefined,
-    delivery: row.delivery_json ? parseJson(row.delivery_json, undefined) : undefined,
+    delivery: row.delivery_json ? parseJson(storedText(tenantId, row.delivery_json), undefined) : undefined,
     snoozeUntil: row.snooze_until ?? undefined,
-    auth: row.auth_json ? parseJson(row.auth_json, undefined) : undefined,
+    auth: row.auth_json ? parseJson(openText(tenantId, row.auth_json), undefined) : undefined,
+    headers,
   };
 }
 
@@ -108,7 +120,8 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   const attachments = await loadAttachmentMap(db, tenantId);
   const messages = await db.query<MessageRow>(
     `select id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body, sent_at,
-            unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json
+            unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
+            snippet_enc, headers_enc
      from cumulus_mail.messages where tenant_id = $1`,
     [tenantId],
   );
@@ -136,8 +149,8 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   for (const brief of briefs) briefMap[brief.brief_key] = brief.body;
   return {
     me: {
-      name: box.display_name,
-      email: box.address,
+      name: openText(tenantId, box.display_name),
+      email: openText(tenantId, box.address),
       cid: box.cid,
       plan: box.plan,
       quotaGb: Number(box.quota_gb),
@@ -146,9 +159,10 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       rowToMessage(
         row,
         (attachments.get(row.id) ?? []).map(({ objectKey: _objectKey, ...file }) => file),
+        tenantId,
       ),
     ),
-    aliases: aliases.map((row) => row.address),
+    aliases: aliases.map((row) => openText(tenantId, row.address)).sort(),
     briefs: briefMap,
     tasks: tasks.map((task) => ({
       id: task.id,
@@ -158,7 +172,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       messageId: task.message_id ?? undefined,
     })),
     contacts,
-    signature: box.signature,
+    signature: openText(tenantId, box.signature),
     rules: rules
       .filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label")
       .map((rule) => ({
@@ -187,12 +201,18 @@ export async function insertMessage(
   assertTenantId(tenantId);
   assertId(message.id, "message id");
   assertId(message.threadId, "thread id");
+  const subject = message.subject.slice(0, 500);
+  const body = message.body;
+  const snippet = messageSnippet(body).slice(0, 180);
+  const fromEmail = message.from.email.slice(0, 320);
+  const headerJson = message.headers ? JSON.stringify(message.headers).slice(0, 32_000) : "";
   await db.query(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
-       sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json
+       sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
+       snippet_enc, headers_enc
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -210,27 +230,88 @@ export async function insertMessage(
        snooze_until = excluded.snooze_until,
        delivery_json = excluded.delivery_json,
        raw_key = coalesce(excluded.raw_key, cumulus_mail.messages.raw_key),
-       auth_json = excluded.auth_json`,
+       auth_json = excluded.auth_json,
+       snippet_enc = excluded.snippet_enc,
+       headers_enc = excluded.headers_enc`,
     [
       tenantId,
       message.id,
       message.threadId,
       asFolder(message.folder),
-      message.from.name.slice(0, 200),
-      message.from.email.slice(0, 320),
-      JSON.stringify(message.to),
-      JSON.stringify(message.cc),
-      message.subject.slice(0, 500),
-      message.body,
+      sealText(tenantId, message.from.name.slice(0, 200)),
+      sealText(tenantId, fromEmail),
+      sealText(tenantId, JSON.stringify(message.to)),
+      sealText(tenantId, JSON.stringify(message.cc)),
+      sealText(tenantId, subject),
+      sealText(tenantId, body),
       message.at,
       message.unread,
       message.starred,
       JSON.stringify(message.labels),
       message.snoozeUntil ?? null,
-      message.delivery ? JSON.stringify(message.delivery) : null,
+      message.delivery ? sealText(tenantId, JSON.stringify(message.delivery)) : null,
       rawKey,
-      message.auth ? JSON.stringify(message.auth) : null,
+      message.auth ? sealText(tenantId, JSON.stringify(message.auth)) : null,
+      sealText(tenantId, snippet),
+      headerJson ? sealText(tenantId, headerJson) : null,
     ],
+  );
+  await db.query(`delete from cumulus_mail.message_blind where tenant_id = $1 and message_id = $2`, [
+    tenantId,
+    message.id,
+  ]);
+  const indexed: Array<[string, string]> = [
+    ["subject", subject],
+    ["from", fromEmail],
+    ["snippet", snippet],
+  ];
+  for (const person of [...message.to, ...message.cc]) indexed.push(["to", person.email]);
+  for (const [field, value] of indexed) {
+    if (!value.trim()) continue;
+    await db.query(
+      `insert into cumulus_mail.message_blind (tenant_id, message_id, field, bidx)
+       values ($1, $2, $3, $4) on conflict do nothing`,
+      [tenantId, message.id, field, blindIndex(tenantId, field, value)],
+    );
+  }
+}
+
+export async function readMessages(db: MailQuery, tenantId: string): Promise<MailMessage[]> {
+  assertTenantId(tenantId);
+  const messages = await db.query<MessageRow>(
+    `select id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body, sent_at,
+            unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
+            snippet_enc, headers_enc
+     from cumulus_mail.messages where tenant_id = $1`,
+    [tenantId],
+  );
+  return messages.map((row) => rowToMessage(row, [], tenantId));
+}
+
+export async function findMessageIds(
+  db: MailQuery,
+  tenantId: string,
+  field: "subject" | "from" | "to" | "snippet",
+  value: string,
+): Promise<string[]> {
+  assertTenantId(tenantId);
+  const rows = await db.query<{ message_id: string }>(
+    `select message_id from cumulus_mail.message_blind
+     where tenant_id = $1 and field = $2 and bidx = $3`,
+    [tenantId, field, blindIndex(tenantId, field, value)],
+  );
+  return rows.map((row) => row.message_id);
+}
+
+export async function writeDelivery(
+  db: MailQuery,
+  tenantId: string,
+  messageId: string,
+  hops: MailMessage["delivery"],
+): Promise<void> {
+  await db.query(
+    `update cumulus_mail.messages set delivery_json = $3 where tenant_id = $1 and id = $2`,
+    [tenantId, messageId, hops ? sealText(tenantId, JSON.stringify(hops)) : null],
   );
 }
 
@@ -274,7 +355,7 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
     await db.query(
       `update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`,
-      [tenantId, snapshot.signature.slice(0, 4000)],
+      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000))],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);
@@ -284,8 +365,9 @@ export async function replaceMailboxContents(
     }
     for (const alias of snapshot.aliases) {
       await db.query(
-        `insert into cumulus_mail.aliases (tenant_id, address) values ($1, $2) on conflict do nothing`,
-        [tenantId, alias],
+        `insert into cumulus_mail.aliases (tenant_id, address, address_bidx) values ($1, $2, $3)
+         on conflict (tenant_id, address_bidx) do nothing`,
+        [tenantId, sealText(tenantId, alias), addressBlind(tenantId, alias)],
       );
     }
     for (const contact of snapshot.contacts) {
@@ -309,6 +391,7 @@ export async function replaceMailboxContents(
         [tenantId, rule.id, rule.from.slice(0, 320), rule.action, rule.label?.slice(0, 80) ?? null],
       );
     }
+    await replaceRoutedAddresses(db, tenantId, [snapshot.me.email, ...snapshot.aliases]);
     for (const [key, text] of Object.entries(snapshot.briefs)) {
       await db.query(
         `insert into cumulus_mail.briefs (tenant_id, brief_key, body) values ($1,$2,$3)`,
@@ -332,8 +415,8 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
   const row = rows[0];
   if (!row) return null;
   return {
-    name: row.display_name,
-    email: row.address,
+    name: openText(tenantId, row.display_name),
+    email: openText(tenantId, row.address),
     cid: row.cid,
     plan: row.plan,
     quotaGb: Number(row.quota_gb),

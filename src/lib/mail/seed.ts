@@ -1,5 +1,7 @@
 import { assertTenantId } from "../storage/adapter.ts";
 import { mailboxAddress } from "./domain.ts";
+import { addressBlind, publishAddress } from "./directory.ts";
+import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import { SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -26,11 +28,19 @@ export async function ensureDemoDirectory(db: MailQuery): Promise<void> {
     const address = mailboxAddress(localPart);
     await db.query(
       `insert into cumulus_mail.mailboxes (
-         tenant_id, address, display_name, cid, plan, quota_gb, signature, seeded
-       ) values ($1,$2,$3,$4,'Free',15,$5,true)
+         tenant_id, address, address_bidx, display_name, cid, plan, quota_gb, signature, seeded
+       ) values ($1,$2,$3,$4,$5,'Free',15,$6,true)
        on conflict (tenant_id) do nothing`,
-      [tenantId, address, name, `cid:${tenantId}`, `${name}\n${address}`],
+      [
+        tenantId,
+        sealText(tenantId, address),
+        addressBlind(tenantId, address),
+        sealText(tenantId, name),
+        `cid:${tenantId}`,
+        sealText(tenantId, `${name}\n${address}`),
+      ],
     );
+    await publishAddress(db, tenantId, address);
   }
 }
 
@@ -59,12 +69,14 @@ export async function seedPreviewContents(db: MailQuery, tenantId: string): Prom
     );
   }
   await db.query(
-    `insert into cumulus_mail.aliases (tenant_id, address) values ($1, $2) on conflict do nothing`,
-    [tenantId, "press@cumuluscloud.app"],
+    `insert into cumulus_mail.aliases (tenant_id, address, address_bidx) values ($1, $2, $3)
+     on conflict (tenant_id, address_bidx) do nothing`,
+    [tenantId, sealText(tenantId, "press@cumuluscloud.app"), addressBlind(tenantId, "press@cumuluscloud.app")],
   );
+  await publishAddress(db, tenantId, "press@cumuluscloud.app");
   await db.query(`update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`, [
     tenantId,
-    "Alex Reid\nalex@cumuluscloud.app",
+    sealText(tenantId, "Alex Reid\nalex@cumuluscloud.app"),
   ]);
 }
 
@@ -78,11 +90,21 @@ export async function provisionMailbox(
   if (!validEmail(email)) throw new Error("Mailbox address is invalid");
   await db.query(
     `insert into cumulus_mail.mailboxes (
-       tenant_id, address, display_name, cid, plan, quota_gb, signature, seeded
-     ) values ($1,$2,$3,$4,$5,$6,$7,false)
+       tenant_id, address, address_bidx, display_name, cid, plan, quota_gb, signature, seeded
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,false)
      on conflict (tenant_id) do nothing`,
-    [tenantId, email, profile.name.slice(0, 200), profile.cid.slice(0, 200), profile.plan.slice(0, 40), profile.quotaGb, `${profile.name}\n${email}`],
+    [
+      tenantId,
+      sealText(tenantId, email),
+      addressBlind(tenantId, email),
+      sealText(tenantId, profile.name.slice(0, 200)),
+      profile.cid.slice(0, 200),
+      profile.plan.slice(0, 40),
+      profile.quotaGb,
+      sealText(tenantId, `${profile.name}\n${email}`),
+    ],
   );
+  await publishAddress(db, tenantId, email);
   if (email === previewAddress()) await ensureDemoDirectory(db);
   const claimed = await db.query<{ tenant_id: string }>(
     `update cumulus_mail.mailboxes set seeded = true where tenant_id = $1 and seeded = false returning tenant_id`,

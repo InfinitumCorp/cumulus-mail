@@ -1,5 +1,6 @@
 import { assertTenantId } from "../storage/adapter.ts";
 import { newId } from "./bytes.ts";
+import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import type { AbuseIntake } from "./hooks.ts";
 import type { MailQuery } from "./query.ts";
@@ -19,7 +20,7 @@ export function createAbuseIntake(db: MailQuery, tenantId: string): AbuseIntake 
         `insert into cumulus_mail.abuse_reports (
            tenant_id, id, reporter, subject_address, detail
          ) values ($1,$2,$3,$4,$5)`,
-        [tenantId, id, reporter, address, report.detail.trim().slice(0, 4000)],
+        [tenantId, id, reporter, sealText(tenantId, address), report.detail.trim().slice(0, 4000)],
       );
       await suppressions.add(address, `abuse:${id}`);
       return { id, suppressed: true as const };
