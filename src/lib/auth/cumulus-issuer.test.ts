@@ -16,17 +16,14 @@ test("the default issuer is the Cumulus realm and the tenant comes only from the
   delete process.env.CUMULUS_OIDC_JWKS_URL;
   try {
     assert.equal(cumulusIssuer(), DEFAULT_CUMULUS_ISSUER);
-    assert.equal(
-      DEFAULT_CUMULUS_ISSUER,
-      "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
-    );
+    assert.equal(DEFAULT_CUMULUS_ISSUER, "https://id.cumuluscloud.app/realms/cumulus");
     assert.equal(
       cumulusJwksUrl(),
-      "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json",
+      "https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs",
     );
     assert.equal(
-      cumulusJwksUrl("https://id.cumuluscloud.app/realms/cumulus"),
-      "https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs",
+      cumulusJwksUrl("https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna"),
+      "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json",
     );
     process.env.CUMULUS_OIDC_JWKS_URL = "https://example.test/jwks";
     assert.equal(cumulusJwksUrl(), "https://example.test/jwks");

@@ -4,7 +4,7 @@ import { DEFAULT_CUMULUS_ISSUER, jwksUrlForIssuer } from "./issuer-defaults.mjs"
 
 export { DEFAULT_CUMULUS_ISSUER };
 
-/** Cumulus://ID issuer. Override with CUMULUS_OIDC_ISSUER. Defaults to Cognito. */
+/** Cumulus://ID issuer. Override with CUMULUS_OIDC_ISSUER. Defaults to the live realm. */
 export function cumulusIssuer(env: NodeJS.ProcessEnv = process.env): string {
   applyWorkerBindings();
   return (env.CUMULUS_OIDC_ISSUER?.trim() || DEFAULT_CUMULUS_ISSUER).replace(/\/+$/, "");

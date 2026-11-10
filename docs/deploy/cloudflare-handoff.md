@@ -110,13 +110,16 @@ Same Hyperdrive id, same `MAIL_BLOB_KEY`, same two S3 secrets. Also:
 
 `DATABASE_URL` is not a Worker secret. The API copies `env.HYPERDRIVE.connectionString` onto `DATABASE_URL` per request. `CUMULUS_RUNTIME=cloudflare` is already a var so the Worker does not boot the local PGLite database.
 
-OIDC defaults to Cognito, and the API wrangler var sets the same issuer:
+OIDC defaults to the live Cumulus://ID realm. Discovery and JWKS were read from that host:
 
 ```text
-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna
+issuer:   https://id.cumuluscloud.app/realms/cumulus
+jwks_uri: https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs
 ```
 
-JWKS is `/.well-known/jwks.json` on that issuer. A different issuer is `CUMULUS_OIDC_ISSUER`. A different JWKS URL is `CUMULUS_OIDC_JWKS_URL`. Tokens still need a `tenant_id` claim. `https://id.cumuluscloud.app/realms/cumulus` is not the live issuer.
+Discovery is `/.well-known/openid-configuration` under the issuer. The document advertises `id_token_signing_alg_values_supported: ["ES256"]`, and the JWKS URL returns one EC P-256 signature key. The app uses that `jwks_uri`. Override the issuer with `CUMULUS_OIDC_ISSUER` and the JWKS URL with `CUMULUS_OIDC_JWKS_URL`.
+
+Cognito is the documented alternative, not the default. Set `CUMULUS_OIDC_ISSUER` to `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna`. That host uses `/.well-known/jwks.json`. Tokens still need a `tenant_id` claim.
 
 ## 7. Deploy steps
 
@@ -136,6 +139,29 @@ npx wrangler deploy
 
 `wrangler deploy` here creates or updates **`cumulus-mail-inbound` only**. It does not change Email Routing, because `addresses` is absent. It does not touch worker `cumulus-mail`.
 
+The same worker can be uploaded with the Cloudflare API from `npm run build:inbound`. That command writes two files and does not call Cloudflare:
+
+| File                         | Role                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dist/inbound/index.js`      | One bundled ESM module. This is the main module.                                                                                                       |
+| `dist/inbound/metadata.json` | Script-upload metadata: `main_module` `index.js`, `compatibility_date` `2026-11-10`, `compatibility_flags` `["nodejs_compat"]`, and the bindings list. |
+
+The bindings list is Hyperdrive `HYPERDRIVE` (id still `REPLACE_WITH_HYPERDRIVE_ID` until you edit a copy), the plain-text vars from `workers/email/wrangler.jsonc`, and three `secret_text` names with no `text` field: `MAIL_BLOB_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`. Copy `metadata.json` aside, replace the Hyperdrive id, and add `text` on each secret binding. Do not commit that copy.
+
+There is no `send_email` binding, no R2 binding, and no route. The upload does not attach `mail.cumuluscloud.app` and does not change the Email Routing catch-all.
+
+```sh
+npm run build:inbound
+# edit a copy of dist/inbound/metadata.json with the Hyperdrive id and secret text
+curl -X PUT \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/cumulus-mail-inbound" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -F "metadata=@/tmp/cumulus-mail-inbound-metadata.json;type=application/json" \
+  -F "index.js=@dist/inbound/index.js;type=application/javascript+module"
+```
+
+The script name in that URL is `cumulus-mail-inbound`. Do not PUT this module onto the script name `cumulus-mail`. The API token needs Workers Scripts write permission. This handoff does not run the curl.
+
 4. Run the real-database probe (section 8) from a checkout, before any routing change. The probe uses the same pooler URL you gave Hyperdrive and the same S3 key. It is not a substitute for reading the Worker logs, but it runs `handleEmail` through the Hyperdrive/S3 wiring.
 5. Only after that probe passes, in the Cloudflare dashboard for the zone `cumuluscloud.app`, change the Email Routing **catch-all** from worker `cumulus-mail` to worker `cumulus-mail-inbound`. Do not add an MX record as part of this step. MX already points wherever it points today. This handoff does not edit DNS.
 6. Send one message to an address that already has a mailbox. Confirm the Worker log event `mail.inbound.stored`, an encrypted `cumulus_mail.messages` row, and a ciphertext object at `tenants/<tenantId>/<blobId>`.
@@ -150,14 +176,14 @@ The generated worker name is `cumulus-mail-api`. `main` is `index.mjs` next to t
 
 ## 8. Smoke and the real-database probe
 
-`node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or Cognito.
+`node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or the identity host.
 
 After 0006 is applied and the bucket credentials are available:
 
 ```sh
 export DATABASE_URL="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require"
 export CUMULUS_ALLOW_SUPABASE=1
-export CUMULUS_OIDC_ISSUER="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna"
+export CUMULUS_OIDC_ISSUER="https://id.cumuluscloud.app/realms/cumulus"
 export MAIL_S3_ENDPOINT="https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3"
 export MAIL_S3_BUCKET="cumulus-mail"
 export MAIL_S3_REGION="us-east-1"
