@@ -18,3 +18,8 @@ Open the printed local address. The dev server listens on port 8080.
 ## Stack
 
 TanStack Start, React 19, Tailwind 4. `npm run build` produces the Vercel output.
+
+## Labyrinth
+
+An explicit artifact SDK and same-origin relay require real Cumulus ID credentials,
+not this app's preview/Better Auth identity. See [integration contract and inherited review blockers](LABYRINTH.md).

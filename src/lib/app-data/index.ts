@@ -19,3 +19,6 @@ export { classifyCallToolError } from "./errors.ts";
 export type { CallToolErrorKind, CallToolErrorState } from "./errors.ts";
 export { useRefetchWhenConnectorReady } from "./use-connector-readiness.ts";
 export type { ConnectorWaitStatus } from "./use-connector-readiness.ts";
+
+// Explicit user-selected artifact transport; independent of preview/Better Auth identities.
+export { createMailLabyrinth } from "../labyrinth/index.ts";
