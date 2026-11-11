@@ -56,9 +56,12 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
   assert.deepEqual(pendingMigrations(["auth", "README.md"], []), []);
 });
 
-test("the auth schema ships outside the globbed directory", () => {
+test("the auth schema source stays outside the globbed directory", () => {
   const migrationsDir = join(projectRoot(), "migrations");
+  // With sign-in on (Cumulus ID), the verbatim copy migrations/0001_auth.sql is applied first.
+  const signInOn = authSchemaCopy(projectRoot()) !== null;
   assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), [
+    ...(signInOn ? [{ name: "0001_auth.sql", path: "0001_auth.sql" }] : []),
     { name: "0002_cumulus_mail.sql", path: "0002_cumulus_mail.sql" },
     { name: "0003_mail_auth_share.sql", path: "0003_mail_auth_share.sql" },
     { name: "0004_message_metadata.sql", path: "0004_message_metadata.sql" },
@@ -66,7 +69,7 @@ test("the auth schema ships outside the globbed directory", () => {
     { name: "0006_parity_settings.sql", path: "0006_parity_settings.sql" },
     { name: "0007_mail_rls.sql", path: "0007_mail_rls.sql" },
   ]);
-  assert.equal(readdirSync(migrationsDir).includes("0001_auth.sql"), false);
+  assert.equal(readdirSync(migrationsDir).includes("0001_auth.sql"), signInOn);
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });
 

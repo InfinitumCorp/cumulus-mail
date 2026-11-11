@@ -4,6 +4,8 @@ import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseRep
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
+import { askScalvs } from "@/lib/mail/scalvs";
+import { mentionIn } from "@/lib/mail/mentions";
 import {
   briefKey,
   audienceLabel,
@@ -439,7 +441,8 @@ export function MailApp() {
     setComposeError("");
     try {
       // "@conjure <question>" in the draft: run a live Conjure forecast and put it in the draft.
-      if (/(^|[^\w@./])@conjure(?![\w-]|\.[a-z])/i.test(composer.body)) {
+      const mention = mentionIn(composer.body);
+      if (mention === "conjure") {
         const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
         let result = await startConjure({ data: { text: composer.body, context: related.length ? transcript(related) : "" } });
         if (result.error || !result.mention) {
@@ -455,6 +458,17 @@ export function MailApp() {
           result = { ...result, ...next };
           show(next.text ?? "");
         }
+        return;
+      }
+      // "@scalvs <task>" (or "@scalus"): the SCALVS agent (on OpenClaw) answers into the draft.
+      if (mention === "scalvs") {
+        const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
+        const result = await askScalvs({ data: { text: composer.body, context: related.length ? transcript(related) : "" } });
+        if (result.error || !result.mention) {
+          setComposeError(result.error || "Write a task after @scalvs.");
+          return;
+        }
+        setComposer((current) => (current ? { ...current, body: `${current.body.replace(/\n*\[SCALVS\][\s\S]*$/, "")}\n\n[SCALVS]\n${result.text ?? ""}` } : current));
         return;
       }
       const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
