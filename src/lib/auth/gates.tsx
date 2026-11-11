@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
-import { GROK_PROVIDERS, authEnabled, signIn, signOut } from "./client";
+import { SIGN_IN_PROVIDERS, authEnabled, signIn, signOut } from "./client";
 import { hasGateSessionMarker } from "./gate-session-marker";
 import { resolveSignInGateState } from "./sign-in-gate";
 import { useCurrentUser, useCurrentUserState } from "./use-current-user";
@@ -63,20 +63,55 @@ export function SignInGate({
   return <>{fallback ?? <SignInButtons />}</>;
 }
 
+/**
+ * "Sign in with Cumulus ID", then "Create a Cumulus ID" for people without one.
+ * Both run the same Cumulus ID flow and land back here signed in.
+ */
 export function SignInButtons() {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <div className="flex w-full max-w-sm flex-col gap-2">
-      {GROK_PROVIDERS.map((p) => (
+      {SIGN_IN_PROVIDERS.map((p) => (
         <button
           key={p.providerId}
           type="button"
-          onClick={() => signIn(p.providerId, { callbackURL: "/" })}
-          className="w-full cursor-pointer rounded-none border border-neutral-300 px-4 py-2 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          disabled={busy}
+          onClick={() => {
+            setError(null);
+            setBusy(true);
+            void signIn(p.providerId, { callbackURL: "/" }).catch((e: unknown) => {
+              setBusy(false);
+              setError(e instanceof Error ? e.message : "Sign-in failed. Please try again.");
+            });
+          }}
+          className={
+            p.create
+              ? "w-full cursor-pointer rounded-none border border-neutral-300 px-4 py-2 hover:bg-neutral-100 disabled:cursor-wait dark:border-neutral-700 dark:hover:bg-neutral-900"
+              : "w-full cursor-pointer rounded-none border border-black bg-black px-4 py-2 text-white hover:opacity-90 disabled:cursor-wait dark:border-white dark:bg-white dark:text-black"
+          }
         >
-          Continue with {p.label}
+          {p.label}
         </button>
       ))}
+      {error && (
+        <p role="alert" className="text-sm opacity-70">
+          {error}
+        </p>
+      )}
     </div>
+  );
+}
+
+/** Full-page sign-in for signed-out visitors: Cumulus ID only. */
+export function SignInScreen({ title }: { title: string }) {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-white px-4 text-black dark:bg-black dark:text-white">
+      <div className="flex w-full max-w-sm flex-col items-center gap-6">
+        <h1 className="text-xl font-medium">{title}</h1>
+        <SignInButtons />
+      </div>
+    </main>
   );
 }
 
