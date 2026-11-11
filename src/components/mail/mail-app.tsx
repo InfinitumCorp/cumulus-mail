@@ -5,6 +5,8 @@ import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
 import { askScalvs } from "@/lib/mail/scalvs";
+import { askSearch } from "@/lib/mail/search";
+import { searchAsText } from "@/lib/mail/search-core";
 import { mentionIn } from "@/lib/mail/mentions";
 import {
   briefKey,
@@ -469,6 +471,16 @@ export function MailApp() {
           return;
         }
         setComposer((current) => (current ? { ...current, body: `${current.body.replace(/\n*\[SCALVS\][\s\S]*$/, "")}\n\n[SCALVS]\n${result.text ?? ""}` } : current));
+        return;
+      }
+      // "@search <question>": Infinitum Search reads the web; the draft gets the answer with numbered sources.
+      if (mention === "search") {
+        const result = await askSearch({ data: { text: composer.body } });
+        if (result.error || !result.mention) {
+          setComposeError(result.error || "Write a question after @search.");
+          return;
+        }
+        setComposer((current) => (current ? { ...current, body: `${current.body.replace(/\n*\[Search\][\s\S]*$/, "")}\n\n[Search]\n${searchAsText(result)}` } : current));
         return;
       }
       const related = composer.threadId ? threadOf(messages, composer.threadId) : [];
