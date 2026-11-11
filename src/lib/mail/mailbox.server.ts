@@ -3,7 +3,7 @@ import { DEV_USER_ID, UnauthorizedError, getSessionUser } from "@/lib/auth/verif
 import {
   createLocalJWKSet,
   cumulusIssuer,
-  cumulusJwksUrl,
+  fetchCumulusJwks,
   unverifiedIssuer,
   verifyCumulusToken,
 } from "@/lib/auth/cumulus-issuer";
@@ -46,9 +46,13 @@ async function database(): Promise<MailQuery> {
 async function tenantFromCumulusToken(token: string): Promise<string> {
   const issuer = cumulusIssuer();
   if (unverifiedIssuer(token) !== issuer) return "";
-  const response = await fetch(cumulusJwksUrl(issuer));
-  if (!response.ok) throw new UnauthorizedError();
-  const keys = createLocalJWKSet((await response.json()) as { keys: [] });
+  let jwks;
+  try {
+    jwks = await fetchCumulusJwks(issuer);
+  } catch {
+    throw new UnauthorizedError();
+  }
+  const keys = createLocalJWKSet(jwks as { keys: [] });
   const verified = await verifyCumulusToken(token, { issuer, keys });
   return verified.tenantId;
 }

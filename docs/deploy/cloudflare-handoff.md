@@ -146,7 +146,10 @@ No values belong in this file. Mark secret names as secrets in the Worker and in
 | `VITE_AUTH_ENABLED` | plain | `true` for this deploy. `false` with `DATABASE_URL` set fails closed. |
 | `BETTER_AUTH_SECRET` | secret | Session signing secret. |
 | `BETTER_AUTH_URL` | plain | Public origin of the API, `https://mail.cumuluscloud.app` once that host exists. |
-| `CUMULUS_OIDC_ISSUER` | plain | Defaults to `https://id.cumuluscloud.app/realms/cumulus`. A bearer whose issuer is this realm is verified there, and the tenant is the verified `tenant_id` claim. |
+| `CUMULUS_OIDC_ISSUER` | plain | Any OIDC issuer, used verbatim. Unset, Mail uses the Cumulus://ID Cognito user pool `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna`. A bearer whose issuer matches is verified against that issuer's keys, and the tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). |
+| `CUMULUS_COGNITO_USER_POOL_ID` | plain | Names another Cognito user pool instead of the default. Not a secret. |
+| `CUMULUS_COGNITO_REGION` | plain | Region for that pool. Unset, it is the prefix of the pool id. |
+| `CUMULUS_OIDC_JWKS_URL` | plain | Overrides the JWKS URL. Unset, Mail reads `jwks_uri` from the issuer's discovery document and falls back to `<issuer>/.well-known/jwks.json` (`/protocol/openid-connect/certs` for a Keycloak realm). |
 | `GROK_AUTH_ISSUER` | plain | Better Auth broker issuer. Required only when the app session uses that broker. |
 | `GROK_AUTH_CLIENT_ID` | plain | Broker client id. Not a secret. Required only for that broker. |
 | `GROK_AUTH_CLIENT_SECRET` | secret | Broker client secret. Required only for that broker. |
