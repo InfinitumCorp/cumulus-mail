@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { getAttachment } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
@@ -24,13 +24,28 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type ViewId } from "@/lib/mail/model";
+import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { parseInvite } from "@/lib/mail/invite";
+import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
+import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } from "@/lib/mail/protect";
+import { releaseDue } from "@/lib/mail/schedule";
+import { assessPhishing, classifyLink, extractLinks, stripRemoteImages } from "@/lib/mail/safety";
+import type { MailboxBackup } from "@/lib/mail/backup";
+import { defaultSettings, recordAudit } from "@/lib/mail/settings";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
 import { MessageList } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+
+function localInput(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 function visibleThread(messages: MailMessage[], selected: MailMessage | null): MailMessage[] {
   if (!selected || selected.folder === "drafts") return [];
@@ -66,6 +81,9 @@ export function MailApp() {
   const addContact = useMail((s) => s.addContact);
   const snooze = useMail((s) => s.snooze);
   const setSignature = useMail((s) => s.setSignature);
+  const setSettings = useMail((s) => s.setSettings);
+  const settings = useMail((s) => s.settings);
+  const saveContact = useMail((s) => s.saveContact);
   const addRule = useMail((s) => s.addRule);
   const removeRule = useMail((s) => s.removeRule);
   const replaceMessages = useMail((s) => s.replaceMessages);
@@ -86,11 +104,27 @@ export function MailApp() {
   const [notice, setNotice] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [undo, setUndo] = useState<{ label: string; messages: MailMessage[]; rules: MailRule[] } | null>(null);
+  const [opened, setOpened] = useState<Record<string, string>>({});
+  const [unlockError, setUnlockError] = useState("");
+  const [pendingLink, setPendingLink] = useState<{ href: string; reason?: string } | null>(null);
+  const [help, setHelp] = useState(false);
+  const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
+  const [keyError, setKeyError] = useState("");
+  const [domainNote, setDomainNote] = useState("");
   const [, setTick] = useState(0);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const current = useMail.getState().messages;
+      const released = releaseDue(current);
+      if (released !== current) useMail.getState().replaceMessages(released);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!undo) return;
@@ -159,6 +193,9 @@ export function MailApp() {
         const index = rows.findIndex((row) => row.id === selectedId);
         const next = event.key === "j" ? rows[index + 1] ?? rows[0] : rows[index - 1] ?? rows[rows.length - 1];
         if (next) openRow(next);
+      } else if (event.key === "?") {
+        event.preventDefault();
+        setHelp(true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -188,6 +225,9 @@ export function MailApp() {
         subject: message.subject,
         body: message.body,
         attachments: message.attachments ?? [],
+        cloudLinks: message.extra?.cloudLinks,
+        requestReceipt: message.extra?.readReceipt === "requested",
+        scheduleAt: localInput(message.extra?.scheduleAt),
       });
       return;
     }
@@ -250,6 +290,23 @@ export function MailApp() {
     setComposer({ placement: "modal", to, cc: "", subject, body: "", attachments: [] });
   }
 
+  async function unlockMessage(password: string) {
+    if (!reading?.extra?.protection) return;
+    try {
+      let text = await openWithPassword(reading.extra.protection, password);
+      if (pgp && isArmored(text)) text = await decryptWith(text, pgp.privateKey, pgp.passphrase);
+      setOpened((current) => ({ ...current, [reading.id]: text }));
+      const spent = spendRead(reading.extra.protection);
+      saveMessage({
+        ...reading,
+        extra: spent.ciphertext ? { ...reading.extra, protection: spent } : { ...reading.extra, protection: undefined },
+      });
+      setUnlockError("");
+    } catch (error) {
+      setUnlockError(error instanceof Error ? error.message : "Could not unlock.");
+    }
+  }
+
   async function send() {
     if (!composer) return;
     const to = parsePeople(composer.to);
@@ -267,27 +324,71 @@ export function MailApp() {
       return;
     }
     const id = `m-${Date.now().toString(36)}`;
-    remember("Message sent.");
+    let body = withSignature(composer.body, signature);
+    let extra: MessageExtra | undefined = composer.cloudLinks?.length ? { cloudLinks: composer.cloudLinks } : undefined;
+    const recipients = [...to, ...cc];
+    const keys = recipients
+      .map((person) => contacts.find((contact) => contact.email.toLowerCase() === person.email.toLowerCase())?.publicKey)
+      .filter((key): key is string => Boolean(key));
+    if (keys.length === recipients.length) {
+      try {
+        body = await encryptFor(body, keys);
+        extra = { ...extra, pgp: true };
+      } catch (error) {
+        setComposeError(error instanceof Error ? error.message : "OpenPGP could not encrypt this.");
+        return;
+      }
+    }
+    if (composer.passwordProtected) {
+      if (!composer.password || composer.password.length < 8) {
+        setComposeError("Use a password of at least 8 characters.");
+        return;
+      }
+      extra = {
+        ...extra,
+        protection: await sealWithPassword(body, composer.password, {
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          reads: composer.selfDestruct ? 1 : 20,
+          selfDestruct: Boolean(composer.selfDestruct),
+        }),
+      };
+      body = PROTECTED_PLACEHOLDER;
+    }
+    if (composer.requestReceipt) extra = { ...extra, readReceipt: "requested" };
+    let folder: "sent" | "drafts" = "sent";
+    if (composer.scheduleAt) {
+      const at = new Date(composer.scheduleAt);
+      if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) {
+        setComposeError("Choose a later time.");
+        return;
+      }
+      extra = { ...extra, scheduleAt: at.toISOString() };
+      folder = "drafts";
+    } else if ((settings?.undoSendSeconds ?? 10) > 0) {
+      extra = { ...extra, heldUntil: new Date(Date.now() + (settings?.undoSendSeconds ?? 10) * 1000).toISOString() };
+    }
+    remember(folder === "drafts" ? "Scheduled." : "Message sent.");
     if (composer.draftId) remove(composer.draftId);
-    const delivery = planDelivery([...to, ...cc]);
+    const delivery = planDelivery(recipients, { password: Boolean(composer.passwordProtected) });
     const sent = {
       id,
       threadId: composer.threadId ?? id,
-      folder: "sent" as const,
+      folder,
       from: { name: me.name, email: me.email },
       to,
       cc,
       subject: composer.subject.trim() || "(no subject)",
-      body: composer.body,
+      body,
       at: new Date().toISOString(),
       unread: false,
       starred: false,
-      labels: [audienceLabel([...to, ...cc])],
+      labels: [audienceLabel(recipients)],
       attachments: composer.attachments,
       delivery,
+      extra,
     };
-    sent.body = withSignature(composer.body, signature);
     saveMessage(sent);
+    if (settings) setSettings(recordAudit(settings, folder === "drafts" ? "schedule" : "send", sent.subject));
     try {
       await useMail.getState().flush();
     } catch (error) {
@@ -296,7 +397,7 @@ export function MailApp() {
     }
     setComposer(null);
     setComposeError("");
-    setBox("sent");
+    setBox(folder === "drafts" ? "drafts" : "sent");
     setView("mail");
     setSelectedId(id);
   }
@@ -493,7 +594,7 @@ export function MailApp() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={view === "contacts" ? "Search people" : "Search mail"}
-            title="from: leah · to: priya · subject: forecast · is:unread · has:file"
+            title="from: leah · to: priya · subject: forecast · label:spectre · in:inbox · is:unread · is:encrypted · has:file"
             aria-label={view === "contacts" ? "Search people" : "Search mail"}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
@@ -626,14 +727,65 @@ export function MailApp() {
                   note: "Saved from a message.",
                 });
               }}
+              openedBody={reading ? opened[reading.id] ?? (stripRemoteImages(reading.body).blocked ? stripRemoteImages(reading.body).html : undefined) : undefined}
+              unlockError={unlockError}
+              onUnlock={(password) => void unlockMessage(password)}
+              warnings={reading ? assessPhishing(reading).reasons : []}
+              links={reading ? extractLinks(`${reading.subject}\n${reading.body}`).map((href) => ({ href, reason: classifyLink(href).reason })) : []}
+              onOpenLink={(href) => {
+                const check = classifyLink(href);
+                if (settings?.linkConfirmation === false && !check.suspicious) {
+                  window.open(href, "_blank", "noopener,noreferrer");
+                  return;
+                }
+                setPendingLink({ href, reason: check.reason });
+              }}
+              invite={reading ? parseInvite(reading.body) : null}
+              onAcceptInvite={() => {
+                if (!reading || !settings) return;
+                const invite = parseInvite(reading.body);
+                if (!invite || settings.events.some((event) => event.id === invite.id)) return;
+                setSettings(recordAudit({ ...settings, events: [...settings.events, invite] }, "invite", invite.title));
+              }}
+              onReceipt={(accept) => {
+                if (!reading) return;
+                saveMessage({ ...reading, extra: { ...reading.extra, readReceipt: accept ? "accepted" : "declined" } });
+                if (!accept) return;
+                saveMessage({
+                  id: `rcpt-${Date.now().toString(36)}`,
+                  threadId: reading.threadId,
+                  folder: "sent",
+                  from: { name: me.name, email: me.email },
+                  to: [reading.from],
+                  cc: [],
+                  subject: `Read: ${reading.subject}`,
+                  body: `Read receipt for “${reading.subject}”.`,
+                  at: new Date().toISOString(),
+                  unread: false,
+                  starred: false,
+                  labels: ["Receipt"],
+                  extra: { autoReply: true },
+                });
+              }}
+              onReport={() => {
+                if (!reading) return;
+                const reasons = assessPhishing(reading).reasons.join("; ") || "Reported from the reader.";
+                void submitAbuseReport({ data: { reporter: me.email, subjectAddress: reading.from.email, detail: reasons } })
+                  .then(() => setNotice("Reported."))
+                  .catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Could not report."));
+              }}
             />
           </>
         ) : null}
         {view === "calendar" ? (
-          <CalendarPanel events={EVENTS.filter((event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()))} />
+          <CalendarPanel
+            events={[...EVENTS, ...(settings?.events ?? [])].filter(
+              (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
+            )}
+          />
         ) : null}
         {view === "contacts" ? (
-          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} />
+          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} onSave={saveContact} />
         ) : null}
         {view === "tasks" ? <TasksPanel tasks={tasks} onToggle={toggleTask} /> : null}
       </div>
@@ -665,6 +817,55 @@ export function MailApp() {
           onSignature={setSignature}
           onAddRule={addRule}
           onRemoveRule={removeRule}
+          settings={settings ?? defaultSettings()}
+          onSettings={setSettings}
+          domainNote={domainNote}
+          pgpPublic={pgp?.publicKey ?? ""}
+          keyError={keyError}
+          onCheckDomain={(domain) => {
+            void checkCustomDomain({ data: { domain } })
+              .then((result) => {
+                setDomainNote(result.verified ? `${domain} is verified.` : `Publish ${result.txtName} = ${result.txtValue}`);
+                if (!settings) return;
+                setSettings({
+                  ...settings,
+                  domains: settings.domains.map((item) => (item.domain === domain ? { ...item, verified: result.verified } : item)),
+                });
+              })
+              .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "DNS check failed."));
+          }}
+          onCreateKey={(passphrase) => {
+            if (passphrase.length < 8) {
+              setKeyError("Use a passphrase of at least 8 characters.");
+              return;
+            }
+            setKeyError("");
+            void generateMailKey(me.name, me.email, passphrase)
+              .then((generated) => setPgp({ ...generated, passphrase }))
+              .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not create a key."));
+          }}
+          onExport={() => {
+            void exportMailboxBackup()
+              .then((backup) => {
+                const blob = new Blob([JSON.stringify(backup)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "cumulus-mail-backup.json";
+                link.click();
+                URL.revokeObjectURL(url);
+                if (settings) setSettings(recordAudit(settings, "export", "Mailbox backup"));
+              })
+              .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "Could not export."));
+          }}
+          onImport={(text) => {
+            void importMailboxBackup({ data: JSON.parse(text) as MailboxBackup })
+              .then((snapshot) => {
+                useMail.getState().replaceSnapshot(snapshot);
+                setDomainNote("Backup imported.");
+              })
+              .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "Could not import."));
+          }}
         />
       ) : null}
       {undo ? (
@@ -673,6 +874,45 @@ export function MailApp() {
           <button type="button" className="text-sm text-accent" onClick={undoLast}>
             Undo
           </button>
+        </div>
+      ) : null}
+      {pendingLink ? (
+        <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setPendingLink(null)}>
+          <div role="dialog" aria-labelledby="link-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+            <h2 id="link-title" className="text-2xl tracking-tight">Open this link?</h2>
+            <p className="mt-3 break-all font-mono text-xs">{pendingLink.href}</p>
+            {pendingLink.reason ? <p className="mt-3 text-sm text-accent">{pendingLink.reason}</p> : null}
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                className="inline-flex h-11 items-center bg-ink px-4 text-sm text-paper"
+                onClick={() => {
+                  window.open(pendingLink.href, "_blank", "noopener,noreferrer");
+                  setPendingLink(null);
+                }}
+              >
+                Open
+              </button>
+              <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm" onClick={() => setPendingLink(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {help ? (
+        <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setHelp(false)}>
+          <div role="dialog" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+            <h2 id="help-title" className="text-2xl tracking-tight">Shortcuts</h2>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li>c compose · r reply · e archive · # trash</li>
+              <li>j next · k previous · x select · u unread · z undo</li>
+              <li>? this list</li>
+            </ul>
+            <button type="button" className="mt-5 inline-flex h-11 items-center border border-line px-4 text-sm" onClick={() => setHelp(false)}>
+              Close
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

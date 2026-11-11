@@ -32,7 +32,8 @@ const MAIL_MIGRATIONS = [
   "0003_mail_auth_share.sql",
   "0004_message_metadata.sql",
   "0005_profile_and_routes.sql",
-  "0006_mail_rls.sql",
+  "0006_parity_settings.sql",
+  "0007_mail_rls.sql",
 ];
 
 function trim(env, name) {

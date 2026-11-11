@@ -18,6 +18,7 @@ const TABLES = [
   "share_grants",
   "message_blind",
   "address_routes",
+  "protected_links",
 ];
 
 test("row level security is enabled on every mail table and no policies are added", async () => {

@@ -8,12 +8,12 @@ The live Worker `cumulus-mail` (custom domain `mail.cumuluscloud.app`, the Cumul
 
 ## 1. Head commit
 
-Deploy the commit that contains this file (`git rev-parse HEAD` on the pull request branch). It must descend from `552417b67b29927eccade4195a8d4642110a70f6` and it must contain `migrations/0006_mail_rls.sql` and `workers/email/wrangler.jsonc`.
+Deploy the commit that contains this file (`git rev-parse HEAD` on the pull request branch). It must descend from `552417b67b29927eccade4195a8d4642110a70f6` and it must contain `migrations/0007_mail_rls.sql` and `workers/email/wrangler.jsonc`.
 
 ```sh
 git rev-parse HEAD
 git merge-base --is-ancestor 552417b67b29927eccade4195a8d4642110a70f6 HEAD
-test -f migrations/0006_mail_rls.sql
+test -f migrations/0007_mail_rls.sql
 test -f workers/email/wrangler.jsonc
 ```
 
@@ -64,9 +64,9 @@ The driver uses `forcePathStyle: true` and checksum mode `WHEN_REQUIRED`. Object
 
 Do not call `ensureBucket()` against this project. The bucket is already there.
 
-## 5. Migration 0006
+## 5. Migrations 0006 and 0007
 
-Migrations `0002` through `0005` are already applied. `migrations/0006_mail_rls.sql` is not. It enables row level security on every table in `cumulus_mail`, creates no policies, and revokes `anon` and `authenticated` on that schema when those roles exist. The table owner (the pooler login) keeps access. `FORCE ROW LEVEL SECURITY` is not set.
+Migrations `0002` through `0005` are already applied. `migrations/0006_parity_settings.sql` (sealed mailbox settings, message extras, contact private fields, and password-protected links) and `migrations/0007_mail_rls.sql` are not; apply them in that order, so the RLS pass also covers `protected_links`. `0007_mail_rls.sql` It enables row level security on every table in `cumulus_mail`, creates no policies, and revokes `anon` and `authenticated` on that schema when those roles exist. The table owner (the pooler login) keeps access. `FORCE ROW LEVEL SECURITY` is not set.
 
 Nothing in this handoff applies it. After you approve it:
 
@@ -123,7 +123,7 @@ Discovery is `/.well-known/openid-configuration` under the issuer, and Mail read
 
 Confirm the account before any command that talks to Cloudflare. `npx wrangler whoami` must be the account that already owns `cumulus-mail`. If it is not, stop.
 
-1. Apply migration 0006 (section 5) after it is approved.
+1. Apply migrations 0006 and 0007 (section 5) after they are approved.
 2. Create the Hyperdrive config (section 3). Paste the id over `REPLACE_WITH_HYPERDRIVE_ID` in `workers/email/wrangler.jsonc`. Do the same in `workers/api/wrangler.jsonc` only if you are deploying the API.
 3. Put the three inbound secrets (section 6). Do not put them in `[vars]` or in git.
 
@@ -176,7 +176,7 @@ The generated worker name is `cumulus-mail-api`. `main` is `index.mjs` next to t
 
 `node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or the identity host.
 
-After 0006 is applied and the bucket credentials are available:
+After 0006 and 0007 are applied and the bucket credentials are available:
 
 ```sh
 export DATABASE_URL="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require"
