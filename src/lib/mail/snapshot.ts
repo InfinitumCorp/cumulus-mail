@@ -6,6 +6,7 @@ import type {
   MailRule,
   Person,
 } from "./model.ts";
+import type { MailSettings } from "./settings.ts";
 import { TenantAccessError } from "../storage/adapter.ts";
 
 export type MailProfile = {
@@ -25,6 +26,8 @@ export type MailboxSnapshot = {
   contacts: Contact[];
   signature: string;
   rules: MailRule[];
+  /** Omitted by older clients. The server fills the default. */
+  settings?: MailSettings;
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);

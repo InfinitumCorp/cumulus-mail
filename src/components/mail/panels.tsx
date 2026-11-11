@@ -1,5 +1,9 @@
 import { Check, Plus, X } from "lucide-react";
 import { mailDomain } from "@/lib/mail/domain";
+import { bridgeDesign } from "@/lib/mail/bridge";
+import { identityPosture } from "@/lib/mail/identity";
+import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
+import { cleanDomain } from "@/lib/mail/routing";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
 import type { MailProfile } from "@/lib/mail/snapshot";
 
@@ -31,10 +35,12 @@ export function ContactsPanel({
   contacts,
   query,
   onWrite,
+  onSave,
 }: {
   contacts: Contact[];
   query: string;
   onWrite: (contact: Contact) => void;
+  onSave?: (contact: Contact) => void;
 }) {
   const q = query.trim().toLowerCase();
   const rows = contacts.filter((contact) =>
@@ -54,6 +60,9 @@ export function ContactsPanel({
                 <p className="mt-1 font-mono text-xs text-muted">{contact.email}</p>
                 <p className="mt-2 text-sm">{contact.org}</p>
                 <p className="mt-1 text-sm text-muted">{contact.note}</p>
+                {contact.phone ? <p className="mt-1 text-sm text-muted">{contact.phone}</p> : null}
+                {contact.address ? <p className="mt-1 text-sm text-muted">{contact.address}</p> : null}
+                {contact.publicKey ? <p className="mt-1 font-mono text-xs text-muted">OpenPGP key on file</p> : null}
               </div>
               <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm hover:border-ink" onClick={() => onWrite(contact)}>
                 Write
@@ -61,6 +70,37 @@ export function ContactsPanel({
             </li>
           ))}
         </ul>
+        {onSave ? (
+          <form
+            className="mt-8 border-t border-line py-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const email = String(data.get("email") ?? "").trim().toLowerCase();
+              const existing = contacts.find((contact) => contact.email.toLowerCase() === email);
+              if (!existing) return;
+              onSave({
+                ...existing,
+                phone: String(data.get("phone") ?? "").trim(),
+                address: String(data.get("address") ?? "").trim(),
+                publicKey: String(data.get("publicKey") ?? "").trim(),
+              });
+              event.currentTarget.reset();
+            }}
+          >
+            <p className="font-mono text-xs uppercase tracking-wide text-muted">Encrypted fields</p>
+            <p className="mt-2 max-w-lg text-sm text-muted">Phone, postal address, and an OpenPGP public key are sealed with this mailbox.</p>
+            <div className="mt-4 flex max-w-lg flex-col gap-2">
+              <input name="email" aria-label="Contact email" placeholder="Existing address" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
+              <input name="phone" aria-label="Phone" placeholder="Phone" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
+              <input name="address" aria-label="Postal address" placeholder="Postal address" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
+              <textarea name="publicKey" aria-label="OpenPGP public key" placeholder="OpenPGP public key" className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+              <button type="submit" className="inline-flex h-11 items-center self-start border border-line px-3 text-sm hover:border-ink">
+                Save encrypted fields
+              </button>
+            </div>
+          </form>
+        ) : null}
       </div>
     </div>
   );
@@ -111,23 +151,43 @@ export function AccountPanel({
   quotaLabel,
   signature,
   rules,
+  settings,
   onClose,
   onAddAlias,
   onSignature,
   onAddRule,
   onRemoveRule,
+  onSettings,
+  onExport,
+  onImport,
+  onCheckDomain,
+  domainNote = "",
+  pgpPublic = "",
+  onCreateKey,
+  keyError = "",
 }: {
   me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
   signature: string;
   rules: MailRule[];
+  settings: MailSettings;
   onClose: () => void;
   onAddAlias: (alias: string) => void;
   onSignature: (signature: string) => void;
   onAddRule: (rule: MailRule) => void;
   onRemoveRule: (id: string) => void;
+  onSettings: (settings: MailSettings) => void;
+  onExport: () => void;
+  onImport: (text: string) => void;
+  onCheckDomain: (domain: string) => void;
+  domainNote?: string;
+  pgpPublic?: string;
+  onCreateKey: (passphrase: string) => void;
+  keyError?: string;
 }) {
+  const posture = identityPosture();
+  const bridge = bridgeDesign();
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
       <div
@@ -168,6 +228,23 @@ export function AccountPanel({
                   <Plus className="size-4" />
                   Disposable alias
                 </button>
+                <form
+                  className="mt-2 flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    const email = String(data.get("address") ?? "");
+                    const error = addressAllowed(email, settings, mailDomain());
+                    if (error) return;
+                    onAddAlias(email.trim().toLowerCase());
+                    event.currentTarget.reset();
+                  }}
+                >
+                  <input name="address" aria-label="Additional address" placeholder="Additional address" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
+                  <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                    Add
+                  </button>
+                </form>
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -220,6 +297,178 @@ export function AccountPanel({
                     Add rule
                   </button>
                 </form>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Auto-reply</dt>
+              <dd className="mt-3 flex flex-col gap-2">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoReply.enabled}
+                    onChange={(event) => onSettings({ ...settings, autoReply: { ...settings.autoReply, enabled: event.target.checked } })}
+                  />
+                  On
+                </label>
+                <input
+                  aria-label="Auto-reply subject"
+                  value={settings.autoReply.subject}
+                  onChange={(event) => onSettings({ ...settings, autoReply: { ...settings.autoReply, subject: event.target.value } })}
+                  className="h-11 border border-line bg-transparent px-3 text-sm outline-none"
+                />
+                <textarea
+                  aria-label="Auto-reply"
+                  value={settings.autoReply.body}
+                  onChange={(event) => onSettings({ ...settings, autoReply: { ...settings.autoReply, body: event.target.value } })}
+                  className="min-h-20 border border-line bg-transparent px-3 py-2 text-sm outline-none"
+                />
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Sieve</dt>
+              <dd className="mt-3">
+                <textarea
+                  aria-label="Sieve filter"
+                  value={settings.sieve}
+                  onChange={(event) => onSettings({ ...settings, sieve: event.target.value })}
+                  placeholder={'if header :contains "From" "vyral" {\n  fileinto "archive";\n}'}
+                  className="min-h-28 w-full border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                />
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Domains</dt>
+              <dd className="mt-3 flex flex-col gap-3">
+                {settings.domains.map((domain) => (
+                  <div key={domain.domain} className="text-sm">
+                    <p className="font-mono text-xs">{domain.domain}</p>
+                    <p className="mt-1 text-muted">{domain.verified ? "Verified" : "Pending DNS"} · TXT {domain.txtName} = {domain.txtValue}</p>
+                    <label className="mt-2 inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={domain.catchAll}
+                        onChange={(event) =>
+                          onSettings({
+                            ...settings,
+                            domains: settings.domains.map((item) => (item.domain === domain.domain ? { ...item, catchAll: event.target.checked } : item)),
+                          })
+                        }
+                      />
+                      Catch-all
+                    </label>
+                    <button type="button" className="ml-3 text-accent" onClick={() => onCheckDomain(domain.domain)}>
+                      Check DNS
+                    </button>
+                  </div>
+                ))}
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    const domain = cleanDomain(String(data.get("domain") ?? ""), mailDomain());
+                    if (!domain || settings.domains.some((item) => item.domain === domain)) return;
+                    const txt = expectedTxt(domain);
+                    onSettings({
+                      ...settings,
+                      domains: [...settings.domains, { domain, catchAll: false, verified: false, txtName: txt.name, txtValue: txt.value }],
+                    });
+                    event.currentTarget.reset();
+                  }}
+                >
+                  <input name="domain" aria-label="Custom domain" placeholder="example.com" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
+                  <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                    Add domain
+                  </button>
+                </form>
+                {domainNote ? <p className="text-sm text-muted">{domainNote}</p> : null}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Undo send</dt>
+              <dd>
+                <input
+                  aria-label="Undo send seconds"
+                  type="number"
+                  min={0}
+                  max={30}
+                  value={settings.undoSendSeconds}
+                  onChange={(event) => onSettings({ ...settings, undoSendSeconds: Number(event.target.value) })}
+                  className="h-11 w-20 border border-line bg-transparent px-3 text-sm outline-none"
+                />
+                <span className="ml-2 text-muted">seconds</span>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Sign-in</dt>
+              <dd className="mt-2 text-sm text-muted">
+                {posture.note} Factors: {posture.methods.join(", ")}.{" "}
+                <a className="text-accent" href={posture.issuer}>
+                  {posture.issuer}
+                </a>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">OpenPGP</dt>
+              <dd className="mt-3 flex flex-col gap-2">
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    onCreateKey(String(data.get("passphrase") ?? ""));
+                  }}
+                >
+                  <input name="passphrase" type="password" aria-label="OpenPGP passphrase" placeholder="Passphrase" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
+                  <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                    Session key
+                  </button>
+                </form>
+                {keyError ? <p className="text-sm">{keyError}</p> : null}
+                {pgpPublic ? (
+                  <textarea readOnly aria-label="Session public key" value={pgpPublic} className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+                ) : (
+                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox.</p>
+                )}
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Bridge</dt>
+              <dd className="mt-2 text-sm text-muted">
+                {bridge.reason} IMAP {bridge.imap.host}:{bridge.imap.port}. SMTP {bridge.smtp.host}:{bridge.smtp.port}.
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Backup</dt>
+              <dd className="mt-3 flex gap-2">
+                <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onExport}>
+                  Export
+                </button>
+                <label className="inline-flex h-11 cursor-pointer items-center border border-line px-3 text-sm hover:border-ink">
+                  Import
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      void file.text().then(onImport);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Audit</dt>
+              <dd className="mt-3 flex flex-col gap-2">
+                {settings.audit.length === 0 ? <p className="text-sm text-muted">No mailbox actions recorded in this session.</p> : null}
+                {settings.audit.slice(-8).map((event) => (
+                  <p key={`${event.at}-${event.action}`} className="text-sm">
+                    <span className="font-mono text-xs text-muted">{event.at.slice(0, 16).replace("T", " ")}</span> {event.action}. {event.detail}
+                  </p>
+                ))}
               </dd>
             </div>
           </dl>

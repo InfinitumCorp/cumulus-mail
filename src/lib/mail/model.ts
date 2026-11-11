@@ -64,6 +64,8 @@ export type MailMessage = {
   auth?: MailAuth;
   /** MIME headers. Stored encrypted. Absent on messages composed in the app. */
   headers?: Record<string, string>;
+  /** Password envelope, schedule, and receipt state. Stored encrypted. */
+  extra?: MessageExtra;
 };
 
 export type ArchitectTask = {
@@ -80,6 +82,37 @@ export type Contact = {
   email: string;
   org: string;
   note: string;
+  /** Encrypted at rest. Absent until the owner sets them. */
+  phone?: string;
+  address?: string;
+  publicKey?: string;
+};
+
+export type ProtectedEnvelope = {
+  salt: string;
+  iv: string;
+  ciphertext: string;
+  expiresAt: string;
+  readsLeft: number;
+  selfDestruct: boolean;
+  iterations: number;
+};
+
+export type CloudLinkRef = {
+  name: string;
+  size: number;
+  href: string;
+  expiresAt: string;
+};
+
+export type MessageExtra = {
+  scheduleAt?: string;
+  heldUntil?: string;
+  protection?: ProtectedEnvelope;
+  readReceipt?: "requested" | "accepted" | "declined";
+  pgp?: boolean;
+  autoReply?: boolean;
+  cloudLinks?: CloudLinkRef[];
 };
 
 export type CalEvent = {

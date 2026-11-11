@@ -12,6 +12,8 @@ import {
   type MailRule,
 } from "./model";
 import type { MailProfile, MailboxSnapshot } from "./snapshot";
+import { mailDomain } from "./domain";
+import { defaultSettings, sanitizeSettings, type MailSettings } from "./settings";
 
 type MailStore = MailboxSnapshot & {
   syncError: string;
@@ -27,12 +29,15 @@ type MailStore = MailboxSnapshot & {
   addTask: (task: ArchitectTask) => void;
   toggleTask: (id: string) => void;
   addContact: (contact: Contact) => void;
+  saveContact: (contact: Contact) => void;
   snooze: (id: string, until: string) => void;
   setSignature: (signature: string) => void;
+  setSettings: (settings: MailSettings) => void;
   addRule: (rule: MailRule) => void;
   removeRule: (id: string) => void;
   replaceMessages: (messages: MailMessage[]) => void;
   replaceRules: (rules: MailRule[]) => void;
+  replaceSnapshot: (snapshot: MailboxSnapshot) => void;
 };
 
 const previewProfile: MailProfile = {
@@ -53,6 +58,7 @@ function blank(): MailboxSnapshot {
     contacts: SEED_CONTACTS,
     signature: "Alex Reid\nalex@cumuluscloud.app",
     rules: [],
+    settings: defaultSettings(),
   };
 }
 
@@ -66,6 +72,7 @@ function pick(state: MailStore): MailboxSnapshot {
     contacts: state.contacts,
     signature: state.signature,
     rules: state.rules,
+    settings: state.settings ?? defaultSettings(),
   };
 }
 
@@ -143,8 +150,10 @@ export const useMail = create<MailStore>((set, get) => ({
     });
   },
   addAlias: (alias) => {
-    if (get().aliases.includes(alias) || alias === get().me.email) return;
-    commit(set, get, { aliases: [...get().aliases, alias] });
+    const email = alias.trim().toLowerCase();
+    if (!email || get().aliases.includes(email) || email === get().me.email) return;
+    if (get().aliases.length >= 15) return;
+    commit(set, get, { aliases: [...get().aliases, email] });
   },
   saveBrief: (key, text) => {
     commit(set, get, { briefs: { ...get().briefs, [key]: text } });
@@ -162,6 +171,12 @@ export const useMail = create<MailStore>((set, get) => ({
     if (get().contacts.some((item) => item.email === contact.email)) return;
     commit(set, get, { contacts: [...get().contacts, contact] });
   },
+  saveContact: (contact) => {
+    const contacts = get().contacts.some((item) => item.id === contact.id)
+      ? get().contacts.map((item) => (item.id === contact.id ? contact : item))
+      : [...get().contacts, contact];
+    commit(set, get, { contacts });
+  },
   snooze: (id, until) => {
     commit(set, get, {
       messages: get().messages.map((message) => (message.id === id ? { ...message, snoozeUntil: until, unread: false } : message)),
@@ -169,6 +184,9 @@ export const useMail = create<MailStore>((set, get) => ({
   },
   setSignature: (signature) => {
     commit(set, get, { signature });
+  },
+  setSettings: (settings) => {
+    commit(set, get, { settings: sanitizeSettings(settings, mailDomain()) });
   },
   addRule: (rule) => {
     commit(set, get, { rules: [...get().rules, rule] });
@@ -181,5 +199,8 @@ export const useMail = create<MailStore>((set, get) => ({
   },
   replaceRules: (rules) => {
     commit(set, get, { rules });
+  },
+  replaceSnapshot: (snapshot) => {
+    commit(set, get, snapshot);
   },
 }));
