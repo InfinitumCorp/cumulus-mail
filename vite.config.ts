@@ -170,10 +170,16 @@ export default defineConfig(({ command, isPreview }) => ({
     ...(command === "build" || isPreview
       ? [
           nitro({
-            preset: "vercel",
+            // Cloudflare Workers, free tier. The generated worker's handler
+            // exports `fetch` AND `email`, so the mailbox API and the Email
+            // Routing ingest are one Worker (see server/plugins/cumulus-mail-
+            // inbound.ts). `NITRO_PRESET` overrides it for another host; this
+            // app no longer targets Vercel.
+            preset: process.env.NITRO_PRESET || "cloudflare-module",
             // Auto-registers server/middleware/* (the PWA install page +
-            // manifest + head-tag middleware). Nitro v3 defaults serverDir to
-            // false, so removing this silently unwires /?install=1 on deploys.
+            // manifest + head-tag middleware) and server/plugins/* (the
+            // inbound-email hook). Nitro v3 defaults serverDir to false, so
+            // removing this silently unwires /?install=1 and inbound mail.
             serverDir: "./server",
           }),
         ]

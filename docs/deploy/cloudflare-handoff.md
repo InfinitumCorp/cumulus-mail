@@ -2,6 +2,8 @@
 
 This file is for the operator who deploys. It does not deploy anything, and it does not change DNS or MX.
 
+**Sections 2 and 3 below describe the tree before the Workers port.** `cloudflare-workers.md` next to this file is current for the preset, the Wrangler config, the database binding and inbound email. The Supabase, migration and smoke-test detail here still applies.
+
 Outbound mail stays held. The inbound worker has no send binding. Do not add one.
 
 ## 1. Head commit
@@ -25,9 +27,9 @@ Three pieces. They are not one Wrangler project today.
 
 The mailbox API is the TanStack Start server functions in `src/lib/mail/api.ts`: read and write the mailbox, read an attachment, export and import, abuse intake, delivery-status intake, and share links. The tenant comes from the verified session or from a verified Cumulus token (`tenant_id`). It is never taken from the request body.
 
-`vite.config.ts` builds that server with Nitro preset `vercel`. That preset does not produce a Cloudflare Worker. For Workers, change the Nitro preset to `cloudflare-module` and deploy that output as the API Worker. Leave the preset change and the deploy to the operator. This handoff does not make that change.
+`vite.config.ts` builds that server with Nitro preset `cloudflare-module`, which does produce a Cloudflare Worker. The preset change is done; the deploy is still the operator's. See `cloudflare-workers.md`.
 
-The API reads Postgres through `DATABASE_URL` (`src/lib/db.ts`, package `pg`). On Workers, `pg` cannot open a raw socket to Postgres. Use the free Cloudflare Hyperdrive plan in front of the shared Supabase Postgres, and set `DATABASE_URL` to that Hyperdrive binding's connection string before the app reads it. Hyperdrive is the adapter that matches this code. Details are in section 3.
+The API reads Postgres through `pg` (`src/lib/db.ts`), which reaches a TCP origin from a Worker over `cloudflare:sockets` under `nodejs_compat`. Prefer the free Cloudflare Hyperdrive plan in front of the shared Supabase Postgres: bind it as `MAIL_DB` and `src/lib/db.ts` reads the connection string off the binding. Without the binding it falls back to the `DATABASE_URL` secret. Details are in section 3 and in `cloudflare-workers.md`.
 
 D1 is not a substitute. The schema is Postgres (`cumulus_mail`, including `create schema` and `timestamptz`). Those files do not run on D1 without a port that this tree does not contain.
 
@@ -37,7 +39,7 @@ Do not run `npm run db:migrate` against the shared database until the migrations
 
 ### Inbound email
 
-`workers/email/src/index.ts` exports `email(message, env)`. That is the handler Cloudflare Email Routing and Email Workers call. The Wrangler file is `workers/email/wrangler.toml.template`.
+`workers/email/src/index.ts` exports `email(message, env)` and `handleEmail(message, env)`. On the Workers deploy it is reached through the API Worker: Nitro's Cloudflare handler exports `email()`, which calls the `cloudflare:email` hook, which `server/plugins/cumulus-mail-inbound.ts` answers with the bindings from `src/lib/mail/ingest.server.ts`. So there is no separate inbound Worker to keep in step. `workers/email/wrangler.toml.template` stays for an operator who wants inbound isolated on its own Worker.
 
 The template is not a deploy:
 

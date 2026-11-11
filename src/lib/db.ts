@@ -1,25 +1,42 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { hyperdriveConnectionString, isWorkersRuntime } from "./runtime.ts";
 
 /** Which database backend is active. */
-export type DbSource = "neon" | "pglite";
-
-// An empty/whitespace DATABASE_URL (an easy misconfig in deploy UIs) must mean
-// "unset" — otherwise production would silently run on the PGLite fallback.
-const rawDatabaseUrl =
-  typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
-const databaseUrl =
-  rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
+export type DbSource = "postgres" | "pglite";
 
 /**
- * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured
- * sandbox), otherwise a local embedded **PGLite** (Postgres compiled to WASM) so
- * the app has a working database even with nothing configured — the live preview
- * included. Swap in Neon later by just setting `DATABASE_URL`; no code changes.
+ * The Postgres connection string, or undefined when there is none.
+ *
+ * Resolved per call, not once at module load: on Cloudflare Workers the
+ * Hyperdrive binding only exists while an invocation is running, and
+ * `nodejs_compat` fills `process.env` from the Worker's vars and secrets at
+ * about the same time. Reading it eagerly here would see neither.
+ *
+ * An empty/whitespace `DATABASE_URL` (an easy misconfig in deploy UIs) means
+ * "unset" — otherwise production would silently run on the PGLite fallback.
  */
-export const dbSource: DbSource = databaseUrl ? "neon" : "pglite";
+export function databaseUrl(): string | undefined {
+  const hyperdrive = hyperdriveConnectionString();
+  if (hyperdrive) return hyperdrive;
+  const raw = typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
+  return raw && raw.trim() ? raw : undefined;
+}
 
 /**
- * Minimal shared SQL surface, satisfied by both Neon and PGLite. Both the
+ * Active backend: real **Postgres** when there is a connection string (the
+ * Hyperdrive binding on Workers, or `DATABASE_URL`), otherwise a local embedded
+ * **PGLite** (Postgres compiled to WASM) so the app has a working database even
+ * with nothing configured — the live preview included.
+ *
+ * PGLite needs a WASM build and a filesystem that workerd does not have, so on
+ * Workers a missing connection string is a configuration error, not a fallback.
+ */
+export function dbSource(): DbSource {
+  return databaseUrl() ? "postgres" : "pglite";
+}
+
+/**
+ * Minimal shared SQL surface, satisfied by both Postgres and PGLite. Both the
  * tagged-template and `.query()` forms resolve to an array of row objects:
  *
  *   const sql = await getSql();
@@ -85,15 +102,16 @@ function toSql(run: Run): Sql {
   return sql;
 }
 
-function createNeonSql(): Promise<Sql> {
+function createPostgresSql(connectionString: string): Promise<Sql> {
   globalRef.__pgSqlPromise__ ??= (async () => {
-    // Regular Postgres driver: node-postgres (`pg`) — works directly with Neon's
-    // pooled endpoint. One pool per process; warm serverless instances reuse it.
+    // Regular Postgres driver: node-postgres (`pg`) — works with a pooled
+    // endpoint and, on Workers, over `cloudflare:sockets` under `nodejs_compat`.
+    // One pool per process; warm instances reuse it.
     const { Pool, types } = await import("pg");
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
-    const pool = new Pool({ connectionString: databaseUrl });
+    const pool = new Pool({ connectionString });
     return toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];
@@ -106,7 +124,15 @@ function createNeonSql(): Promise<Sql> {
 }
 
 async function createPgliteSql(): Promise<Sql> {
-  // Embedded Postgres, imported on demand so it never loads on the Neon path.
+  // workerd has no filesystem and this build ships no PGLite WASM, so name the
+  // missing setting instead of failing somewhere inside the import.
+  if (isWorkersRuntime()) {
+    throw new Error(
+      "Cumulus://Mail on Cloudflare Workers needs Postgres: bind Hyperdrive as MAIL_DB or set " +
+        "DATABASE_URL. The embedded PGLite fallback cannot run on Workers.",
+    );
+  }
+  // Embedded Postgres, imported on demand so it never loads on the Postgres path.
   // One in-memory instance per process, shared across HMR module instances, so
   // data survives source edits (it resets on dev-server restart).
   globalRef.__pgliteInstance__ ??= (async () => {
@@ -176,12 +202,14 @@ async function createSql(): Promise<Sql> {
         "or a server route loader, never from client code.",
     );
   }
-  return dbSource === "neon" ? createNeonSql() : createPgliteSql();
+  const connectionString = databaseUrl();
+  return connectionString ? createPostgresSql(connectionString) : createPgliteSql();
 }
 
 /**
- * Get the shared, **server-only** SQL client. Neon when `DATABASE_URL` is set,
- * otherwise the local PGLite fallback. Memoized — safe to call per request.
+ * Get the shared, **server-only** SQL client. Postgres when there is a
+ * connection string (Hyperdrive or `DATABASE_URL`), otherwise the local PGLite
+ * fallback. Memoized — safe to call per request.
  *
  * Schema comes from `migrations/*.sql`, auto-applied before the first query on
  * both backends — define tables there, never inline in server functions.
@@ -197,10 +225,11 @@ export function getSql(): Promise<Sql> {
 /**
  * The shared PGLite instance (preview only), with `migrations/*.sql` applied.
  * Lets Better Auth persist to the SAME embedded DB as app data in preview (via a
- * Kysely dialect). Throws when `DATABASE_URL` is set (that path uses Neon).
+ * Kysely dialect). Throws when a connection string is set (that path uses
+ * Postgres).
  */
 export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite> {
-  if (dbSource !== "pglite") {
+  if (dbSource() !== "pglite") {
     throw new Error("getPglite() is only available on the PGLite fallback (no DATABASE_URL)");
   }
   await getSql();
@@ -214,13 +243,13 @@ export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite
  *
  * - **PGLite** (preview / no `DATABASE_URL`): open the in-memory DB and apply
  *   `migrations/*.sql`. Idempotent — concurrent callers share one promise.
- * - **Neon**: no-op (pool is created lazily on first query).
+ * - **Postgres**: no-op (pool is created lazily on first query).
  *
  * Vite `configureServer` awaits this at dev startup; production imports of this
  * module kick it off immediately (see bottom of file).
  */
 export function ensureDbReady(): Promise<void> {
-  if (dbSource !== "pglite") return Promise.resolve();
+  if (dbSource() !== "pglite") return Promise.resolve();
   return getSql().then(() => undefined);
 }
 
@@ -229,7 +258,7 @@ export function ensureDbReady(): Promise<void> {
 const globalBoot = globalThis as typeof globalThis & {
   __pgBootstrapPromise__?: Promise<void>;
 };
-if (typeof window === "undefined" && dbSource === "pglite") {
+if (typeof window === "undefined" && !isWorkersRuntime() && dbSource() === "pglite") {
   globalBoot.__pgBootstrapPromise__ ??= ensureDbReady().catch((err) => {
     globalBoot.__pgBootstrapPromise__ = undefined;
     console.error("[db] PGLite bootstrap failed:", err);

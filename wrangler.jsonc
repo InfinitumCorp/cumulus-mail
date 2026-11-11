@@ -1,0 +1,57 @@
+{
+  // Cumulus://Mail on Cloudflare Workers, free tier. `vite build` (Nitro preset
+  // `cloudflare-module`) merges this file into `.output/server/wrangler.json`
+  // and adds `main` and the `assets` binding, so do not set those here.
+  //
+  // Deploy:  npx vite build && npx wrangler deploy --config .output/server/wrangler.json
+  // Nothing in this repository deploys. No account_id, no route, no secret.
+  //
+  // The worker name is deliberately NOT `cumulus-mail`. A Worker by that name is
+  // already live on `mail.cumuluscloud.app`, deployed from
+  // infinitum-nexus/apps/cumulus-mail. Deploying this one under that name, or
+  // adding that route or custom domain here, would replace it and change what
+  // that host serves. Keep this name and leave routes to the operator.
+  "name": "cumulus-mail-app",
+  "compatibility_date": "2026-11-07",
+  // `pg` reaches Postgres through `cloudflare:sockets`, and `process.env` is
+  // filled from the vars and secrets below, under this flag.
+  "compatibility_flags": ["nodejs_compat"],
+  // No `*.workers.dev` hostname until an operator decides on one. A deploy with
+  // this false is reachable from nothing, which is the point: adding the route
+  // is a separate, deliberate step.
+  "workers_dev": false,
+  "observability": { "enabled": true },
+
+  // Plain configuration only. Every secret (`DATABASE_URL`, `MAIL_BLOB_KEY`,
+  // `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`)
+  // is set with `wrangler secret put NAME` and is not in this file.
+  "vars": {
+    "MAIL_DOMAIN": "cumuluscloud.app",
+    "MAIL_APP_HOST": "mail.cumuluscloud.app",
+    // Supabase Storage over its S3 endpoint. workerd has no local disk, so this
+    // is required, not optional. `ivqiskeziohbbtkcvlun` is the project ref and
+    // `eu-west-1` its region; both are account configuration, not key material.
+    "MAIL_STORAGE": "s3",
+    "MAIL_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "MAIL_S3_REGION": "eu-west-1",
+    // Private bucket, Mail only. Unset, the code would use
+    // `cumulus-mail-preview`, so name it here.
+    "MAIL_S3_BUCKET": "cumulus-mail",
+    // The S3 driver refuses every *.supabase.co host until this is "1".
+    "CUMULUS_ALLOW_SUPABASE": "1",
+    // A real database requires sign-in on; `false` with a database set fails closed.
+    "VITE_AUTH_ENABLED": "true"
+    // MAIL_AUTH_DNS is deliberately absent. Set it to "live" only after SPF,
+    // DKIM and DMARC are published for the zone; until then the inbound check
+    // does not query DNS.
+  }
+
+  // Not set here, by intent:
+  //   "account_id"  — belongs to the operator's shell, not to the repository.
+  //   "routes" / "domains" — see the note on the worker name above.
+  //   "hyperdrive"  — optional. `wrangler hyperdrive create cumulus-mail-db
+  //                   --connection-string=...` then add
+  //                   [{ "binding": "MAIL_DB", "id": "<id>" }]. Without it the
+  //                   `DATABASE_URL` secret is used directly.
+  //   "send_email"  — outbound mail stays held. Do not add a send binding.
+}
