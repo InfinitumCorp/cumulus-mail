@@ -6,6 +6,10 @@ This client is the web app: inbox, compose, drafts, calendar, contacts, and Arch
 
 Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). Blob encryption uses `MAIL_BLOB_KEY` (32 bytes, hex or base64). Cumulus://ID signs in through an Amazon Cognito user pool, so the OIDC issuer defaults to `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna`. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`. The signing keys come from that issuer's discovery document, with `CUMULUS_OIDC_JWKS_URL` as an override. The retired realm `https://id.cumuluscloud.app/realms/cumulus` answers 404 and is no longer the default. The hosted UI domain `cumulus-id.auth.us-east-1.amazoncognito.com` serves the browser endpoints only; discovery and JWKS are on the user pool. No client secret is needed: Mail verifies tokens, it never exchanges a code. DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker template lives in `workers/email/` and is not deployed. Inbound SPF, DKIM, and DMARC use a fixture resolver unless `MAIL_AUTH_DNS=live`.
 
+## Sign in
+
+People sign in with Cumulus ID only: "Sign in with Cumulus ID", or "Create a Cumulus ID" for people without one, both on the same screen. Each runs OAuth 2.0 authorization code + PKCE against `https://id.cumuluscloud.app` (`/api/id/authorize`, `/api/id/token`) as the public client `cumulus-mail`, and the person comes back signed in. There is no local password, passcode or PIN. Set `CID_ISSUER` to a mirror (for example one that loads in Russia without a VPN) and `CID_CLIENT_ID` to override the client. Cumulus ID returns codes only to origins registered for the client in nexus (`mail.cumuluscloud.app`, `ru.mail.cumuluscloud.app`).
+
 ## Run
 
 ```sh
