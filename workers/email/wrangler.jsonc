@@ -1,0 +1,39 @@
+{
+  // Incoming mail only. Do not deploy this over the live worker `cumulus-mail`.
+  // Do not add send_email, R2, routes, or an addresses catch-all.
+  // Deploying with `addresses` would change Email Routing. The catch-all stays
+  // on `cumulus-mail` until the real-database inbound test passes.
+  //
+  // Secrets, set with `wrangler secret put` from this directory. Never commit values:
+  //   MAIL_BLOB_KEY
+  //   SUPABASE_S3_ACCESS_KEY_ID
+  //   SUPABASE_S3_SECRET_ACCESS_KEY
+  //
+  // Hyperdrive id: replace REPLACE_WITH_HYPERDRIVE_ID after
+  //   wrangler hyperdrive create cumulus-mail --connection-string="postgresql://postgres.ivqiskeziohbbtkcvlun:<password>@<pooler-host>:5432/postgres?sslmode=require"
+  // Use the session pooler (port 5432). Do not use 6543. The password stays in Hyperdrive.
+  "name": "cumulus-mail-inbound",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+    }
+  ],
+  "vars": {
+    "MAIL_DOMAIN": "cumuluscloud.app",
+    "MAIL_APP_HOST": "mail.cumuluscloud.app",
+    "CUMULUS_ALLOW_SUPABASE": "1",
+    "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "SUPABASE_S3_REGION": "us-east-1",
+    "SUPABASE_S3_BUCKET": "cumulus-mail"
+  }
+}

@@ -15,6 +15,13 @@ const GATES = [
   "DATABASE_URL",
   "MAIL_RUNTIME_DATABASE_URL",
   "CUMULUS_OIDC_ISSUER",
+  "MAIL_INBOUND_LIVE",
+  "HYPERDRIVE_CONNECTION_STRING",
+  "SUPABASE_S3_ENDPOINT",
+  "SUPABASE_S3_BUCKET",
+  "SUPABASE_S3_REGION",
+  "SUPABASE_S3_ACCESS_KEY_ID",
+  "SUPABASE_S3_SECRET_ACCESS_KEY",
 ];
 
 function quietEnv() {
@@ -24,7 +31,7 @@ function quietEnv() {
 }
 
 test("smoke plans nothing when the environment is empty", () => {
-  assert.deepEqual(smokePlan({}), { storage: false, database: false, oidc: false });
+  assert.deepEqual(smokePlan({}), { storage: false, database: false, oidc: false, inbound: false });
   assert.equal(smokePlan({ DATABASE_URL: "postgres://db.example/mail" }).database, true);
   assert.equal(smokePlan({ CUMULUS_OIDC_ISSUER: "https://id.example/realms/cumulus" }).oidc, true);
   assert.equal(
@@ -58,5 +65,6 @@ test("smoke skips cleanly when environment variables are unset", async () => {
   assert.match(out, /storage skipped/);
   assert.match(out, /database skipped/);
   assert.match(out, /oidc skipped/);
+  assert.match(out, /inbound skipped/);
   assert.doesNotMatch(out, /https?:\/\//);
 });

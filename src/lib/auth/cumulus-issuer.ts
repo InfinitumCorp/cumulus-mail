@@ -1,4 +1,5 @@
 import { createLocalJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { applyWorkerBindings } from "../cloudflare-env.ts";
 
 /**
  * Cumulus://ID signs in through an Amazon Cognito user pool. The issuer of a
@@ -56,6 +57,7 @@ type IssuerEnv = {
  *   3. The Cognito pool above.
  */
 export function cumulusIssuer(env: IssuerEnv = process.env): string {
+  applyWorkerBindings();
   const configured = env.CUMULUS_OIDC_ISSUER?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   const userPoolId = env.CUMULUS_COGNITO_USER_POOL_ID?.trim();
@@ -78,6 +80,7 @@ export function cumulusDiscoveryUrl(issuer = cumulusIssuer()): string {
  * publishes. `fetchCumulusJwks` prefers discovery and falls back to this.
  */
 export function cumulusJwksUrl(issuer = cumulusIssuer(), env: IssuerEnv = process.env): string {
+  applyWorkerBindings();
   const configured = env.CUMULUS_OIDC_JWKS_URL?.trim();
   if (configured) return configured;
   const base = issuer.replace(/\/+$/, "");

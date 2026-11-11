@@ -9,6 +9,8 @@ dist
 .env
 .env.*
 .data
+.output
+.wrangler
 .DS_Store
 AGENTS.md
 .node_modules.lock
