@@ -179,7 +179,7 @@ function Opened({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
           <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
-          <h2 className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
+          <h2 translate="no" className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
           <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
@@ -237,7 +237,7 @@ function Opened({
           {brief ? (
             <div className="mt-6 border-t border-line pt-4">
               <p className="font-mono text-xs uppercase tracking-wide text-accent">SCALVS brief</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-normal">{brief}</p>
+              <p translate="no" className="mt-2 whitespace-pre-wrap text-sm leading-normal">{brief}</p>
             </div>
           ) : null}
           {briefError ? <p className="mt-3 text-sm">{briefError}</p> : null}
@@ -273,7 +273,7 @@ function Opened({
                     </p>
                   </div>
                 </div>
-                <p className="mt-4 whitespace-pre-wrap text-base leading-normal">{item.id === message.id && openedBody ? openedBody : item.body}</p>
+                <p translate="no" className="mt-4 whitespace-pre-wrap text-base leading-normal">{item.id === message.id && openedBody ? openedBody : item.body}</p>
                 {item.id === message.id && links.length ? (
                   <ul className="mt-3 space-y-1">
                     {links.map((link) => (
