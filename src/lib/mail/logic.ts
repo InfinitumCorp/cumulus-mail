@@ -126,17 +126,20 @@ export function initials(name: string): string {
   return letters.toUpperCase() || "•";
 }
 
-export function planDelivery(people: Person[]): DeliveryHop[] {
+export function planDelivery(people: Person[], options?: { password?: boolean }): DeliveryHop[] {
   const seen = new Set<string>();
   const hops: DeliveryHop[] = [];
   for (const person of people) {
     const email = person.email.toLowerCase();
     if (seen.has(email)) continue;
     seen.add(email);
+    const outside = options?.password
+      ? "Password-protected. External delivery stays in the outbox until a mail transport is configured."
+      : "Held in the outbox. This preview does not send outside Cumulus.";
     hops.push(
       isCumulus(email)
         ? { email, status: "inside", detail: "Delivered inside Cumulus. End-to-end." }
-        : { email, status: "outbound", detail: "Held in the outbox. This preview does not send outside Cumulus." },
+        : { email, status: "outbound", detail: outside },
     );
   }
   return hops;
@@ -186,6 +189,15 @@ function tokenMatches(message: MailMessage, token: string): boolean {
   if (token === "is:unread") return message.unread;
   if (token === "is:starred") return message.starred;
   if (token === "has:file") return Boolean(message.attachments?.length);
+  if (token === "is:encrypted") return Boolean(message.extra?.protection || message.extra?.pgp);
+  if (token.startsWith("label:")) {
+    const needle = token.slice(6);
+    return !needle || message.labels.some((label) => label.toLowerCase().includes(needle));
+  }
+  if (token.startsWith("in:")) {
+    const needle = token.slice(3);
+    return !needle || message.folder === needle;
+  }
   return haystack(message).includes(token);
 }
 

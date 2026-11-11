@@ -138,3 +138,40 @@ export const acceptDeliveryStatus = createServerFn({ method: "POST" })
     const { acceptDsnForSession } = await import("./mailbox.server");
     return acceptDsnForSession(context.userId, data.raw, context.bearerToken);
   });
+
+export const checkCustomDomain = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { domain?: unknown };
+    if (typeof value?.domain !== "string" || !/^[a-z0-9.-]+$/.test(value.domain)) throw new Error("Missing domain");
+    return { domain: value.domain };
+  })
+  .handler(async ({ context, data }) => {
+    const { checkDomainForSession } = await import("./mailbox.server");
+    return checkDomainForSession(context.userId, data.domain, context.bearerToken);
+  });
+
+export const fetchProtectedLink = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { token?: unknown };
+    if (typeof value?.token !== "string" || !/^[a-f0-9]{48}$/.test(value.token)) throw new Error("Missing link");
+    return { token: value.token };
+  })
+  .handler(async ({ data }) => {
+    const { readProtectedForToken } = await import("./mailbox.server");
+    return readProtectedForToken(data.token);
+  });
+
+export const burnProtectedLink = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { token?: unknown };
+    if (typeof value?.token !== "string" || !/^[a-f0-9]{48}$/.test(value.token)) throw new Error("Missing link");
+    return { token: value.token };
+  })
+  .handler(async ({ data }) => {
+    const { burnProtectedForToken } = await import("./mailbox.server");
+    return burnProtectedForToken(data.token);
+  });

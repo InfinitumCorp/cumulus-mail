@@ -1,5 +1,5 @@
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
-import type { Attachment, MailMessage } from "@/lib/mail/model";
+import type { Attachment, CalEvent, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
@@ -37,6 +37,16 @@ type Props = {
   onSaveContact: () => void;
   meEmail?: string;
   onOpenAttachment?: (file: Attachment, messageId: string) => void;
+  openedBody?: string;
+  unlockError?: string;
+  onUnlock?: (password: string) => void;
+  warnings?: string[];
+  links?: { href: string; reason?: string }[];
+  onOpenLink?: (href: string) => void;
+  invite?: CalEvent | null;
+  onAcceptInvite?: () => void;
+  onReceipt?: (accept: boolean) => void;
+  onReport?: () => void;
 };
 
 export function Reader(props: Props) {
@@ -92,6 +102,16 @@ function Opened({
   onSaveContact,
   meEmail = ME.email,
   onOpenAttachment,
+  openedBody,
+  unlockError,
+  onUnlock,
+  warnings = [],
+  links = [],
+  onOpenLink,
+  invite,
+  onAcceptInvite,
+  onReceipt,
+  onReport,
 }: Props & { message: MailMessage }) {
   const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
@@ -150,6 +170,11 @@ function Opened({
           <ListTodo className="size-4" />
           Architect
         </button>
+        {onReport ? (
+          <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onReport}>
+            Report
+          </button>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
@@ -159,6 +184,47 @@ function Opened({
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
           </p>
+          {warnings.map((warning) => (
+            <p key={warning} className="mt-2 text-sm text-accent">
+              {warning}
+            </p>
+          ))}
+          {message.extra?.protection && onUnlock ? (
+            <form
+              className="mt-4 flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                onUnlock(String(data.get("password") ?? ""));
+              }}
+            >
+              <input name="password" type="password" aria-label="Unlock password" className="h-11 w-48 border border-line bg-transparent px-3 text-sm outline-none" />
+              <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                Unlock
+              </button>
+              {unlockError ? <span className="text-sm">{unlockError}</span> : null}
+            </form>
+          ) : null}
+          {message.extra?.readReceipt === "requested" && message.from.email.toLowerCase() !== meEmail.toLowerCase() && onReceipt ? (
+            <div className="mt-3 flex gap-3 text-sm">
+              <button type="button" className="text-accent" onClick={() => onReceipt(true)}>
+                Send read receipt
+              </button>
+              <button type="button" className="text-muted" onClick={() => onReceipt(false)}>
+                Ignore
+              </button>
+            </div>
+          ) : null}
+          {invite && onAcceptInvite ? (
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="font-mono text-xs uppercase tracking-wide text-accent">Invite</p>
+              <p className="mt-2 text-lg tracking-tight">{invite.title}</p>
+              <p className="mt-1 text-sm text-muted">{invite.whenLabel}</p>
+              <button type="button" className="mt-3 inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onAcceptInvite}>
+                Add to calendar
+              </button>
+            </div>
+          ) : null}
           {message.delivery?.length ? (
             <ul className="mt-3 space-y-1">
               {message.delivery.map((hop) => (
@@ -207,7 +273,30 @@ function Opened({
                     </p>
                   </div>
                 </div>
-                <p translate="no" className="mt-4 whitespace-pre-wrap text-base leading-normal">{item.body}</p>
+                <p translate="no" className="mt-4 whitespace-pre-wrap text-base leading-normal">{item.id === message.id && openedBody ? openedBody : item.body}</p>
+                {item.id === message.id && links.length ? (
+                  <ul className="mt-3 space-y-1">
+                    {links.map((link) => (
+                      <li key={link.href}>
+                        <button type="button" className="text-left font-mono text-xs text-accent" onClick={() => onOpenLink?.(link.href)}>
+                          {link.href}
+                        </button>
+                        {link.reason ? <span className="ml-2 text-xs text-muted">{link.reason}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {item.extra?.cloudLinks?.length ? (
+                  <ul className="mt-3 space-y-1">
+                    {item.extra.cloudLinks.map((link) => (
+                      <li key={link.href}>
+                        <button type="button" className="font-mono text-xs text-accent" onClick={() => onOpenLink?.(link.href)}>
+                          {link.name} · Cumulus://Cloud
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {item.attachments?.length ? (
                   <ul className="mt-4 flex flex-wrap gap-2">
                     {item.attachments.map((file) => (
