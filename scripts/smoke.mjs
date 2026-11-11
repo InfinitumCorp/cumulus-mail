@@ -9,10 +9,9 @@
  * A Supabase host also requires CUMULUS_ALLOW_SUPABASE=1.
  * Database runs only when DATABASE_URL is set.
  * OIDC discovery runs only when CUMULUS_OIDC_ISSUER is set.
- * The app default issuer is the live Cumulus://ID realm in
+ * The app default issuer is the Cumulus://ID Cognito user pool in
  * src/lib/auth/issuer-defaults.mjs. Set CUMULUS_OIDC_ISSUER to that value
- * to check discovery. Unset skips the network call. Cognito is only used
- * when CUMULUS_OIDC_ISSUER is set to that issuer.
+ * to check discovery. Unset skips the network call.
  * The real-database inbound probe runs only when MAIL_INBOUND_LIVE=1.
  * See scripts/inbound-live.mjs. It is off for CI.
  *

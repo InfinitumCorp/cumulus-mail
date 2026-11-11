@@ -110,16 +110,14 @@ Same Hyperdrive id, same `MAIL_BLOB_KEY`, same two S3 secrets. Also:
 
 `DATABASE_URL` is not a Worker secret. The API copies `env.HYPERDRIVE.connectionString` onto `DATABASE_URL` per request. `CUMULUS_RUNTIME=cloudflare` is already a var so the Worker does not boot the local PGLite database.
 
-OIDC defaults to the live Cumulus://ID realm. Discovery and JWKS were read from that host:
+OIDC defaults to the Cumulus://ID Amazon Cognito user pool:
 
 ```text
-issuer:   https://id.cumuluscloud.app/realms/cumulus
-jwks_uri: https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs
+issuer:   https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna
+jwks_uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json
 ```
 
-Discovery is `/.well-known/openid-configuration` under the issuer. The document advertises `id_token_signing_alg_values_supported: ["ES256"]`, and the JWKS URL returns one EC P-256 signature key. The app uses that `jwks_uri`. Override the issuer with `CUMULUS_OIDC_ISSUER` and the JWKS URL with `CUMULUS_OIDC_JWKS_URL`.
-
-Cognito is the documented alternative, not the default. Set `CUMULUS_OIDC_ISSUER` to `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna`. That host uses `/.well-known/jwks.json`. Tokens still need a `tenant_id` claim.
+Discovery is `/.well-known/openid-configuration` under the issuer, and Mail reads `jwks_uri` from it. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`; override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. The tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). The retired Keycloak realm `https://id.cumuluscloud.app/realms/cumulus` no longer answers and is not the default.
 
 ## 7. Deploy steps
 
@@ -183,7 +181,7 @@ After 0006 is applied and the bucket credentials are available:
 ```sh
 export DATABASE_URL="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require"
 export CUMULUS_ALLOW_SUPABASE=1
-export CUMULUS_OIDC_ISSUER="https://id.cumuluscloud.app/realms/cumulus"
+export CUMULUS_OIDC_ISSUER="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna"
 export MAIL_S3_ENDPOINT="https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3"
 export MAIL_S3_BUCKET="cumulus-mail"
 export MAIL_S3_REGION="us-east-1"

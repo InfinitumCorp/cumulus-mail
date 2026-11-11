@@ -38,7 +38,7 @@ function assertApiSafe(config) {
   assert.equal(config.vars.MAIL_STORAGE, "s3");
   assert.equal(
     config.vars.CUMULUS_OIDC_ISSUER,
-    "https://id.cumuluscloud.app/realms/cumulus",
+    "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
   );
   assert.equal(config.hyperdrive?.[0]?.binding, "HYPERDRIVE");
   assert.equal(config.routes, undefined);

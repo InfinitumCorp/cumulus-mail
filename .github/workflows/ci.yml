@@ -6,7 +6,7 @@ on:
 
 jobs:
   check:
-    runs-on: ${{ vars.CI_RUNNER != '' && vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -39,8 +39,32 @@ jobs:
       - run: npm ci
       - name: Start SeaweedFS
         run: |
-          mkdir -p /tmp/seaweedfs
-          cat > /tmp/seaweedfs/s3.json <<'EOF'
+          set -euo pipefail
+          name="cumulus-s3-${GITHUB_RUN_ID}"
+          docker rm -f "$name" >/dev/null 2>&1 || true
+          # Older runs left a fixed-name container holding 8333 on the shared runner.
+          docker rm -f cumulus-s3 >/dev/null 2>&1 || true
+          port="$(python3 - <<'PY'
+          import os, random, socket
+          tail = int((os.environ.get("GITHUB_RUN_ID") or "0")[-5:])
+          candidates = [8333, 20000 + (tail % 20000)]
+          candidates += [random.randint(20000, 45000) for _ in range(12)]
+          for port in candidates:
+              sock = socket.socket()
+              try:
+                  sock.bind(("127.0.0.1", port))
+              except OSError:
+                  continue
+              finally:
+                  sock.close()
+              print(port)
+              break
+          else:
+              raise SystemExit("no free port for SeaweedFS")
+          PY
+          )"
+          mkdir -p "/tmp/seaweedfs-${GITHUB_RUN_ID}"
+          cat > "/tmp/seaweedfs-${GITHUB_RUN_ID}/s3.json" <<'EOF'
           {
             "identities": [
               {
@@ -51,20 +75,25 @@ jobs:
             ]
           }
           EOF
-          docker run -d --name cumulus-s3 -p 8333:8333 \
-            -v /tmp/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro \
+          docker run -d --name "$name" -p "127.0.0.1:${port}:8333" \
+            -v "/tmp/seaweedfs-${GITHUB_RUN_ID}/s3.json:/etc/seaweedfs/s3.json:ro" \
             chrislusf/seaweedfs:3.97 \
             server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
           for _ in $(seq 1 40); do
-            code=$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8333/ || true)
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:${port}/" || true)
             if [ "$code" != "000" ]; then
+              echo "MAIL_S3_ENDPOINT=http://127.0.0.1:${port}" >> "$GITHUB_ENV"
+              echo "CUMULUS_S3_CONTAINER=${name}" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 2
           done
-          docker logs cumulus-s3
+          docker logs "$name"
           exit 1
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - name: Stop SeaweedFS
+        if: always()
+        run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true

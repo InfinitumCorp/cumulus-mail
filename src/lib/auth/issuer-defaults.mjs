@@ -1,35 +1,24 @@
-/** Live Cumulus://ID realm. Override the app with CUMULUS_OIDC_ISSUER. */
-export const DEFAULT_CUMULUS_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
-
 /**
- * `jwks_uri` from the live discovery document at
- * `https://id.cumuluscloud.app/realms/cumulus/.well-known/openid-configuration`.
- * The document advertises ES256.
+ * Cumulus://ID signs in through an Amazon Cognito user pool. This plain-JS copy
+ * of the default is for scripts (smoke, live checks); the app reads
+ * src/lib/auth/cumulus-issuer.ts. Override with CUMULUS_OIDC_ISSUER.
  */
-export const DEFAULT_CUMULUS_JWKS_URI =
-  "https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs";
+export const DEFAULT_CUMULUS_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
 
-/** Previous Cumulus://ID issuer. Use only by setting CUMULUS_OIDC_ISSUER. */
-export const COGNITO_CUMULUS_ISSUER =
-  "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
+/** Cognito publishes the user pool's signing keys here. */
+export const DEFAULT_CUMULUS_JWKS_URI = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json";
+
+/** The Keycloak realm Cumulus://ID used before Cognito. It no longer answers. */
+export const RETIRED_KEYCLOAK_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
 
 /**
- * JWKS for an issuer. The live realm uses the discovery `jwks_uri`.
- * Cognito publishes `/.well-known/jwks.json`. Any other issuer keeps the
- * Keycloak realm path. CUMULUS_OIDC_JWKS_URL replaces this entirely.
+ * JWKS for an issuer: a Keycloak `/realms/<name>` issuer uses the realm certs
+ * path, anything else (Cognito included) uses `/.well-known/jwks.json`.
+ * CUMULUS_OIDC_JWKS_URL replaces this entirely.
  * @param {string} issuer
  */
 export function jwksUrlForIssuer(issuer) {
   const trimmed = String(issuer || "").replace(/\/+$/, "");
-  if (trimmed === DEFAULT_CUMULUS_ISSUER) return DEFAULT_CUMULUS_JWKS_URI;
-  let host = "";
-  try {
-    host = new URL(trimmed).hostname;
-  } catch {
-    host = "";
-  }
-  if (/^cognito-idp\.[a-z0-9-]+\.amazonaws\.com$/i.test(host)) {
-    return `${trimmed}/.well-known/jwks.json`;
-  }
-  return `${trimmed}/protocol/openid-connect/certs`;
+  if (/\/realms\/[^/]+$/.test(trimmed)) return `${trimmed}/protocol/openid-connect/certs`;
+  return `${trimmed}/.well-known/jwks.json`;
 }
