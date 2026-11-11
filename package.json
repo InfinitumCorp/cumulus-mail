@@ -4,7 +4,10 @@
   "sideEffects": false,
   "type": "module",
   "overrides": {
-    "nf3": "0.3.17"
+    "nf3": "0.3.17",
+    "fast-xml-parser": "5.12.0",
+    "joi": "18.3.1",
+    "minimatch": "11.0.1"
   },
   "scripts": {
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
@@ -16,7 +19,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test --test-concurrency=1 src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/lib/mail/logic.test.ts src/lib/mail/domain.test.ts src/lib/storage/storage.test.ts src/lib/storage/s3.integration.test.ts src/lib/auth/cumulus-issuer.test.ts src/lib/mail/share.test.ts src/lib/mail/authenticate.test.ts src/lib/mail/field-crypto.test.ts src/lib/mail/metadata.test.ts src/lib/mail/mailbox.test.ts src/lib/mail/delivery.test.ts src/lib/mail/inbound.test.ts src/lib/mail/dsn.test.ts src/lib/mail/abuse.test.ts src/lib/mail/backup.test.ts src/lib/ai/open-models.test.ts workers/email/src/index.test.ts src/lib/mail/inbound-runtime.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test --test-concurrency=1 src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/lib/mail/logic.test.ts src/lib/mail/domain.test.ts src/lib/storage/storage.test.ts src/lib/storage/s3.integration.test.ts src/lib/auth/cumulus-issuer.test.ts src/lib/auth/cumulus-id.test.ts src/lib/mail/share.test.ts src/lib/mail/authenticate.test.ts src/lib/mail/field-crypto.test.ts src/lib/mail/metadata.test.ts src/lib/mail/mailbox.test.ts src/lib/mail/delivery.test.ts src/lib/mail/inbound.test.ts src/lib/mail/dsn.test.ts src/lib/mail/abuse.test.ts src/lib/mail/backup.test.ts src/lib/ai/open-models.test.ts workers/email/src/index.test.ts src/lib/mail/inbound-runtime.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -77,7 +80,7 @@
     "typescript": "^5.7.0",
     "vaul": "^1.1.2",
     "vite": "^8.2.0",
-    "zod": "^4.4.0",
+    "zod": "^4.6.7",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
