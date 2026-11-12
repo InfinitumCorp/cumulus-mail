@@ -12,7 +12,7 @@ Checked against the public Proton Mail product on 10 Nov 2026:
 
 Statuses: **existing** (already in this repo), **added** (this change), **deferred** (not shipped, with the reason).
 
-The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged. New controls sit in the composer toolbar, the account dialog, the contacts list, the reader column, and the `/p/$token` unlock route.
+The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged. New controls sit in the composer toolbar, the account dialog (including Cumulus://ID sessions and the key directory), the contacts list, the reader column, and the `/p/$token` unlock route.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Zero-access encryption (server cannot decrypt the mailbox) | deferred | The server holds `MAIL_BLOB_KEY` and opens fields to build the snapshot. A client-held mailbox key would replace that model. |
 | End-to-end marker for Cumulus-to-Cumulus mail | existing | Delivery stays inside the app. The stored body is still sealed with the tenant key. |
 | OpenPGP between users | added | Optional. If every recipient has a public key on the contact, the composer encrypts before save. The private key is created for the browser tab and is not written to the mailbox. |
-| Automatic key directory on Cumulus://ID | deferred | No key-publish API on `id.cumuluscloud.app` is wired here. |
+| Automatic key directory on Cumulus://ID | added | The account dialog publishes the session public key with `POST /api/id/keys` and can withdraw it (`DELETE /api/id/keys/:id`). Before sending, the composer looks up each `@cumuluscloud.app` recipient with `GET /api/id/keys?address=` and falls back to the key saved on the contact. `cid-account.ts`, `cid-api.ts`. The session key still lives only in the tab, so mail encrypted to a published key opens only while that tab keeps it. |
 | Post-quantum encryption | deferred | Proton announced it in 2026. This client does not implement a PQ KEM. |
 | Password-protected mail to external recipients | added | PBKDF2 + AES-GCM. The password is not stored. External SMTP is still held. |
 | Expiration | added | Default 7 days on the envelope. Opening after that fails. |
@@ -63,7 +63,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
 | Provider-scale spam and phishing reputation | deferred | No external reputation feed. |
 | 2FA, passkeys, security keys | deferred | Enrolled on Cumulus://ID (`https://id.cumuluscloud.app`). Mail does not store a second factor. The account dialog says so. |
-| Session list from Cumulus://ID | deferred | This repo has no session API for that issuer. |
+| Session list from Cumulus://ID | added | Account dialog "Sessions": `GET /api/id/sessions` with the Cumulus://ID access token stored at sign-in (device, product, country, last active, current), "Sign out" per session (`DELETE /api/id/sessions/:id`) and "Sign out everywhere else" (`POST /api/id/sessions/revoke-others`). Mail does not request `offline_access`, so after the access token expires (one hour at most) the dialog links to `https://id.cumuluscloud.app/account` instead. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
 | Import / export in the account dialog | added | |

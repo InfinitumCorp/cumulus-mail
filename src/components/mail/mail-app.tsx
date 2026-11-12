@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
+import { lookupRecipientKeys, publishMailKey, withdrawMailKey } from "@/lib/auth/cid-api";
+import { recipientKeys } from "@/lib/auth/cid-account";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
@@ -112,6 +114,7 @@ export function MailApp() {
   const [help, setHelp] = useState(false);
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
   const [keyError, setKeyError] = useState("");
+  const [publishedKey, setPublishedKey] = useState<{ id: string; fingerprint: string } | null>(null);
   const [domainNote, setDomainNote] = useState("");
   const [, setTick] = useState(0);
 
@@ -329,10 +332,17 @@ export function MailApp() {
     let body = withSignature(composer.body, signature);
     let extra: MessageExtra | undefined = composer.cloudLinks?.length ? { cloudLinks: composer.cloudLinks } : undefined;
     const recipients = [...to, ...cc];
-    const keys = recipients
-      .map((person) => contacts.find((contact) => contact.email.toLowerCase() === person.email.toLowerCase())?.publicKey)
-      .filter((key): key is string => Boolean(key));
-    if (keys.length === recipients.length) {
+    // Published keys on the Cumulus://ID directory first, then the key saved on
+    // the contact. A directory that can't be reached just means no directory keys.
+    const directory = await lookupRecipientKeys({ data: { addresses: recipients.map((person) => person.email) } }).catch(
+      () => ({}) as Record<string, string[]>,
+    );
+    const keys = recipientKeys(
+      recipients.map((person) => person.email),
+      directory,
+      (address) => contacts.find((contact) => contact.email.toLowerCase() === address)?.publicKey || undefined,
+    );
+    if (keys) {
       try {
         body = await encryptFor(body, keys);
         extra = { ...extra, pgp: true };
@@ -836,6 +846,29 @@ export function MailApp() {
           domainNote={domainNote}
           pgpPublic={pgp?.publicKey ?? ""}
           keyError={keyError}
+          publishedKey={publishedKey}
+          onPublishKey={() => {
+            if (!pgp) return;
+            setKeyError("");
+            void publishMailKey({ data: { armored: pgp.publicKey } })
+              .then((result) => {
+                if (result.status === "ok") setPublishedKey({ id: result.value.id, fingerprint: result.value.fingerprint });
+                else if (result.status === "signed-out") setKeyError("Mail's Cumulus://ID sign-in has expired. Sign in again to publish.");
+                else setKeyError(result.message);
+              })
+              .catch(() => setKeyError("Could not publish the key."));
+          }}
+          onWithdrawKey={() => {
+            if (!publishedKey) return;
+            setKeyError("");
+            void withdrawMailKey({ data: { id: publishedKey.id } })
+              .then((result) => {
+                if (result.status === "ok") setPublishedKey(null);
+                else if (result.status === "signed-out") setKeyError("Mail's Cumulus://ID sign-in has expired. Withdraw the key at id.cumuluscloud.app/account.");
+                else setKeyError(result.message);
+              })
+              .catch(() => setKeyError("Could not withdraw the key."));
+          }}
           onCheckDomain={(domain) => {
             void checkCustomDomain({ data: { domain } })
               .then((result) => {
@@ -855,7 +888,10 @@ export function MailApp() {
             }
             setKeyError("");
             void generateMailKey(me.name, me.email, passphrase)
-              .then((generated) => setPgp({ ...generated, passphrase }))
+              .then((generated) => {
+                setPgp({ ...generated, passphrase });
+                setPublishedKey(null);
+              })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not create a key."));
           }}
           onExport={() => {

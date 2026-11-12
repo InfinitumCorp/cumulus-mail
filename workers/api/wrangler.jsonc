@@ -38,7 +38,7 @@
     "MAIL_DOMAIN": "cumuluscloud.app",
     "MAIL_APP_HOST": "mail.cumuluscloud.app",
     "CUMULUS_ALLOW_SUPABASE": "1",
-    "CUMULUS_OIDC_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
+    "CUMULUS_OIDC_ISSUER": "https://id.cumuluscloud.app/realms/cumulus",
     "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
     "SUPABASE_S3_REGION": "us-east-1",
     "SUPABASE_S3_BUCKET": "cumulus-mail",

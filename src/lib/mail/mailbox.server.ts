@@ -7,6 +7,7 @@ import {
   unverifiedIssuer,
   verifyCumulusToken,
 } from "@/lib/auth/cumulus-issuer";
+import { cidConfig } from "@/lib/auth/cumulus-id";
 import { createStorageDriver, openTenantStorage, TenantAccessError, type StorageDriver } from "@/lib/storage";
 import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
@@ -53,7 +54,8 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
     throw new UnauthorizedError();
   }
   const keys = createLocalJWKSet(jwks as { keys: [] });
-  const verified = await verifyCumulusToken(token, { issuer, keys });
+  // A Cumulus://ID access token must be minted for this client (`aud`).
+  const verified = await verifyCumulusToken(token, { issuer, keys, audience: cidConfig().clientId });
   return verified.tenantId;
 }
 
