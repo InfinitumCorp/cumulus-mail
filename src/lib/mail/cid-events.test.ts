@@ -61,7 +61,7 @@ test("account.created provisions the mailbox and publishes the address before Ma
 });
 
 test("security events land once in the inbox; none without a mailbox", async () => {
-  const e: CidEvent = { cid: CID, type: "session.created", detail: { device: "Safari on iOS", country: "GB", method: "passkey" }, at };
+  const e: CidEvent = { cid: CID, type: "session.created", detail: { device: "Safari on iOS", country: "GB", method: "password+pin" }, at };
   assert.equal(await handleCidEvent(harness.db, e, "cumuluscloud.app"), "notified");
   assert.equal(await handleCidEvent(harness.db, e, "cumuluscloud.app"), "duplicate");
   const snap = await readSnapshot(harness.db, (await tenantForCid(harness.db, CID))!);
@@ -76,7 +76,7 @@ test("security events land once in the inbox; none without a mailbox", async () 
 });
 
 test("every forwarded security event has a notice", () => {
-  for (const type of ["session.created", "session.revoked_all", "passkey.added", "passkey.removed", "mfa.enabled", "mfa.disabled", "identity.linked", "identity.unlinked", "mail_key.published", "mail_key.revoked"]) {
+  for (const type of ["session.created", "session.revoked_all", "password.changed", "pin.set", "pin.changed", "passkey.added", "passkey.removed", "mfa.enabled", "mfa.disabled", "identity.linked", "identity.unlinked", "mail_key.published", "mail_key.revoked"]) {
     assert.ok(noticeFor({ cid: CID, type, detail: {}, at }), type);
   }
 });

@@ -73,20 +73,26 @@ const s = (v: unknown) => (typeof v === "string" ? v.slice(0, 120) : typeof v ==
 /** Subject and body for a security notice, or null for events that don't warrant one. */
 export function noticeFor(e: CidEvent): { subject: string; body: string } | null {
   const when = new Date(e.at).toUTCString();
-  const notYou = `If this wasn't you, open ${ACCOUNT_URL}#devices, sign out the sessions you don't recognise, and remove any passkey you didn't add.`;
+  const notYou = `If this wasn't you, open ${ACCOUNT_URL}#devices, sign out the sessions you don't recognise, and change your password and PIN.`;
   const d = e.detail;
   switch (e.type) {
     case "session.created":
       return {
         subject: "New sign-in to your Cumulus://ID",
-        body: `Your Cumulus://ID was used to sign in on ${s(d.device) || "a device"}${s(d.country) ? ` in ${s(d.country)}` : ""} at ${when}, with ${s(d.method) || "a passkey"}.\n\n${notYou}`,
+        body: `Your Cumulus://ID was used to sign in on ${s(d.device) || "a device"}${s(d.country) ? ` in ${s(d.country)}` : ""} at ${when}, with ${s(d.method).replaceAll("+", " + ") || "a password and PIN"}.\n\n${notYou}`,
       };
+    case "password.changed":
+      return { subject: "Your Cumulus://ID password was changed", body: `Your password was changed at ${when}.\n\n${notYou}` };
+    case "pin.set":
+      return { subject: "A PIN was set on your Cumulus://ID", body: `A 4-digit PIN was set at ${when}. Every sign-in now asks for it after your password.\n\n${notYou}` };
+    case "pin.changed":
+      return { subject: "Your Cumulus://ID PIN was changed", body: `Your 4-digit PIN was changed at ${when}.\n\n${notYou}` };
     case "passkey.added":
       return { subject: "A passkey was added to your Cumulus://ID", body: `The passkey “${s(d.label) || "Passkey"}” was added at ${when}. It can now sign in to your account.\n\n${notYou}` };
     case "passkey.removed":
       return { subject: "A passkey was removed from your Cumulus://ID", body: `The passkey “${s(d.label) || "Passkey"}” was removed at ${when}.\n\n${notYou}` };
     case "mfa.enabled":
-      return { subject: "Authenticator app turned on", body: `Your Cumulus://ID now asks for an authenticator app code after your passkey (since ${when}).\n\n${notYou}` };
+      return { subject: "Authenticator app turned on", body: `Your Cumulus://ID now asks for an authenticator app code after your PIN (since ${when}).\n\n${notYou}` };
     case "mfa.disabled":
       return { subject: "Authenticator app turned off", body: `Your Cumulus://ID no longer asks for an authenticator app code (since ${when}).\n\n${notYou}` };
     case "identity.linked":
