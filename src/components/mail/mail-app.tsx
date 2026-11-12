@@ -174,6 +174,12 @@ export function MailApp() {
       } else if (event.key === "r" && reading) {
         event.preventDefault();
         reply();
+      } else if (event.key === "a" && reading) {
+        event.preventDefault();
+        replyAll();
+      } else if (event.key === "f" && reading) {
+        event.preventDefault();
+        forward();
       } else if (event.key === "e" && reading && reading.folder !== "trash") {
         event.preventDefault();
         moveSelected(reading.id, "archive");
@@ -953,7 +959,8 @@ export function MailApp() {
           <div ref={helpDialog} role="dialog" aria-modal="true" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
             <h2 id="help-title" className="text-2xl tracking-tight">Shortcuts</h2>
             <ul className="mt-4 space-y-2 text-sm">
-              <li><kbd className="font-mono">c</kbd> compose · <kbd className="font-mono">r</kbd> reply · <kbd className="font-mono">e</kbd> archive · <kbd className="font-mono">#</kbd> trash</li>
+              <li><kbd className="font-mono">c</kbd> compose · <kbd className="font-mono">r</kbd> reply · <kbd className="font-mono">a</kbd> reply all · <kbd className="font-mono">f</kbd> forward</li>
+              <li><kbd className="font-mono">e</kbd> archive · <kbd className="font-mono">#</kbd> trash</li>
               <li><kbd className="font-mono">j</kbd> next · <kbd className="font-mono">k</kbd> previous · <kbd className="font-mono">o</kbd> or <kbd className="font-mono">Enter</kbd> open · <kbd className="font-mono">Esc</kbd> back to the list</li>
               <li><kbd className="font-mono">x</kbd> select · <kbd className="font-mono">u</kbd> unread · <kbd className="font-mono">z</kbd> undo</li>
               <li><kbd className="font-mono">/</kbd> search (<kbd className="font-mono">Esc</kbd> clears, then leaves) · <kbd className="font-mono">?</kbd> this list</li>
