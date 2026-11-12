@@ -81,7 +81,8 @@ export async function buildInbound(root = projectRoot()) {
     // Node platform resolves package "main"/"module" and leaves Node builtins
     // external. nodejs_compat provides those imports in the Worker.
     platform: "node",
-    external: [/^node:/],
+    // cloudflare:sockets is provided by the Workers runtime (SMTP dialer).
+    external: [/^node:/, /^cloudflare:/],
     treeshake: true,
   });
   try {
