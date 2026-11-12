@@ -1,4 +1,5 @@
-import type { FolderId, MailMessage } from "./model.ts";
+import type { CustomFolder, CustomFolderId, FolderId, MailMessage } from "./model.ts";
+import { folderByName } from "./folders.ts";
 
 export type SieveCondition = {
   field: "from" | "subject" | "to";
@@ -7,7 +8,7 @@ export type SieveCondition = {
 };
 
 export type SieveAction =
-  | { type: "folder"; folder: Extract<FolderId, "inbox" | "archive" | "trash" | "quarantine"> }
+  | { type: "folder"; folder: Extract<FolderId, "inbox" | "archive" | "trash" | "quarantine"> | CustomFolderId }
   | { type: "label"; label: string }
   | { type: "star" }
   | { type: "stop" };
@@ -30,8 +31,12 @@ function fieldOf(header: string): SieveCondition["field"] | null {
   return null;
 }
 
-/** A small Sieve subset: one `if header|address :contains|:is` per rule, then fileinto / addflag / stop. */
-export function parseSieve(source: string): SieveRule[] {
+/**
+ * A small Sieve subset: one `if header|address :contains|:is` per rule, then fileinto / addflag / stop.
+ * `fileinto` takes a system folder (inbox, archive, trash, quarantine, Spam), `label:Name`, or the
+ * name of a custom folder (`"Receipts"` or `"folder:Receipts"`, case-insensitive).
+ */
+export function parseSieve(source: string, folders: CustomFolder[] = []): SieveRule[] {
   const lines = source.split(/\r?\n/);
   const rules: SieveRule[] = [];
   let index = 0;
@@ -66,8 +71,13 @@ export function parseSieve(source: string): SieveRule[] {
           actions.push({ type: "label", label: label.slice(0, 80) });
           continue;
         }
-        if (!FOLDERS.has(target)) throw new Error(`Sieve line ${index}: unknown fileinto ${target}`);
-        actions.push({ type: "folder", folder: target as "inbox" | "archive" | "trash" | "quarantine" });
+        if (FOLDERS.has(target)) {
+          actions.push({ type: "folder", folder: target as "inbox" | "archive" | "trash" | "quarantine" });
+          continue;
+        }
+        const custom = folderByName(folders, target.startsWith("folder:") ? target.slice("folder:".length) : target);
+        if (!custom) throw new Error(`Sieve line ${index}: unknown fileinto ${target}`);
+        actions.push({ type: "folder", folder: custom.id });
         continue;
       }
       if (/^addflag\s+"\\Starred";$/i.test(raw)) {
@@ -102,11 +112,11 @@ function matches(message: MailMessage, condition: SieveCondition): boolean {
   return text.includes(value);
 }
 
-export function applySieve(message: MailMessage, source: string): MailMessage {
+export function applySieve(message: MailMessage, source: string, folders: CustomFolder[] = []): MailMessage {
   if (!source.trim() || message.folder !== "inbox") return message;
   let rules: SieveRule[];
   try {
-    rules = parseSieve(source);
+    rules = parseSieve(source, folders);
   } catch {
     return message;
   }
