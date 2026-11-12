@@ -1,5 +1,6 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
+import { BillingControls } from "./billing-controls";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
@@ -219,7 +220,10 @@ export function AccountPanel({
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Plan</dt>
-              <dd>{me.plan} · {quotaLabel}</dd>
+              <dd>
+                {me.plan} · {quotaLabel}
+                <BillingControls />
+              </dd>
             </div>
             <div className="border-b border-line py-4">
               <dt className="text-muted">Aliases</dt>

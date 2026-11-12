@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBillingWebhookRoute = ApiBillingWebhookRouteImport.update({
+  id: '/api/billing/webhook',
+  path: '/api/billing/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/billing/webhook': typeof ApiBillingWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/billing/webhook': typeof ApiBillingWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/billing/webhook': typeof ApiBillingWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/p/$token' | '/api/auth/$'
+  fullPaths: '/' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/p/$token' | '/api/auth/$'
-  id: '__root__' | '/' | '/p/$token' | '/api/auth/$'
+  to: '/' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
+  id: '__root__' | '/' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/billing/webhook': {
+      id: '/api/billing/webhook'
+      path: '/api/billing/webhook'
+      fullPath: '/api/billing/webhook'
+      preLoaderRoute: typeof ApiBillingWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBillingWebhookRoute: ApiBillingWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
