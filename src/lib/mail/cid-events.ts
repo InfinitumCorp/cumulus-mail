@@ -104,23 +104,67 @@ export function noticeFor(e: CidEvent): { subject: string; body: string } | null
   }
 }
 
+function betterAuthId(): string {
+  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(64));
+  let out = "";
+  for (const b of bytes) if (b < 248 && out.length < 32) out += A[b % 62];
+  return out;
+}
+
+/**
+ * Mail's tenant for a Cumulus://ID is the Better Auth user its sign-in created (the cid is that
+ * user's `account.accountId`), not the cid itself. Look it up; with `create`, make the user and
+ * account rows the first sign-in would make, so an event that arrives first (account.created) and
+ * the later sign-in land on the same tenant. Later sign-ins find the account by (providerId,
+ * accountId), or link by the verified email (Cumulus ID providers are trusted for linking).
+ */
+export async function tenantForCid(
+  db: MailQuery,
+  cid: string,
+  create?: { email: string; name: string },
+): Promise<string | null> {
+  const found = await db.query<{ userId: string }>(
+    `select "userId" from "account" where "accountId" = $1 and "providerId" like 'cumulus-id%' order by "createdAt" limit 1`,
+    [cid],
+  );
+  if (found[0]) return found[0].userId;
+  if (!create) return null;
+  const byEmail = await db.query<{ id: string }>(`select "id" from "user" where "email" = $1 limit 1`, [create.email]);
+  const userId = byEmail[0]?.id ?? betterAuthId();
+  if (!byEmail[0]) {
+    await db.query(
+      `insert into "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") values ($1, $2, $3, true, now(), now())`,
+      [userId, create.name.slice(0, 200), create.email],
+    );
+  }
+  await db.query(
+    `insert into "account" ("id", "accountId", "providerId", "userId", "createdAt", "updatedAt") values ($1, $2, 'cumulus-id', $3, now(), now())`,
+    [betterAuthId(), cid, userId],
+  );
+  return userId;
+}
+
 async function mailboxExists(db: MailQuery, tenantId: string): Promise<boolean> {
   return (await db.query<{ tenant_id: string }>(`select tenant_id from cumulus_mail.mailboxes where tenant_id = $1 limit 1`, [tenantId])).length > 0;
 }
 
 export type HandleResult = "provisioned" | "unrouted" | "notified" | "duplicate" | "no-mailbox" | "ignored";
 
-/** Apply one verified event. The tenant is the cid, exactly as for a signed-in Mail session. */
+/** Apply one verified event to the Mail tenant of that Cumulus://ID (see tenantForCid). */
 export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: string): Promise<HandleResult> {
-  const tenantId = e.cid;
-  assertTenantId(tenantId);
   if (e.type === "account.created") {
     const email = s(e.detail.mailAddress).toLowerCase();
     if (!email.endsWith(`@${mailDomain}`)) return "ignored";
     const name = s(e.detail.username) || email.split("@")[0]!;
+    const tenantId = (await tenantForCid(db, e.cid, { email, name }))!;
+    assertTenantId(tenantId);
     await provisionMailbox(db, tenantId, { name, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 });
     return "provisioned";
   }
+  const tenantId = await tenantForCid(db, e.cid);
+  if (!tenantId) return "no-mailbox";
+  assertTenantId(tenantId);
   if (e.type === "account.deleted") {
     if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
     await replaceRoutedAddresses(db, tenantId, []);

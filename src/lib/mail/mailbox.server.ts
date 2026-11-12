@@ -16,7 +16,9 @@ import { createBounceHandler } from "./dsn.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
-import { mailboxAddress } from "./domain.ts";
+import { mailboxAddress, mailDomain } from "./domain.ts";
+import { handleCidEvent, parseCidEvent, verifyCidEventSignature } from "./cid-events.ts";
+import { applyWorkerBindings } from "@/lib/cloudflare-env";
 import { publishAddress } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
@@ -264,15 +266,12 @@ export async function burnProtectedForToken(token: string): Promise<{ burned: tr
  * missing or wrong signature, 400 for a malformed or stale event, and 200 otherwise.
  */
 export async function receiveCidEvent(body: string, signature: string | null): Promise<{ status: number; result?: string }> {
-  const { applyWorkerBindings } = await import("@/lib/cloudflare-env");
   applyWorkerBindings();
   const secret = process.env.CID_EVENTS_SECRET?.trim() ?? "";
   if (!secret) return { status: 404 };
-  const { handleCidEvent, parseCidEvent, verifyCidEventSignature } = await import("./cid-events.ts");
   if (body.length > 16_384 || !(await verifyCidEventSignature(secret, body, signature))) return { status: 401 };
   const event = parseCidEvent(body);
   // Signed events older than a day are refused, so a captured request can't be replayed later.
   if (!event || Math.abs(Date.now() - Date.parse(event.at)) > 24 * 60 * 60 * 1000) return { status: 400 };
-  const { mailDomain } = await import("./domain.ts");
   return { status: 200, result: await handleCidEvent(await database(), event, mailDomain()) };
 }
