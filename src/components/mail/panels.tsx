@@ -1,6 +1,7 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { BillingControls } from "./billing-controls";
+import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
@@ -280,6 +281,7 @@ export function AccountPanel({
                 </form>
               </dd>
             </div>
+            <SignedInDevices />
             <div className="border-b border-line py-4">
               <dt className="text-muted">Signature</dt>
               <dd className="mt-3">
