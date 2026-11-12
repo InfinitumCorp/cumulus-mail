@@ -18,6 +18,8 @@
   "name": "cumulus-mail-api",
   "main": "../../.output/server/index.mjs",
   "compatibility_date": "2026-11-10",
+  // Global users run on US servers (Ashburn, Virginia); Russia is served by the ru.* copies on Yandex Cloud.
+  "placement": { "region": "gcp:us-east4" },
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "no_bundle": true,
