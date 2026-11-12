@@ -72,7 +72,7 @@ export function Sidebar({
   onRenameFolder,
   onDeleteFolder,
 }: Props) {
-  const used = quota(messages, me.quotaGb);
+  const used = quota(messages, me.quotaGb, me.usedBytes);
   const [editing, setEditing] = useState<Editing>(null);
   const [draftName, setDraftName] = useState("");
   const [folderError, setFolderError] = useState("");
@@ -254,7 +254,14 @@ export function Sidebar({
         <span className="mt-3 block h-1 bg-line" aria-hidden="true">
           <span className="block h-1 bg-accent" style={{ width: `${used.pct}%` }} />
         </span>
-        <span className="mt-2 block text-xs text-muted">{used.label} shared with Drive</span>
+        <span className="mt-2 block text-xs text-muted">{used.label} {used.measured ? "used" : "shared with Drive"}</span>
+        {used.warning && (
+          <span role="status" className="mt-1 block text-xs text-accent">
+            {used.warning === "over"
+              ? "Storage is over your plan. Nothing is blocked yet; delete mail or upgrade."
+              : "Storage is almost full."}
+          </span>
+        )}
       </button>
     </aside>
   );

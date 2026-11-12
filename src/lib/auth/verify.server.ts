@@ -1,6 +1,6 @@
 import { getRequest } from "@tanstack/react-start/server";
 import { gateIdentityEnabled } from "./gate-identity.server";
-import { auth, authConfigured } from "./server";
+import { auth, isAuthConfigured } from "./server";
 
 /**
  * Server-side session resolution (server-only).
@@ -12,13 +12,16 @@ import { auth, authConfigured } from "./server";
  * client-supplied user id — only the result of this verification.
  */
 
-/** True when a real database is configured server-side. */
-const databaseConfigured = Boolean(process.env.DATABASE_URL?.trim());
+/** True when a real database is configured server-side (read per call: Worker bindings arrive per request). */
+const databaseConfigured = () => Boolean(process.env.DATABASE_URL?.trim());
 
 /** Re-export so callers can branch on it without importing `server.ts`. */
-export { authConfigured };
+export { isAuthConfigured };
 
-if (databaseConfigured && !authConfigured) {
+let warnedFailClosed = false;
+function warnIfFailClosed(): void {
+  if (warnedFailClosed || !databaseConfigured() || isAuthConfigured()) return;
+  warnedFailClosed = true;
   console.error(
     "[auth] DATABASE_URL is set but auth is disabled (VITE_AUTH_ENABLED=false) " +
       "— requireUserId() will reject every request (fail closed) rather than " +
@@ -42,7 +45,7 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export type VerifiedUser = { id: string; email: string | null };
+export type VerifiedUser = { id: string; email: string | null; name?: string | null };
 
 /**
  * Resolve the signed-in user from the current request, or `null` when auth isn't
@@ -57,7 +60,7 @@ export type VerifiedUser = { id: string; email: string | null };
 export async function getSessionUser(
   bearerToken?: string,
 ): Promise<VerifiedUser | null> {
-  if (!authConfigured && !gateIdentityEnabled()) return null;
+  if (!isAuthConfigured() && !gateIdentityEnabled()) return null;
   const request = getRequest();
   if (!request) return null;
   let headers = request.headers;
@@ -67,7 +70,7 @@ export async function getSessionUser(
   }
   const session = await auth.api.getSession({ headers });
   if (!session?.user) return null;
-  return { id: session.user.id, email: session.user.email ?? null };
+  return { id: session.user.id, email: session.user.email ?? null, name: session.user.name ?? null };
 }
 
 /**
@@ -82,8 +85,9 @@ export async function getSessionUser(
  * - Auth disabled + no database -> the shared dev user id.
  */
 export async function requireUserId(bearerToken?: string): Promise<string> {
-  if (!authConfigured && !gateIdentityEnabled()) {
-    if (databaseConfigured) {
+  warnIfFailClosed();
+  if (!isAuthConfigured() && !gateIdentityEnabled()) {
+    if (databaseConfigured()) {
       throw new Error(
         "Auth is disabled (VITE_AUTH_ENABLED=false) but DATABASE_URL is set — " +
           "refusing to fall back to the shared dev user against a real database.",

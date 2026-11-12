@@ -1,5 +1,6 @@
 import type { CalEvent, CustomFolder } from "./model.ts";
 import { sanitizeFolders } from "./folders.ts";
+import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 
@@ -26,6 +27,13 @@ export type AuditEvent = {
   detail: string;
 };
 
+export type Unsubscribed = {
+  /** List-Id or sender address, as `subscriptions()` keys it. */
+  key: string;
+  at: string;
+  method: "one-click" | "mailto" | "link";
+};
+
 export type MailSettings = {
   undoSendSeconds: number;
   linkConfirmation: boolean;
@@ -37,12 +45,14 @@ export type MailSettings = {
   folders: CustomFolder[];
   events: CalEvent[];
   audit: AuditEvent[];
+  /** Lists the owner unsubscribed from, newest last. */
+  unsubscribed: Unsubscribed[];
 };
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
 
-/** Custom domains per mailbox. The account panel stops at this; the server refuses more. */
-export const MAX_DOMAINS = 3;
+/** Custom domains on the default plan. The server checks the mailbox's own plan (plans.ts). */
+export const MAX_DOMAINS = PLANS[DEFAULT_PLAN].domains;
 
 /** Distinct valid custom domains in a settings payload, before any cap is applied. */
 export function requestedDomainCount(value: unknown, platformDomain = "cumuluscloud.app"): number {
@@ -66,6 +76,7 @@ export function defaultSettings(): MailSettings {
     folders: [],
     events: [],
     audit: [],
+    unsubscribed: [],
   };
 }
 
@@ -99,6 +110,13 @@ function asEvent(value: unknown): CalEvent | null {
     where: text(row.where, 200),
     with: text(row.with, 200),
     sort: text(row.sort, 40),
+    ...(typeof row.rrule === "string" && row.rrule ? { rrule: row.rrule.slice(0, 300) } : {}),
+    ...(Array.isArray(row.exdates)
+      ? { exdates: row.exdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
+      : {}),
+    ...(typeof row.uid === "string" && row.uid ? { uid: row.uid.slice(0, 300) } : {}),
+    ...(typeof row.organizer === "string" && validEmail(row.organizer) ? { organizer: row.organizer.toLowerCase().slice(0, 320) } : {}),
+    ...(row.rsvp === "accepted" || row.rsvp === "tentative" || row.rsvp === "declined" ? { rsvp: row.rsvp } : {}),
   };
 }
 
@@ -110,7 +128,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
   const undo = Number(row.undoSendSeconds);
   const auto = row.autoReply;
   const domains = Array.isArray(row.domains)
-    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, MAX_DOMAINS)
+    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, maxLimit("domains"))
     : [];
   const seen = new Set<string>();
   return {
@@ -144,6 +162,31 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           }))
           .slice(-40)
       : [],
+    unsubscribed: Array.isArray(row.unsubscribed)
+      ? row.unsubscribed
+          .filter(
+            (item): item is Unsubscribed =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as Unsubscribed).key === "string" &&
+              ["one-click", "mailto", "link"].includes((item as Unsubscribed).method),
+          )
+          .map((item) => ({ key: text(item.key, 320).toLowerCase(), at: text(item.at, 40), method: item.method }))
+          .slice(-200)
+      : [],
+  };
+}
+
+export function noteUnsubscribed(
+  settings: MailSettings,
+  key: string,
+  method: Unsubscribed["method"],
+  now = new Date(),
+): MailSettings {
+  const clean = key.trim().toLowerCase();
+  return {
+    ...settings,
+    unsubscribed: [...settings.unsubscribed.filter((item) => item.key !== clean), { key: clean, at: now.toISOString(), method }].slice(-200),
   };
 }
 

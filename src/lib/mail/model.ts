@@ -1,3 +1,5 @@
+import { DEFAULT_PLAN, PLANS } from "./plans.ts";
+
 export const ME = {
   name: "Alex Reid",
   email: "alex@cumuluscloud.app",
@@ -8,8 +10,8 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-/** Addresses (aliases) per mailbox. The client checks this for a quick message; the server enforces it. */
-export const MAX_ALIASES = 15;
+/** Addresses (aliases) on the default plan. The server checks the mailbox's own plan (plans.ts). */
+export const MAX_ALIASES = PLANS[DEFAULT_PLAN].aliases;
 
 export type SystemFolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
 
@@ -132,6 +134,16 @@ export type CalEvent = {
   where: string;
   with: string;
   sort: string;
+  /** RFC 5545 RRULE value, when the event repeats. */
+  rrule?: string;
+  /** Occurrences removed from the series (EXDATE), as ISO instants. */
+  exdates?: string[];
+  /** The invite's UID, needed to answer it. */
+  uid?: string;
+  /** Organizer address, needed to answer it. */
+  organizer?: string;
+  /** This mailbox's answer. */
+  rsvp?: "accepted" | "tentative" | "declined";
 };
 
 export type ViewId = "mail" | "calendar" | "contacts" | "tasks";

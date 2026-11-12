@@ -10,6 +10,7 @@ import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } fr
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
+import { limitsFor, planLabel } from "./plans.ts";
 
 type MessageRow = {
   id: string;
@@ -109,6 +110,27 @@ export async function loadAttachmentMap(db: MailQuery, tenantId: string): Promis
   return map;
 }
 
+/**
+ * Bytes this mailbox stores, summed in the database (docs/plans.md step 3): attachment sizes plus the
+ * stored (sealed) message text. Raw .eml copies in blob storage are not in the database and are not
+ * counted. Shown, not enforced.
+ */
+export async function storageUsedBytes(db: MailQuery, tenantId: string): Promise<number> {
+  assertTenantId(tenantId);
+  const rows = await db.query<{ files: string | number | null; text: string | number | null }>(
+    `select
+       (select coalesce(sum(size), 0) from cumulus_mail.attachments where tenant_id = $1) as files,
+       (select coalesce(sum(
+          octet_length(subject) + octet_length(body) + octet_length(to_json) + octet_length(cc_json)
+          + coalesce(octet_length(headers_enc), 0) + coalesce(octet_length(extras_enc), 0)
+          + coalesce(octet_length(snippet_enc), 0)
+        ), 0) from cumulus_mail.messages where tenant_id = $1) as text`,
+    [tenantId],
+  );
+  const row = rows[0];
+  return Number(row?.files ?? 0) + Number(row?.text ?? 0);
+}
+
 export async function readSnapshot(db: MailQuery, tenantId: string): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   const boxes = await db.query<{
@@ -119,8 +141,10 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     quota_gb: number;
     signature: string;
     settings_enc: string | null;
+    plan_id: string;
+    plan_status: string;
   }>(
-    `select address, display_name, cid, plan, quota_gb, signature, settings_enc
+    `select address, display_name, cid, plan, quota_gb, signature, settings_enc, plan_id, plan_status
      from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
@@ -161,8 +185,10 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       name: openText(tenantId, box.display_name),
       email: openText(tenantId, box.address),
       cid: box.cid,
-      plan: box.plan,
-      quotaGb: Number(box.quota_gb),
+      plan: planLabel(box.plan_id, box.plan_status),
+      quotaGb: limitsFor(box.plan_id, box.plan_status).quotaGb,
+      limits: limitsFor(box.plan_id, box.plan_status),
+      usedBytes: await storageUsedBytes(db, tenantId),
     },
     messages: messages.map((row) =>
       rowToMessage(
@@ -227,9 +253,9 @@ export async function insertMessage(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
        sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-       snippet_enc, headers_enc, extras_enc
+       snippet_enc, headers_enc, extras_enc, due_at
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -250,7 +276,8 @@ export async function insertMessage(
        auth_json = excluded.auth_json,
        snippet_enc = excluded.snippet_enc,
        headers_enc = excluded.headers_enc,
-       extras_enc = excluded.extras_enc`,
+       extras_enc = excluded.extras_enc,
+       due_at = excluded.due_at`,
     [
       tenantId,
       message.id,
@@ -273,6 +300,7 @@ export async function insertMessage(
       sealText(tenantId, snippet),
       headerJson ? sealText(tenantId, headerJson) : null,
       sealExtra(tenantId, message.extra),
+      dueHour(message),
     ],
   );
   await db.query(`delete from cumulus_mail.message_blind where tenant_id = $1 and message_id = $2`, [
@@ -437,8 +465,10 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
     cid: string;
     plan: string;
     quota_gb: number;
+    plan_id: string;
+    plan_status: string;
   }>(
-    `select address, display_name, cid, plan, quota_gb from cumulus_mail.mailboxes where tenant_id = $1`,
+    `select address, display_name, cid, plan, quota_gb, plan_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
   const row = rows[0];
@@ -447,8 +477,9 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
     name: openText(tenantId, row.display_name),
     email: openText(tenantId, row.address),
     cid: row.cid,
-    plan: row.plan,
-    quotaGb: Number(row.quota_gb),
+    plan: planLabel(row.plan_id, row.plan_status),
+    quotaGb: limitsFor(row.plan_id, row.plan_status).quotaGb,
+    limits: limitsFor(row.plan_id, row.plan_status),
   };
 }
 
@@ -461,6 +492,17 @@ function parseSettings(tenantId: string, stored: string | null): MailSettings {
   } catch {
     return defaultSettings();
   }
+}
+
+/**
+ * The coarse due column (migration 0009): for a draft, its schedule rounded down to the hour, or
+ * 'infinity' when it has none; NULL for every other folder. Only the hour is stored in the clear.
+ */
+export function dueHour(message: Pick<MailMessage, "folder" | "extra">): string | null {
+  if (message.folder !== "drafts") return null;
+  const at = message.extra?.scheduleAt ? Date.parse(message.extra.scheduleAt) : Number.NaN;
+  if (!Number.isFinite(at)) return "infinity";
+  return new Date(Math.floor(at / 3_600_000) * 3_600_000).toISOString();
 }
 
 function sealExtra(tenantId: string, extra: MessageExtra | undefined): string | null {
@@ -493,8 +535,9 @@ function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "ph
 
 function routedAddresses(snapshot: MailboxSnapshot): string[] {
   const addresses = [snapshot.me.email, ...snapshot.aliases];
+  const catchAllAllowed = snapshot.me.limits?.catchAll ?? true;
   for (const domain of snapshot.settings?.domains ?? []) {
-    if (domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
+    if (catchAllAllowed && domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
   }
   return addresses;
 }

@@ -15,7 +15,21 @@ import { createBounceHandler } from "./dsn.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
-import { mailboxAddress } from "./domain.ts";
+import { mailAppHost, mailboxAddress } from "./domain.ts";
+import {
+  BILLING_OFF,
+  billingStatus,
+  type BillingStatus,
+  handleStripeEvent,
+  openBillingPortal,
+  parseStripeEvent,
+  startCheckout,
+  stripeClient,
+  stripeConfig,
+  verifyStripeSignature,
+} from "./billing.ts";
+import { openText } from "./field-crypto.ts";
+import { chooseMailboxAddress } from "./mailbox-address.ts";
 import { publishAddress } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
@@ -43,9 +57,7 @@ async function database(): Promise<MailQuery> {
   };
 }
 
-async function tenantFromCumulusToken(token: string): Promise<string> {
-  const issuer = cumulusIssuer();
-  if (unverifiedIssuer(token) !== issuer) return "";
+async function tenantFromCumulusToken(token: string, issuer: string): Promise<string> {
   let jwks;
   try {
     jwks = await fetchCumulusJwks(issuer);
@@ -57,12 +69,22 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
   return verified.tenantId;
 }
 
+/** The address an existing mailbox was created with, or null when the tenant has no mailbox yet. */
+async function storedAddress(tenantId: string): Promise<string | null> {
+  const rows = await (await database()).query<{ address: string }>(
+    `select address from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  return rows[0] ? openText(tenantId, rows[0].address) : null;
+}
+
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
 ): Promise<{ tenantId: string; profile: MailProfile }> {
-  if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
-    const tenantId = await tenantFromCumulusToken(bearerToken);
+  const issuer = cumulusIssuer();
+  if (bearerToken && issuer && unverifiedIssuer(bearerToken) === issuer) {
+    const tenantId = await tenantFromCumulusToken(bearerToken, issuer);
     assertTenantId(tenantId);
     return {
       tenantId,
@@ -79,9 +101,11 @@ async function sessionMailbox(
   if (session) {
     if (session.id !== contextUserId) throw new TenantAccessError("Session does not match");
     assertTenantId(session.id);
-    const email = (session.email ?? "").trim().toLowerCase();
-    const address = email.includes("@") ? email : mailboxAddress(session.id);
-    const name = address.split("@")[0] || "Cumulus";
+    // A new mailbox gets an address on the mail domain, never the Google address itself; an existing
+    // mailbox keeps the address it has (provisioning does nothing for a tenant that already exists).
+    const address = (await storedAddress(session.id)) ?? (await chooseMailboxAddress(await database(), session.id, session.email));
+    // The person's Google name for a new mailbox; the address's local part when there is none.
+    const name = session.name?.trim().slice(0, 120) || address.split("@")[0] || "Cumulus";
     return {
       tenantId: session.id,
       profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
@@ -140,6 +164,18 @@ export async function importMailboxForSession(
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return importMailbox(db, storageFor, tenantId, backup);
+}
+
+export async function unsubscribeForSession(
+  contextUserId: string,
+  messageId: string,
+  bearerToken?: string,
+): Promise<import("./unsubscribe.ts").UnsubscribeResult> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const { unsubscribeMessage } = await import("./unsubscribe.ts");
+  return unsubscribeMessage(db, tenantId, messageId);
 }
 
 export async function submitAbuseForSession(
@@ -248,4 +284,60 @@ export async function readProtectedForToken(token: string): Promise<{
 export async function burnProtectedForToken(token: string): Promise<{ burned: true }> {
   await burnProtectedLink(await database(), token);
   return { burned: true };
+}
+
+/** Where Stripe sends people back: `BILLING_RETURN_URL`, else this app's own origin. */
+function billingReturnUrl(): string {
+  const configured = process.env.BILLING_RETURN_URL?.trim() || process.env.BETTER_AUTH_URL?.trim();
+  return configured ? `${configured.replace(/\/+$/, "")}/` : `https://${mailAppHost()}/`;
+}
+
+function billingStripe() {
+  const config = stripeConfig();
+  if (!config) throw new Error("Billing is not set up yet.");
+  return stripeClient(config.secretKey);
+}
+
+export async function startCheckoutForSession(
+  contextUserId: string,
+  lookupKey: unknown,
+  bearerToken?: string,
+): Promise<{ url: string }> {
+  const stripe = billingStripe();
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  return startCheckout(await database(), stripe, { tenantId, lookupKey, returnUrl: billingReturnUrl() });
+}
+
+/** Whether billing is on, and whether this mailbox already pays (then only Manage billing is offered). */
+export async function billingStatusForSession(contextUserId: string, bearerToken?: string): Promise<BillingStatus> {
+  if (!stripeConfig()) return BILLING_OFF;
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  return billingStatus(await database(), tenantId);
+}
+
+export async function openBillingPortalForSession(contextUserId: string, bearerToken?: string): Promise<{ url: string }> {
+  const stripe = billingStripe();
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  return openBillingPortal(await database(), stripe, { tenantId, returnUrl: billingReturnUrl() });
+}
+
+/** Stripe webhook: verify the signature over the raw body, then apply the event once. */
+export async function receiveStripeWebhook(payload: string, signature: string | null): Promise<Response> {
+  const config = stripeConfig();
+  if (!config?.webhookSecret) return new Response("Billing is not set up", { status: 503 });
+  let event;
+  try {
+    verifyStripeSignature(payload, signature, config.webhookSecret);
+    event = parseStripeEvent(payload);
+  } catch {
+    return new Response("Invalid signature", { status: 400 });
+  }
+  try {
+    const outcome = await handleStripeEvent(await database(), event, stripeClient(config.secretKey));
+    return Response.json({ received: true, outcome });
+  } catch (error) {
+    console.error("[billing] webhook failed", event.type, error instanceof Error ? error.message : error);
+    // 500 makes Stripe retry; the event id was released.
+    return new Response("Webhook processing failed", { status: 500 });
+  }
 }

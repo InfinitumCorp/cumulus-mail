@@ -97,3 +97,18 @@ jobs:
       - name: Stop SeaweedFS
         if: always()
         run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true
+
+  # Browser smoke tests against the local dev mode (no Cumulus ID, in-memory PGLite). Separate job so
+  # a browser problem never hides the result of the main checks.
+  e2e:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
