@@ -1,4 +1,5 @@
-import type { CalEvent } from "./model.ts";
+import type { CalEvent, CustomFolder } from "./model.ts";
+import { sanitizeFolders } from "./folders.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 
@@ -39,6 +40,8 @@ export type MailSettings = {
   autoReply: AutoReply;
   domains: CustomDomain[];
   sieve: string;
+  /** User folders shown in the sidebar under the system folders. */
+  folders: CustomFolder[];
   events: CalEvent[];
   audit: AuditEvent[];
   /** Lists the owner unsubscribed from, newest last. */
@@ -46,6 +49,16 @@ export type MailSettings = {
 };
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
+
+/** Custom domains per mailbox. The account panel stops at this; the server refuses more. */
+export const MAX_DOMAINS = 3;
+
+/** Distinct valid custom domains in a settings payload, before any cap is applied. */
+export function requestedDomainCount(value: unknown, platformDomain = "cumuluscloud.app"): number {
+  const row = value && typeof value === "object" ? (value as Partial<MailSettings>) : {};
+  if (!Array.isArray(row.domains)) return 0;
+  return new Set(row.domains.map((domain) => asDomain(domain, platformDomain)?.domain).filter(Boolean)).size;
+}
 
 export function expectedTxt(domain: string): { name: string; value: string } {
   return { name: `_cumulus-mail.${domain}`, value: TXT_VALUE };
@@ -59,6 +72,7 @@ export function defaultSettings(): MailSettings {
     autoReply: { enabled: false, subject: "Away", body: "", sent: [] },
     domains: [],
     sieve: "",
+    folders: [],
     events: [],
     audit: [],
     unsubscribed: [],
@@ -106,7 +120,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
   const undo = Number(row.undoSendSeconds);
   const auto = row.autoReply;
   const domains = Array.isArray(row.domains)
-    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, 3)
+    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, MAX_DOMAINS)
     : [];
   const seen = new Set<string>();
   return {
@@ -128,6 +142,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       return true;
     }),
     sieve: text(row.sieve, 8000),
+    folders: sanitizeFolders(row.folders),
     events: Array.isArray(row.events) ? row.events.map(asEvent).filter((event): event is CalEvent => Boolean(event)).slice(0, 50) : [],
     audit: Array.isArray(row.audit)
       ? row.audit

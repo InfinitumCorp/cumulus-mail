@@ -105,3 +105,30 @@ test("the preview mailbox is seeded once and keeps its address", async () => {
   const second = await openMailbox(db, "dev-user", profile("dev-user", "alex@cumuluscloud.app", "Alex Reid"));
   assert.equal(second.messages.length, first.messages.length);
 });
+
+test("the server refuses a fourth custom domain instead of silently dropping it", async () => {
+  const { MAX_DOMAINS, defaultSettings, requestedDomainCount } = await import("./settings.ts");
+  const { readSnapshot } = await import("./records.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("dom-cap", "domcap@cumuluscloud.app", "Dom");
+    await openMailbox(harness.db, "dom-cap", me);
+    const base = await readSnapshot(harness.db, "dom-cap");
+    const domain = (name: string) => ({ domain: name, catchAll: false, verified: false, txtName: "", txtValue: "" });
+    const three = ["a.example", "b.example", "c.example"].map(domain);
+    const saved = await writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...base, settings: { ...defaultSettings(), domains: three } });
+    assert.equal(saved.settings?.domains.length, MAX_DOMAINS);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...saved, settings: { ...saved.settings!, domains: [...three, domain("d.example")] } }),
+      /up to 3 custom domains/,
+    );
+    assert.equal((await readSnapshot(harness.db, "dom-cap")).settings?.domains.length, 3);
+    // Duplicates, invalid names and the platform domain do not count.
+    assert.equal(requestedDomainCount({ domains: [...three, domain("A.EXAMPLE"), domain("not a domain"), domain("cumuluscloud.app")] }), 3);
+    // Removing one makes room again.
+    const fewer = await writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...saved, settings: { ...saved.settings!, domains: three.slice(1) } });
+    assert.deepEqual(fewer.settings?.domains.map((item) => item.domain), ["b.example", "c.example"]);
+  } finally {
+    await harness.close();
+  }
+});

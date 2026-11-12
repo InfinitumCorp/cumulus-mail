@@ -1,11 +1,23 @@
 import { Check, Plus, X } from "lucide-react";
 import { mailDomain } from "@/lib/mail/domain";
+import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
-import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
+import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
-import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { parseSieve } from "@/lib/mail/sieve";
 import type { MailProfile } from "@/lib/mail/snapshot";
+
+function sieveProblem(source: string, folders: CustomFolder[]): string {
+  if (!source.trim()) return "";
+  try {
+    parseSieve(source, folders);
+    return "";
+  } catch (error) {
+    return error instanceof Error ? error.message : "The filter could not be read.";
+  }
+}
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -134,15 +146,6 @@ export function TasksPanel({ tasks, onToggle }: { tasks: ArchitectTask[]; onTogg
       </div>
     </div>
   );
-}
-
-const ALIAS_WORDS = ["north", "quiet", "glass", "harbor", "lumen", "cedar", "field", "orbit", "paper", "signal"];
-
-export function newAlias(): string {
-  const a = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "north";
-  const b = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "quiet";
-  const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}.${b}.${n}@${mailDomain()}`;
 }
 
 export function AccountPanel({
@@ -334,6 +337,14 @@ export function AccountPanel({
                   placeholder={'if header :contains "From" "vyral" {\n  fileinto "archive";\n}'}
                   className="min-h-28 w-full border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none"
                 />
+                <p className="mt-2 text-xs text-muted">
+                  fileinto takes inbox, archive, trash, Spam, label:Name, or the name of one of your folders.
+                </p>
+                {sieveProblem(settings.sieve, settings.folders) ? (
+                  <p role="alert" className="mt-1 text-xs">
+                    {sieveProblem(settings.sieve, settings.folders)} The filter is saved but not applied until this is fixed.
+                  </p>
+                ) : null}
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -359,8 +370,22 @@ export function AccountPanel({
                     <button type="button" className="ml-3 text-accent" onClick={() => onCheckDomain(domain.domain)}>
                       Check DNS
                     </button>
+                    <button
+                      type="button"
+                      className="ml-3 text-muted hover:text-ink"
+                      aria-label={`Remove ${domain.domain}`}
+                      onClick={() => {
+                        if (!window.confirm(`Remove ${domain.domain}? Mail to it will no longer arrive here.`)) return;
+                        onSettings({ ...settings, domains: settings.domains.filter((item) => item.domain !== domain.domain) });
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
+                {settings.domains.length >= MAX_DOMAINS ? (
+                  <p className="text-sm text-muted">You can add up to {MAX_DOMAINS} custom domains. Remove one to add another.</p>
+                ) : (
                 <form
                   className="flex gap-2"
                   onSubmit={(event) => {
@@ -381,6 +406,7 @@ export function AccountPanel({
                     Add domain
                   </button>
                 </form>
+                )}
                 {domainNote ? <p className="text-sm text-muted">{domainNote}</p> : null}
               </dd>
             </div>
