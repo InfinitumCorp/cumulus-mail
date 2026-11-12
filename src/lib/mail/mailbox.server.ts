@@ -92,7 +92,8 @@ async function sessionMailbox(
     // A new mailbox gets an address on the mail domain, never the Google address itself; an existing
     // mailbox keeps the address it has (provisioning does nothing for a tenant that already exists).
     const address = (await storedAddress(session.id)) ?? (await chooseMailboxAddress(await database(), session.id, session.email));
-    const name = address.split("@")[0] || "Cumulus";
+    // The person's Google name for a new mailbox; the address's local part when there is none.
+    const name = session.name?.trim().slice(0, 120) || address.split("@")[0] || "Cumulus";
     return {
       tenantId: session.id,
       profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
