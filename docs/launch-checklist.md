@@ -75,6 +75,8 @@ Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today
 ## 5. Infrastructure already described elsewhere
 
 - [ ] Cloudflare: Hyperdrive id, inbound worker, optional API worker → `docs/deploy/cloudflare-handoff.md`.
+      On the API worker, settings reach the app only once #72 is merged (it copies every `MAIL_`, `STRIPE_`,
+      `BILLING_`, `GOOGLE_CLIENT_`, `CID_` and `CUMULUS_` binding). The Vercel build is not affected.
 - [ ] Storage bucket credentials and `MAIL_BLOB_KEY` (32 random bytes; never reuse a local key).
 - [ ] Migrations in order (`0001`–`0010` once all PRs are in); `node scripts/smoke.mjs` afterwards.
 
@@ -82,7 +84,7 @@ Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today
 
 Each PR passes the full pipeline on its own. Stacked PRs retarget to `main` once their base merges.
 
-- **Path A, keep Cumulus ID:** #69, #59, #64, #65, #66, #68, #71, #62, #41, #60, #42, #43, #48, #37, #58, #40,
+- **Path A, keep Cumulus ID:** #69, #72, #59, #64, #65, #66, #68, #71, #62, #41, #60, #42, #43, #48, #37, #58, #40,
   #47, #56, #57, #61, #45, #49. Skip #63 and #67. Or merge #70 in one go.
 - **Path B, Google only:** the same without #71, plus #63 then #67 after #66. Or merge #46 in one go.
 
