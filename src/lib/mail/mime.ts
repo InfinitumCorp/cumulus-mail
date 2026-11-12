@@ -79,7 +79,10 @@ function decodeQuotedPrintable(value: string): string {
       bytes.push(Number.parseInt(stripped.slice(index + 1, index + 3), 16));
       index += 2;
     } else {
-      bytes.push(stripped.charCodeAt(index));
+      // Literal characters may be 8-bit UTF-8 already decoded to a string; re-encode them.
+      const char = String.fromCodePoint(stripped.codePointAt(index) ?? 0);
+      bytes.push(...new TextEncoder().encode(char));
+      index += char.length - 1;
     }
   }
   return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
