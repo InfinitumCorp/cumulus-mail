@@ -1,16 +1,41 @@
 import type { MailMessage, Person } from "../model.ts";
 
-function encodeWord(value: string): string {
-  // RFC 2047 B-encoding only when needed; keeps plain ASCII readable.
+/**
+ * RFC 2047 B-encoding only when needed; keeps plain ASCII readable. Long values are split into several
+ * encoded words (at most 45 bytes of UTF-8 each, never inside a character) joined by a folding space, so
+ * no encoded word passes 75 characters and no header line passes the 998-character limit.
+ */
+export function encodeWord(value: string): string {
   if (/^[\x20-\x7e]*$/.test(value)) return value;
-  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+  const words: string[] = [];
+  let chunk = "";
+  for (const char of value) {
+    if (Buffer.byteLength(chunk + char, "utf8") > 45) {
+      words.push(chunk);
+      chunk = "";
+    }
+    chunk += char;
+  }
+  if (chunk) words.push(chunk);
+  return words.map((word) => `=?UTF-8?B?${Buffer.from(word, "utf8").toString("base64")}?=`).join("\r\n ");
+}
+
+/** A display name as a quoted string: no CR/LF, and `"` and `\` escaped (RFC 5322 quoted-pair). */
+function quotedName(name: string): string {
+  return `"${name.replace(/[\\"]/g, (char) => `\\${char}`)}"`;
 }
 
 function address(person: Person): string {
   const email = person.email.trim();
-  if (/[\r\n<>]/.test(email)) throw new Error("Invalid address");
-  const name = person.name.replace(/[\r\n"]/g, " ").trim();
-  return name && name !== email ? `${/^[\x20-\x7e]*$/.test(name) ? `"${name}"` : encodeWord(name)} <${email}>` : email;
+  if (/[\s<>(),;:"\\]/.test(email) || !/^[^@]+@[^@]+$/.test(email)) throw new Error("Invalid address");
+  const name = person.name.replace(/[\r\n\t]+/g, " ").trim();
+  if (!name || name === email) return email;
+  return `${/^[\x20-\x7e]*$/.test(name) ? quotedName(name) : encodeWord(name)} <${email}>`;
+}
+
+/** Address list with one address per folded line, so many recipients cannot pass the line limit. */
+function addressList(people: Person[]): string {
+  return people.map(address).join(",\r\n ");
 }
 
 function wrap76(base64: string): string {
@@ -21,6 +46,15 @@ export type OutgoingFile = { name: string; contentType: string; bytes: Uint8Arra
 
 /** Raw size limit for one outgoing message, after base64. Most providers cap at 25 MB. */
 export const MAX_RAW_BYTES = 24 * 1024 * 1024;
+
+/**
+ * Upper bound of the encoded size from the stored sizes alone (base64 grows by 4/3, plus line breaks
+ * and headers), so oversized mail is held before any bytes are read into memory.
+ */
+export function estimatedRawBytes(bodyLength: number, fileSizes: number[]): number {
+  const base64 = (bytes: number) => Math.ceil(bytes / 3) * 4 * (78 / 76);
+  return Math.ceil(base64(bodyLength * 4) + fileSizes.reduce((sum, size) => sum + base64(size) + 512, 0) + 4096);
+}
 
 function base64Body(bytes: Uint8Array): string {
   return wrap76(Buffer.from(bytes).toString("base64"));
@@ -62,8 +96,8 @@ export function buildRawMessage(
 ): string {
   const headers = [
     `From: ${address(from)}`,
-    `To: ${message.to.map(address).join(", ")}`,
-    ...(message.cc.length ? [`Cc: ${message.cc.map(address).join(", ")}`] : []),
+    `To: ${addressList(message.to)}`,
+    ...(message.cc.length ? [`Cc: ${addressList(message.cc)}`] : []),
     `Subject: ${encodeWord(message.subject.replace(/[\r\n]+/g, " "))}`,
     `Date: ${now.toUTCString().replace("GMT", "+0000")}`,
     `Message-ID: <${message.id.replace(/[^A-Za-z0-9._-]/g, "")}@${domain}>`,

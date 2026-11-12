@@ -13,7 +13,7 @@ import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
 import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
-import { buildRawMessage, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
+import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
@@ -150,8 +150,23 @@ export async function deliverMessage(
         const sender = await readProfile(db, senderTenant);
         const from = { name: sender?.name ?? message.from.name, email: sender?.email ?? message.from.email };
         const domain = from.email.split("@")[1] || mailDomain();
+        // Hold oversized mail from the stored sizes, before reading any attachment bytes into memory.
+        if (estimatedRawBytes(message.body.length, files.map((file) => file.size)) > MAX_RAW_BYTES) {
+          hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. Too large to send by SMTP (24 MB limit)." });
+          continue;
+        }
         outgoing ??= await loadOutgoingFiles(storageFor(senderTenant), files);
-        const raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing) : null;
+        let raw: string | null = null;
+        let unencodable = false;
+        try {
+          raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing) : null;
+        } catch {
+          unencodable = true;
+        }
+        if (unencodable) {
+          hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. An address in this message cannot be sent by SMTP." });
+          continue;
+        }
         if (!raw || raw.length > MAX_RAW_BYTES) {
           hops.push({
             email: person.email,

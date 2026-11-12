@@ -7,6 +7,7 @@ import type { MailQuery } from "../query.ts";
 import { readMessages, writeDelivery } from "../records.ts";
 import type { OutboundConfig } from "./config.ts";
 import { signMessage } from "./dkim.ts";
+import type { RecipientResult } from "./transport.ts";
 
 export const QUEUED = "Queued for delivery by SMTP.";
 
@@ -110,14 +111,24 @@ export async function processOutboundQueue(
   const report: QueueReport = { sent: 0, retried: 0, bounced: 0 };
   for (const row of rows) {
     const tenantId = row.tenant_id;
-    const recipient = openText(tenantId, row.recipient);
-    const from = openText(tenantId, row.mail_from);
-    let raw = openText(tenantId, row.raw);
-    if (config.dkim) {
-      const domain = from.split("@")[1] ?? "";
-      raw = signMessage(raw, { ...config.dkim, domain });
+    let recipient = "";
+    let result: RecipientResult | undefined;
+    try {
+      recipient = openText(tenantId, row.recipient);
+      const from = openText(tenantId, row.mail_from);
+      let raw = openText(tenantId, row.raw);
+      if (config.dkim) {
+        const domain = from.split("@")[1] ?? "";
+        raw = signMessage(raw, { ...config.dkim, domain });
+      }
+      [result] = await config.transport.send({ from, to: [recipient], raw });
+    } catch (error) {
+      // One bad row (an unreadable field, a DKIM key that will not load, a transport bug) must not stop
+      // the run or leave the other claimed rows stuck. It retries like a 4xx. The detail names the error
+      // type only: messages from crypto or the transport are not copied into the database.
+      const kind = error instanceof Error ? error.name : "Error";
+      result = { recipient, ok: false, permanent: false, status: "4.3.0", detail: `Local error before sending (${kind}).` };
     }
-    const [result] = await config.transport.send({ from, to: [recipient], raw });
     const attempts = row.attempts + 1;
     if (result?.ok) {
       report.sent += 1;
