@@ -7,6 +7,7 @@ import {
   type MailRule,
   type Person,
 } from "./model.ts";
+import { isCustomFolderId } from "./folders.ts";
 
 export function isCumulus(email: string, domain = mailDomain()): boolean {
   return email.toLowerCase().endsWith(`@${domain}`);
@@ -66,7 +67,9 @@ export function withSignature(body: string, signature: string): string {
 export function archiveThreads(messages: MailMessage[], threadIds: string[]): MailMessage[] {
   const ids = new Set(threadIds);
   return messages.map((message) =>
-    ids.has(message.threadId) && message.folder === "inbox" ? { ...message, folder: "archive", unread: false } : message,
+    ids.has(message.threadId) && (message.folder === "inbox" || isCustomFolderId(message.folder))
+      ? { ...message, folder: "archive", unread: false }
+      : message,
   );
 }
 

@@ -73,6 +73,7 @@ async function copyInto(
       rules,
     ),
     settings.sieve,
+    settings.folders,
   );
   await insertMessage(db, destTenant, delivered, null);
   for (const [index, file] of files.entries()) {
