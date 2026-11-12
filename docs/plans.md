@@ -136,7 +136,11 @@ Server functions (in `src/lib/mail/api.ts`, same `authMiddleware` pattern as the
    appear only when `STRIPE_SECRET_KEY` is set. Usage display waits on step 3.)*
 6. Decide grandfathering: existing mailboxes either stay on Plus limits for free (`plan_id = 'plus'`,
    no subscription) or are told N days ahead and moved to Free. **Owner decision.**
-7. Switch new sign-ups to Free, turn on enforcement (§4), then go live in Stripe.
+7. Switch new sign-ups to Free, turn on enforcement (§4), then go live in Stripe. *(Switches ready, both
+   off: `MAIL_DEFAULT_PLAN=free` starts new mailboxes on Free (existing mailboxes are not moved), and
+   `MAIL_ENFORCE_STORAGE=1` on the inbound worker answers mail that would take a mailbox over its plan's
+   storage with `552 5.2.2 Mailbox full` instead of storing it. Addresses, domains, folders and messages are
+   already enforced from the plan.)*
 
 ### Turning billing on (owner)
 
