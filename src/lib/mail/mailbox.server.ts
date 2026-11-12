@@ -281,6 +281,25 @@ export async function startCheckoutForSession(
   return startCheckout(await database(), stripe, { tenantId, lookupKey, returnUrl: billingReturnUrl() });
 }
 
+/** Whether billing is on, and whether this mailbox already pays (then only Manage billing is offered). */
+export async function billingStatusForSession(
+  contextUserId: string,
+  bearerToken?: string,
+): Promise<{ enabled: boolean; subscribed: boolean; hasCustomer: boolean }> {
+  if (!stripeConfig()) return { enabled: false, subscribed: false, hasCustomer: false };
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  const rows = await (await database()).query<{ stripe_customer_id: string | null; stripe_subscription_id: string | null; plan_status: string }>(
+    `select stripe_customer_id, stripe_subscription_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  const row = rows[0];
+  return {
+    enabled: true,
+    subscribed: Boolean(row?.stripe_subscription_id) && row?.plan_status !== "canceled",
+    hasCustomer: Boolean(row?.stripe_customer_id),
+  };
+}
+
 export async function openBillingPortalForSession(contextUserId: string, bearerToken?: string): Promise<{ url: string }> {
   const stripe = billingStripe();
   const { tenantId } = await sessionMailbox(contextUserId, bearerToken);

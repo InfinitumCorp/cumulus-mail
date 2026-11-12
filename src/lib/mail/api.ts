@@ -200,7 +200,7 @@ export const openBillingPortal = createServerFn({ method: "POST" })
 /** Whether Stripe is configured, so the account dialog shows billing controls only when they work. */
 export const getBillingStatus = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async () => {
-    const { stripeConfig } = await import("./billing.ts");
-    return { enabled: stripeConfig() !== null };
+  .handler(async ({ context }) => {
+    const { billingStatusForSession } = await import("./mailbox.server");
+    return billingStatusForSession(context.userId, context.bearerToken);
   });
