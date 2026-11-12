@@ -26,12 +26,47 @@ function field(lines: string[], name: string): string {
   return "";
 }
 
-function whenLabel(raw: string): { label: string; sort: string } {
-  const stamp = raw.replace(/^.*:/, "").replace(/Z$/, "");
-  const match = stamp.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
-  if (!match) return { label: raw, sort: raw };
-  const iso = `${match[1]}-${match[2]}-${match[3]}T${match[4] ?? "00"}:${match[5] ?? "00"}:00.000Z`;
-  return { label: `${match[1]}-${match[2]}-${match[3]} ${match[4] ?? "00"}:${match[5] ?? "00"} UTC`, sort: iso };
+/** Offset (ms) of an IANA zone at a UTC instant, from Intl. Null for an unknown zone. */
+function zoneOffset(zone: string, utcMs: number): number | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(utcMs));
+  } catch {
+    return null;
+  }
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return asUtc - Math.floor(utcMs / 1000) * 1000;
+}
+
+/** Wall-clock time in `zone` to a UTC instant (two passes cover DST edges). */
+function zonedToUtc(wallMs: number, zone: string): number | null {
+  const first = zoneOffset(zone, wallMs);
+  if (first === null) return null;
+  const second = zoneOffset(zone, wallMs - first);
+  return wallMs - (second ?? first);
+}
+
+function whenLabel(line: string): { label: string; sort: string } {
+  const value = line.replace(/^[^:]*(?:"[^"]*"[^:]*)*:/, "").trim();
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?)?(Z)?$/);
+  if (!match) return { label: value || line, sort: value || line };
+  const [, y, mo, d, h = "00", mi = "00", sec = "00", z] = match;
+  const wall = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec));
+  const zone = /;TZID=("?)([^;:"]+)\1/i.exec(line)?.[2];
+  // A floating or all-day time has no zone; it is shown as written, labelled UTC like before.
+  const utc = !z && zone && match[4] !== undefined ? zonedToUtc(wall, zone) ?? wall : wall;
+  const iso = new Date(utc).toISOString();
+  return { label: `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`, sort: iso };
 }
 
 /** Read a single VEVENT from an invite body or a text/calendar part. */

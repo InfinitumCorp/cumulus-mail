@@ -404,6 +404,16 @@ test("calendar invites: folded lines, parameters, all-day dates and colons in va
   assert.equal(allDay?.with, "Calendar invite");
   assert.equal(allDay?.id, "ics-Offsite");
   assert.equal(parseInvite("BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20261201\nEND:VEVENT\nEND:VCALENDAR"), null);
+
+  // TZID times convert to UTC, across daylight saving.
+  const at = (start: string) => parseInvite(`BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:x\n${start}\nEND:VEVENT\nEND:VCALENDAR`)?.sort;
+  assert.equal(at("DTSTART;TZID=America/New_York:20260715T090000"), "2026-07-15T13:00:00.000Z");
+  assert.equal(at("DTSTART;TZID=America/New_York:20261215T090000"), "2026-12-15T14:00:00.000Z");
+  assert.equal(at('DTSTART;TZID="Asia/Kolkata":20261105T100000'), "2026-11-05T04:30:00.000Z");
+  assert.equal(at("DTSTART;TZID=Europe/London:20260329T120000"), "2026-03-29T11:00:00.000Z");
+  assert.equal(at("DTSTART;TZID=Europe/London:20260328T120000"), "2026-03-28T12:00:00.000Z");
+  assert.equal(at("DTSTART:20261105T200000Z"), "2026-11-05T20:00:00.000Z");
+  assert.equal(at("DTSTART;TZID=Not/AZone:20261105T200000"), "2026-11-05T20:00:00.000Z");
   assert.equal(parseInvite("SUMMARY:not a calendar"), null);
 });
 
