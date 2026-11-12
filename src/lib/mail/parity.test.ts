@@ -1,4 +1,4 @@
-import { SIGN_IN_ISSUER } from "./identity.ts";
+import { DEFAULT_CUMULUS_ISSUER } from "../auth/cumulus-issuer.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bridgeDesign } from "./bridge.ts";
@@ -104,8 +104,8 @@ test("scheduled mail waits, and the bridge and identity stay outside this app", 
   assert.equal(released[0]?.folder, "sent");
   assert.equal(released[0]?.extra?.heldUntil, "2099-01-01T00:00:00.000Z");
   assert.equal(bridgeDesign().status, "deferred");
-  assert.equal(identityPosture().issuer, SIGN_IN_ISSUER);
-  assert.equal(identityPosture().twoFactor, "delegated-to-google");
+  assert.equal(identityPosture().issuer, DEFAULT_CUMULUS_ISSUER);
+  assert.equal(identityPosture().twoFactor, "delegated-to-cumulus-id");
 });
 
 test("OpenPGP round-trips without putting the private key in the ciphertext", async () => {

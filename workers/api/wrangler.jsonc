@@ -10,8 +10,6 @@
   //   SUPABASE_S3_ACCESS_KEY_ID
   //   SUPABASE_S3_SECRET_ACCESS_KEY
   //   BETTER_AUTH_SECRET
-  //   GOOGLE_CLIENT_ID          (Google sign-in; the only sign-in method)
-  //   GOOGLE_CLIENT_SECRET
   //   GROK_AUTH_CLIENT_SECRET   (only if that broker is used)
   //
   // DATABASE_URL is not a secret here. The Hyperdrive binding supplies it.
@@ -42,6 +40,7 @@
     "MAIL_DOMAIN": "cumuluscloud.app",
     "MAIL_APP_HOST": "mail.cumuluscloud.app",
     "CUMULUS_ALLOW_SUPABASE": "1",
+    "CUMULUS_OIDC_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
     "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
     "SUPABASE_S3_REGION": "us-east-1",
     "SUPABASE_S3_BUCKET": "cumulus-mail",

@@ -6,8 +6,8 @@
  * document — no React shell:
  *
  *   Phase 1 (`?providerId=…`): start OAuth server-side and 302 straight to the
- *     Google sign-in page. The popup never paints the app.
- *   Phase 2 (`?done=1`): after the Google round-trip, emit a tiny HTML page that
+ *     Cumulus ID sign-in page. The popup never paints the app.
+ *   Phase 2 (`?done=1`): after the Cumulus ID round-trip, emit a tiny HTML page that
  *     posts the session token to the opener and closes. No SPA hydrate, no
  *     server-fn round-trip.
  *
@@ -96,7 +96,7 @@ export async function handleAuthPopupRequest(request: Request): Promise<Response
       });
     }
 
-    // 302 to Google. Forward any
+    // 302 to Cumulus ID. Forward any
     // Set-Cookie (OAuth state / PKCE) so the callback can complete in this popup.
     const headers = new Headers({ location, "cache-control": "no-store" });
     for (const cookie of apiRes.headers.getSetCookie()) {

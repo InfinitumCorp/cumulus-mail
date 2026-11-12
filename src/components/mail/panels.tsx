@@ -1,7 +1,6 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { BillingControls } from "./billing-controls";
-import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
@@ -209,7 +208,7 @@ export function AccountPanel({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <p className="font-mono text-xs uppercase tracking-wide text-muted">Account</p>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">Cumulus://ID</p>
           <button type="button" className="grid size-11 place-items-center" onClick={onClose} aria-label="Close account">
             <X className="size-4" />
           </button>
@@ -281,7 +280,6 @@ export function AccountPanel({
                 </form>
               </dd>
             </div>
-            <SignedInDevices />
             <div className="border-b border-line py-4">
               <dt className="text-muted">Signature</dt>
               <dd className="mt-3">

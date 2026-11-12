@@ -35,7 +35,7 @@ export const authClient = createAuthClient({
  */
 export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
 
-/** The sign-in choices (Google only) to render buttons for. */
+/** The Cumulus ID sign-in choices to render buttons for. */
 export { SIGN_IN_PROVIDERS };
 
 // ── Live-preview bearer token ────────────────────────────────────────────────
@@ -67,7 +67,7 @@ function setBearerToken(token: string | null): void {
 
 /**
  * The sandbox live preview runs this app inside an iframe on a `*.grok-sandbox.com`
- * host, where a full-page redirect to Google can't work — so sign-in uses a
+ * host, where a full-page redirect to Cumulus ID can't work — so sign-in uses a
  * popup there and a normal redirect everywhere else.
  */
 function inLivePreview(): boolean {
@@ -81,14 +81,15 @@ function inLivePreview(): boolean {
 type PopupMessage = { source: "grok-auth-popup"; token: string | null; error?: string };
 
 /**
- * Start "Sign in with Google" (`providerId` from `SIGN_IN_PROVIDERS`).
+ * Start "Sign in with Cumulus ID" (`providerId` from `SIGN_IN_PROVIDERS`; the
+ * create entry opens Cumulus ID on "Create a Cumulus ID").
  *
  * - **Live preview** (`*.grok-sandbox.com` iframe): opens a POPUP to
  *   `/auth/popup`, served by the template Vite plugin (see `vite.config.ts` +
- *   `popup.server.ts`) — 302s to the Google sign-in (no app chrome) and,
+ *   `popup.server.ts`) — 302s to the Cumulus ID sign-in (no app chrome) and,
  *   on return, posts the session bearer token back. We store it and refresh the
- *   session; no top-level navigation of the iframe to Google.
- * - **Deployed** (and local non-iframe): a normal full-page redirect to Google.
+ *   session; no top-level navigation of the iframe to Cumulus ID.
+ * - **Deployed** (and local non-iframe): a normal full-page redirect to Cumulus ID.
  *
  * Either way it clears any existing local session FIRST so switching providers
  * actually switches identity.

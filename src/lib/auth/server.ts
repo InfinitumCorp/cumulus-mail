@@ -2,11 +2,12 @@
  * Self-hosted Better Auth for THIS app (server-only).
  *
  * The app runs its own Better Auth at `/api/auth/*`, so the session cookie stays
- * on this app's own origin. People sign in with **Google** only, through
- * Better Auth's built-in Google provider (authorization code + PKCE). The
- * client comes from `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`; the secret
- * lives in the platform's secret store, never in this repository. There is no
- * local email/password, passcode or PIN.
+ * on this app's own origin. People sign in with **Cumulus ID** only
+ * (https://id.cumuluscloud.app, or `CID_ISSUER` for a mirror that loads in
+ * Russia): a `genericOAuth` provider runs authorization code + PKCE against it
+ * as the public client `cumulus-mail` (`CID_CLIENT_ID`). There is no local
+ * email/password, passcode or PIN; people without a Cumulus ID create one on
+ * the issuer's page in the same flow and come back here signed in.
  *
  * Modes:
  *   - Deployed: `BETTER_AUTH_URL` + `BETTER_AUTH_SECRET` + `DATABASE_URL`, so
@@ -24,14 +25,15 @@
  * `@/lib/auth/middleware`.
  */
 import { betterAuth } from "better-auth";
-import { bearer } from "better-auth/plugins";
+import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
+import { cidConfig, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl } from "./cumulus-id.ts";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
-import { GOOGLE_PROVIDER_ID, googleConfig } from "./providers";
+import { SIGN_IN_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
 import { PREVIEW_ALLOWED_HOSTS } from "./preview";
 
@@ -62,18 +64,18 @@ const env = (key: string): string | undefined => {
 // provisions auth; set it to "false" to force auth off everywhere (dev user).
 const authDisabled = env("VITE_AUTH_ENABLED") === "false";
 
-// Google OAuth client. The secret comes from the platform's secret store.
-const google = googleConfig();
+// Cumulus ID: issuer and public client id. Neither is a secret.
+const cid = cidConfig();
 
-/** True when Google sign-in is active (real auth is enforced). */
-export const authConfigured = !authDisabled && google !== null;
+/** True when Cumulus ID sign-in is active (real auth is enforced). */
+export const authConfigured = !authDisabled && Boolean(cid.clientId);
 
 // This app's own Better Auth origin. When deployed the deployer injects the
 // public URL. In the sandbox live preview there's no fixed URL (each preview gets
 // a dynamic `*.grok-sandbox.com` host), so we hand Better Auth a dynamic baseURL:
 // it derives the origin per-request from the (proxied) host, validated against the
 // preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL.
-// Google only returns codes to redirect URIs registered on the OAuth client.
+// Cumulus ID only returns codes to origins nexus lists for `cumulus-mail`.
 const explicitBaseURL = env("BETTER_AUTH_URL");
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
@@ -125,12 +127,28 @@ const database = databaseUrl
 /** Session token cookie name — also read by the live-preview popup completion page. */
 export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
 
-// Google, when configured. Better Auth's provider requests `openid email profile`
-// and uses PKCE. Callback: `<base>/api/auth/callback/google`.
-const socialProviders =
-  authConfigured && google
-    ? { google: { clientId: google.clientId, clientSecret: google.clientSecret, prompt: "select_account" as const } }
-    : {};
+// Built separately so the `betterAuth({...})` call stays easy to edit.
+// Both providers are the same Cumulus ID client; the "create" one adds
+// `prompt=create` so the issuer opens on "Create a Cumulus ID".
+const cumulusIdPlugin = authConfigured
+  ? genericOAuth({
+      config: SIGN_IN_PROVIDERS.map(({ providerId, create }) => ({
+        providerId,
+        clientId: cid.clientId,
+        authorizationUrl: cidAuthorizeUrl(cid.issuer),
+        pkce: true,
+        scopes: ["openid", "profile", "email"],
+        ...(create ? { authorizationUrlParams: { prompt: "create" } } : {}),
+        // Cumulus ID's token endpoint takes JSON and returns the profile with
+        // the token, so redeem and read the person ourselves.
+        getToken: (data) => exchangeCidCode(cid, data),
+        getUserInfo: async (tokens) => {
+          const profile = await cidProfileFromTokens(cid, tokens);
+          return profile ? cidUserInfo(profile) : null;
+        },
+      })),
+    })
+  : null;
 
 export const auth = betterAuth({
   baseURL,
@@ -144,16 +162,15 @@ export const auth = betterAuth({
   // local loopback variants, or clients get "Invalid origin".
   trustedOrigins,
 
-  socialProviders,
-
-  // Encrypt Google tokens at rest. Google verifies the email it returns, so a
-  // gate session and a Google sign-in for the same address link to one user.
+  // Encrypt Cumulus ID tokens at rest, and treat Cumulus ID as the trusted
+  // first-party identity: "sign in" and "create" are the same CID, so they link
+  // to one user instead of failing with `account_not_linked`.
   account: {
     encryptOAuthTokens: true,
     accountLinking: {
       enabled: true,
       trustedProviders: [
-        GOOGLE_PROVIDER_ID,
+        ...SIGN_IN_PROVIDERS.map((p) => p.providerId),
         GATE_PROVIDER_ID,
       ],
       requireLocalEmailVerified: false,
@@ -166,7 +183,7 @@ export const auth = betterAuth({
   // flicker-prevention guidance (gate on `isPending`; SSR the session).
   session: { cookieCache: { enabled: true, maxAge: 300 } },
 
-  // No local email/password: Google is the only way people sign in.
+  // No local email/password: Cumulus ID is the only way people sign in.
   emailAndPassword: { enabled: false },
 
   // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
@@ -189,6 +206,9 @@ export const auth = betterAuth({
 
   plugins: [
     gateIdentitySessions(),
+
+    // Cumulus ID (when auth is on).
+    ...(cumulusIdPlugin ? [cumulusIdPlugin] : []),
 
     // Accept `Authorization: Bearer <session-token>` as an alternative to the
     // cookie. Needed for the LIVE PREVIEW: the app runs in an embedded iframe

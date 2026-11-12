@@ -36,10 +36,10 @@ function assertApiSafe(config) {
   assert.equal(config.workers_dev, true);
   assert.equal(config.vars.CUMULUS_RUNTIME, "cloudflare");
   assert.equal(config.vars.MAIL_STORAGE, "s3");
-  // Sign-in is Google; no Amazon Cognito issuer is configured.
-  assert.equal(config.vars.CUMULUS_OIDC_ISSUER, undefined);
-  assert.equal(JSON.stringify(config).includes("cognito"), false);
-  assert.equal(JSON.stringify(config).includes("GOOGLE_CLIENT_SECRET\":"), false);
+  assert.equal(
+    config.vars.CUMULUS_OIDC_ISSUER,
+    "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
+  );
   assert.equal(config.hyperdrive?.[0]?.binding, "HYPERDRIVE");
   assert.equal(config.routes, undefined);
   assert.equal(config.workers_dev, true);
