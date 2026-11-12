@@ -95,3 +95,25 @@ describe("Cumulus ID sign-in", () => {
     assert.equal(cidUserInfo(profile!).emailVerified, false);
   });
 });
+
+describe("Cumulus ID per region", () => {
+  it("ru.* hosts sign in through the Russia mirror; everyone else through id.cumuluscloud.app", async () => {
+    const { cidConfigForRegion, DEFAULT_CID_ISSUER_RU } = await import("./cumulus-id.ts");
+    const { regionFor } = await import("../region.ts");
+    assert.equal(DEFAULT_CID_ISSUER_RU, "https://ru.id.cumuluscloud.app");
+    assert.deepEqual(cidConfigForRegion(regionFor("mail.cumuluscloud.app", {}), {}), {
+      issuer: DEFAULT_CID_ISSUER,
+      clientId: DEFAULT_CID_CLIENT_ID,
+    });
+    assert.deepEqual(cidConfigForRegion(regionFor("ru.mail.cumuluscloud.app", {}), {}), {
+      issuer: "https://ru.id.cumuluscloud.app",
+      clientId: DEFAULT_CID_CLIENT_ID,
+    });
+    // CID_ISSUER_RU overrides the mirror; CID_ISSUER only ever applies outside Russia.
+    const env = { CID_ISSUER: "https://id.example", CID_ISSUER_RU: "https://ru.id.example/", CID_CLIENT_ID: "mail" };
+    assert.deepEqual(cidConfigForRegion("ru", env), { issuer: "https://ru.id.example", clientId: "mail" });
+    assert.deepEqual(cidConfigForRegion("us", env), { issuer: "https://id.example", clientId: "mail" });
+    // The Russia deployment (MAIL_REGION=ru) uses the mirror whatever host it is reached on.
+    assert.equal(cidConfigForRegion(regionFor("cumulus-mail-ru.example", { MAIL_REGION: "ru" }), {}).issuer, DEFAULT_CID_ISSUER_RU);
+  });
+});

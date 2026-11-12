@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
  * Operator smoke check. Reads environment variables only.
+ * `node scripts/smoke.mjs --host https://<host>` instead checks a deployed copy: health, region,
+ * the edge in front of ru.*, the page, and the sign-in redirect (scripts/host-smoke.mjs).
  * Unset sections are skipped and the process still exits 0.
  * It does not apply migrations, create buckets, send mail, or change DNS.
  *
@@ -186,6 +188,13 @@ export async function runSmoke(env = process.env) {
 
 const invoked = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invoked === fileURLToPath(import.meta.url)) {
+  // `--host https://...` checks a deployed copy instead (scripts/host-smoke.mjs). Read-only.
+  const hostIndex = process.argv.indexOf("--host");
+  if (hostIndex >= 0) {
+    const { runHostSmoke } = await import("./host-smoke.mjs");
+    const { ok } = await runHostSmoke(process.argv[hostIndex + 1] ?? "");
+    process.exit(ok ? 0 : 1);
+  }
   const code = await runSmoke();
   process.exit(code);
 }
