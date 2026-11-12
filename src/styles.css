@@ -145,3 +145,27 @@
     animation: none !important;
   }
 }
+
+/* Accessibility: a visible focus ring for keyboard users on every control.
+   Mouse clicks do not show it (:focus-visible). Drawn inset so scrolling panes
+   cannot clip it. Unlayered on purpose, so it
+   wins over `outline-none` utilities. Nothing in the layout moves. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+/* The search box draws its own border; light that up instead of the input. */
+label:has(> input:focus-visible) {
+  border-color: var(--color-accent);
+}
+label:has(> input:focus-visible) > input:focus-visible {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
