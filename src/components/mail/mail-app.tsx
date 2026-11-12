@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
 import { base64ToBytes } from "@/lib/mail/bytes";
@@ -110,6 +111,7 @@ export function MailApp() {
   const [unlockError, setUnlockError] = useState("");
   const [pendingLink, setPendingLink] = useState<{ href: string; reason?: string } | null>(null);
   const [help, setHelp] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
   const [keyError, setKeyError] = useState("");
   const [domainNote, setDomainNote] = useState("");
@@ -198,11 +200,30 @@ export function MailApp() {
       } else if (event.key === "?") {
         event.preventDefault();
         setHelp(true);
+      } else if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if ((event.key === "o" || event.key === "Enter") && !reading && rows[0] && view === "mail") {
+        if (event.key === "Enter" && target instanceof HTMLElement && target.closest("button, a")) return;
+        event.preventDefault();
+        openRow(rows.find((row) => row.id === selectedId) ?? rows[0]);
+      } else if (event.key === "Escape" && reading && !help && !pendingLink && !modal && !accountOpen) {
+        event.preventDefault();
+        const id = reading.id;
+        setSelectedId(null);
+        // Give focus back to the row that was open, so j/k and Tab carry on from there.
+        window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(id)}"] button`)?.focus());
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  useEffect(() => {
+    if (!selectedId) return;
+    document.querySelector(`[data-row-id="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
 
   const rows = listThreads(messages, box, query, unreadOnly);
   const selected = messages.find((message) => message.id === selectedId) ?? null;
@@ -211,6 +232,10 @@ export function MailApp() {
   const briefText = thread.length ? briefs[briefKey(thread)] ?? "" : "";
   const openTasks = tasks.filter((task) => !task.done).length;
   const modal = composer?.placement === "modal" ? composer : null;
+  // Compose has no Escape-to-close: it would drop what was typed. Focus still moves in and stays.
+  const composeDialog = useDialogFocus<HTMLDivElement>(Boolean(modal));
+  const linkDialog = useDialogFocus<HTMLDivElement>(Boolean(pendingLink), () => setPendingLink(null));
+  const helpDialog = useDialogFocus<HTMLDivElement>(help, () => setHelp(false));
 
   function openRow(message: MailMessage) {
     setNavOpen(false);
@@ -605,8 +630,17 @@ export function MailApp() {
         <label className="flex h-11 min-w-0 flex-1 items-center gap-2 border border-line px-3 md:max-w-xl">
           <Search className="size-4 shrink-0 text-muted" />
           <input
+            ref={searchRef}
+            type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                if (query) setQuery("");
+                else event.currentTarget.blur();
+              }
+            }}
             placeholder={view === "contacts" ? "Search people" : "Search mail"}
             title="from: leah · to: priya · subject: forecast · label:spectre · in:inbox · is:unread · is:encrypted · has:file"
             aria-label={view === "contacts" ? "Search people" : "Search mail"}
@@ -805,7 +839,7 @@ export function MailApp() {
       </div>
       {modal ? (
         <div className="scrim fixed inset-0 z-40 flex items-end md:items-center md:justify-center md:p-6" role="presentation">
-          <div className="flex max-h-dvh w-full flex-col bg-paper md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
+          <div ref={composeDialog} className="flex max-h-dvh w-full flex-col bg-paper md:max-w-2xl md:border md:border-line" role="dialog" aria-modal="true" aria-label="Compose">
             <Composer
               form={modal}
               error={composeError}
@@ -892,7 +926,7 @@ export function MailApp() {
       ) : null}
       {pendingLink ? (
         <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setPendingLink(null)}>
-          <div role="dialog" aria-labelledby="link-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+          <div ref={linkDialog} role="dialog" aria-modal="true" aria-labelledby="link-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
             <h2 id="link-title" className="text-2xl tracking-tight">Open this link?</h2>
             <p className="mt-3 break-all font-mono text-xs">{pendingLink.href}</p>
             {pendingLink.reason ? <p className="mt-3 text-sm text-accent">{pendingLink.reason}</p> : null}
@@ -916,12 +950,14 @@ export function MailApp() {
       ) : null}
       {help ? (
         <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setHelp(false)}>
-          <div role="dialog" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+          <div ref={helpDialog} role="dialog" aria-modal="true" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
             <h2 id="help-title" className="text-2xl tracking-tight">Shortcuts</h2>
             <ul className="mt-4 space-y-2 text-sm">
-              <li>c compose · r reply · e archive · # trash</li>
-              <li>j next · k previous · x select · u unread · z undo</li>
-              <li>? this list</li>
+              <li><kbd className="font-mono">c</kbd> compose · <kbd className="font-mono">r</kbd> reply · <kbd className="font-mono">e</kbd> archive · <kbd className="font-mono">#</kbd> trash</li>
+              <li><kbd className="font-mono">j</kbd> next · <kbd className="font-mono">k</kbd> previous · <kbd className="font-mono">o</kbd> or <kbd className="font-mono">Enter</kbd> open · <kbd className="font-mono">Esc</kbd> back to the list</li>
+              <li><kbd className="font-mono">x</kbd> select · <kbd className="font-mono">u</kbd> unread · <kbd className="font-mono">z</kbd> undo</li>
+              <li><kbd className="font-mono">/</kbd> search (<kbd className="font-mono">Esc</kbd> clears, then leaves) · <kbd className="font-mono">?</kbd> this list</li>
+              <li>Dialogs keep focus inside; <kbd className="font-mono">Esc</kbd> closes them.</li>
             </ul>
             <button type="button" className="mt-5 inline-flex h-11 items-center border border-line px-4 text-sm" onClick={() => setHelp(false)}>
               Close

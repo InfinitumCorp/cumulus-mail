@@ -115,6 +115,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
         className="min-h-40 flex-1 resize-none bg-transparent px-4 py-4 text-base leading-normal outline-none"
         placeholder="Write"
         aria-label="Message"
+        aria-label="Message"
       />
       {form.attachments.length ? (
         <ul className="flex flex-wrap gap-2 px-4 pb-3">

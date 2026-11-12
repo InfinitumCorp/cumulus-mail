@@ -1,4 +1,5 @@
 import { Check, Plus, X } from "lucide-react";
+import { useDialogFocus } from "@/lib/a11y/focus";
 import { mailDomain } from "@/lib/mail/domain";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
@@ -188,10 +189,13 @@ export function AccountPanel({
 }) {
   const posture = identityPosture();
   const bridge = bridgeDesign();
+  const dialog = useDialogFocus<HTMLDivElement>(true, onClose);
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
       <div
+        ref={dialog}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="account-title"
         className="max-h-dvh w-full overflow-y-auto bg-paper md:max-w-lg md:border md:border-line"
         onClick={(event) => event.stopPropagation()}
