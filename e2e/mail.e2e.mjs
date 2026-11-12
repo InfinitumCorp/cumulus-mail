@@ -141,3 +141,23 @@ test("phone width: one column, compose from the title row fills the screen, fold
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("account dialog: opens from the sidebar, keeps focus inside, no billing or device controls when they are off, Esc closes", async () => {
+  const { page, errors } = await open();
+  const opener = page.locator("aside button.w-full.border-t");
+  await opener.click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  assert.equal(await dialog.getAttribute("aria-modal"), "true");
+  assert.ok((await dialog.innerText()).includes("Plan"));
+  // Billing and signed-in devices only appear when Stripe keys and sign-in are configured.
+  assert.equal(await dialog.getByRole("button", { name: "Upgrade" }).count(), 0);
+  assert.equal(await dialog.getByRole("button", { name: "Manage billing" }).count(), 0);
+  assert.equal(await dialog.getByText("Signed-in devices").count(), 0);
+  for (let i = 0; i < 6; i += 1) await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]'))), true);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
