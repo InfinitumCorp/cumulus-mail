@@ -53,9 +53,9 @@ Publishing the DNS record is a manual step. This repository does not change DNS.
 
 ## Not yet covered
 
-- **Attachments.** Mail with attachments stays held, and its delivery line says so.
+- **Over 24 MB.** A message larger than 24 MB once encoded (most providers cap at 25 MB) stays held, and its delivery line says so. So does one whose attachment bytes cannot be read.
 - **Password-protected mail** keeps the link-only path. It is not sent by SMTP.
-- **No HTML part.** Messages are sent as UTF-8 `text/plain` with a base64 body.
+- **No HTML part.** Messages are sent as UTF-8 `text/plain` with a base64 body. Attachments go as `multipart/mixed`, each base64 with an RFC 2231 file name.
 - **One recipient per SMTP transaction.** This keeps per-recipient retry state simple.
 - **Workers sockets.** The SMTP client takes a socket dialer. The built-in one uses `node:net` and
   `node:tls`. On Workers, a dialer around `cloudflare:sockets` `connect()` (with `startTls()`) would
