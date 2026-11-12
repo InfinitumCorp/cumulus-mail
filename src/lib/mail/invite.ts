@@ -1,4 +1,5 @@
 import type { CalEvent } from "./model.ts";
+import { describeRule, parseRRule } from "./recurrence.ts";
 
 function unfold(text: string): string[] {
   const lines: string[] = [];
@@ -73,17 +74,76 @@ function whenLabel(line: string): { label: string; sort: string } {
 export function parseInvite(text: string): CalEvent | null {
   if (!/BEGIN:VCALENDAR/i.test(text) || !/BEGIN:VEVENT/i.test(text)) return null;
   const lines = unfold(text);
+  // A REPLY is someone's answer to an invite, not an invite.
+  if (field(lines, "METHOD").toUpperCase() === "REPLY") return null;
   const title = field(lines, "SUMMARY");
   if (!title) return null;
   const start = lines.find((line) => line.toUpperCase().startsWith("DTSTART"));
   const when = whenLabel(start ?? "");
-  const uid = field(lines, "UID") || title;
+  const rawUid = field(lines, "UID");
+  const uid = rawUid || title;
+  const organizer = field(lines, "ORGANIZER");
+  const rule = field(lines, "RRULE");
+  const parsedRule = rule ? parseRRule(rule) : null;
   return {
     id: `ics-${uid.replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 60) || "event"}`,
     title: title.slice(0, 200),
-    whenLabel: when.label,
+    whenLabel: parsedRule ? `${when.label} · ${describeRule(parsedRule)}` : when.label,
     where: field(lines, "LOCATION").slice(0, 200),
-    with: field(lines, "ORGANIZER").slice(0, 200) || "Calendar invite",
+    with: organizer.slice(0, 200) || "Calendar invite",
     sort: when.sort,
+    ...(parsedRule ? { rrule: rule.slice(0, 300) } : {}),
+    ...(rawUid ? { uid: rawUid.slice(0, 300) } : {}),
+    ...(/^[^\s@]+@[^\s@]+$/.test(organizer) ? { organizer: organizer.toLowerCase().slice(0, 320) } : {}),
   };
+}
+
+export type PartStat = "ACCEPTED" | "TENTATIVE" | "DECLINED";
+
+function icsText(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+function icsStamp(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
+/** RFC 5546 iTIP REPLY for one attendee. CRLF lines, ready to put in a message body. */
+export function buildReply(
+  event: CalEvent,
+  attendee: { name: string; email: string },
+  partstat: PartStat,
+  now = new Date(),
+): string {
+  if (!event.organizer || !event.uid) throw new Error("This invite has no organizer to answer.");
+  const start = Date.parse(event.sort);
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Cumulus//Mail//EN",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    `UID:${event.uid.replace(/[\r\n]/g, "")}`,
+    `DTSTAMP:${icsStamp(now)}`,
+    ...(Number.isFinite(start) ? [`DTSTART:${icsStamp(new Date(start))}`] : []),
+    `SUMMARY:${icsText(event.title)}`,
+    `ORGANIZER:mailto:${event.organizer}`,
+    `ATTENDEE;PARTSTAT=${partstat};CN="${attendee.name.replace(/["\r\n]/g, "")}":mailto:${attendee.email}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
+/** Read an iTIP REPLY: who answered which event, and how. */
+export function parseReply(text: string): { uid: string; attendee: string; partstat: PartStat } | null {
+  if (!/BEGIN:VCALENDAR/i.test(text)) return null;
+  const lines = unfold(text);
+  if (field(lines, "METHOD").toUpperCase() !== "REPLY") return null;
+  const line = lines.find((item) => /^ATTENDEE[;:]/i.test(item)) ?? "";
+  const partstat = /;PARTSTAT=([A-Z-]+)/i.exec(line)?.[1]?.toUpperCase();
+  if (partstat !== "ACCEPTED" && partstat !== "TENTATIVE" && partstat !== "DECLINED") return null;
+  const uid = field(lines, "UID");
+  const attendee = field(lines, "ATTENDEE").toLowerCase();
+  if (!uid || !attendee.includes("@")) return null;
+  return { uid, attendee, partstat };
 }
