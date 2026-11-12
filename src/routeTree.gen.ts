@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as ApiCidEventsRouteImport } from './routes/api/cid-events'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -30,6 +31,11 @@ const LogoutRoute = LogoutRouteImport.update({
   path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCidEventsRoute = ApiCidEventsRouteImport.update({
+  id: '/api/cid-events',
+  path: '/api/cid-events',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PTokenRoute = PTokenRouteImport.update({
   id: '/p/$token',
   path: '/p/$token',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -60,21 +68,32 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/logout' | '/p/$token' | '/api/auth/$'
+  fullPaths:
+    '/' | '/login' | '/logout' | '/api/cid-events' | '/p/$token' | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/logout' | '/p/$token' | '/api/auth/$'
-  id: '__root__' | '/' | '/login' | '/logout' | '/p/$token' | '/api/auth/$'
+  to:
+    '/' | '/login' | '/logout' | '/api/cid-events' | '/p/$token' | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/logout'
+    | '/api/cid-events'
+    | '/p/$token'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
+  ApiCidEventsRoute: typeof ApiCidEventsRoute
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -102,6 +121,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cid-events': {
+      id: '/api/cid-events'
+      path: '/api/cid-events'
+      fullPath: '/api/cid-events'
+      preLoaderRoute: typeof ApiCidEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/p/$token': {
       id: '/p/$token'
       path: '/p/$token'
@@ -123,6 +149,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
+  ApiCidEventsRoute: ApiCidEventsRoute,
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
