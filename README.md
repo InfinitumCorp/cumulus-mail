@@ -8,7 +8,7 @@ Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumulus
 
 ## Sign in
 
-People sign in with Google only: one "Sign in with Google" button, which runs Better Auth's Google provider (authorization code + PKCE) and brings the person back signed in. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (the secret goes in the platform's secret store, never in this repository) and register `<BETTER_AUTH_URL>/api/auth/callback/google` as a redirect URI on the Google OAuth client. Sign-in stays off until both are set. There is no local password, passcode or PIN.
+People sign in with Google only: one "Sign in with Google" button, which runs Better Auth's Google provider (authorization code + PKCE) and brings the person back signed in. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (the secret goes in the platform's secret store, never in this repository) and register `<BETTER_AUTH_URL>/api/auth/callback/google` as a redirect URI on the Google OAuth client. Sign-in stays off until both are set. There is no local password, passcode or PIN. A new mailbox gets an address on the mail domain built from the Google username (`ada.lovelace@gmail.com` becomes `ada.lovelace@cumuluscloud.app`, or `ada.lovelace2@…` if that is taken), never the Google address itself; existing mailboxes keep their address.
 
 ## Run
 

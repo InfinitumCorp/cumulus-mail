@@ -25,6 +25,8 @@ import {
   stripeConfig,
   verifyStripeSignature,
 } from "./billing.ts";
+import { openText } from "./field-crypto.ts";
+import { chooseMailboxAddress } from "./mailbox-address.ts";
 import { publishAddress } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
@@ -64,6 +66,15 @@ async function tenantFromCumulusToken(token: string, issuer: string): Promise<st
   return verified.tenantId;
 }
 
+/** The address an existing mailbox was created with, or null when the tenant has no mailbox yet. */
+async function storedAddress(tenantId: string): Promise<string | null> {
+  const rows = await (await database()).query<{ address: string }>(
+    `select address from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  return rows[0] ? openText(tenantId, rows[0].address) : null;
+}
+
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
@@ -87,8 +98,9 @@ async function sessionMailbox(
   if (session) {
     if (session.id !== contextUserId) throw new TenantAccessError("Session does not match");
     assertTenantId(session.id);
-    const email = (session.email ?? "").trim().toLowerCase();
-    const address = email.includes("@") ? email : mailboxAddress(session.id);
+    // A new mailbox gets an address on the mail domain, never the Google address itself; an existing
+    // mailbox keeps the address it has (provisioning does nothing for a tenant that already exists).
+    const address = (await storedAddress(session.id)) ?? (await chooseMailboxAddress(await database(), session.id, session.email));
     const name = address.split("@")[0] || "Cumulus";
     return {
       tenantId: session.id,
