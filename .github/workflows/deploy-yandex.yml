@@ -1,0 +1,77 @@
+# RU production (Yandex Cloud, ru-central1): build the image, push it to Container Registry and deploy
+# a Serverless Container revision with deploy/yandex/deploy.sh. See docs/deploy/yandex-ru.md, and make
+# the owner decisions listed there (data residency, inbound mail, scheduler) before the first run.
+#
+# Manual only: never runs on push. Runs in the `production-ru` GitHub environment, which the owner
+# configures with required reviewers and (Settings > Environments):
+#   secrets  YC_SA_KEY_JSON   authorized key (JSON) of the deploy service account
+#   vars     YC_CLOUD_ID, YC_FOLDER_ID, YC_REGISTRY_ID, YC_SA_ID (runtime service account), YC_LOCKBOX_ID
+# App secrets (BETTER_AUTH_SECRET, DATABASE_URL, MAIL_BLOB_KEY, MAIL_S3_*) stay in Yandex Lockbox and
+# are attached to the container by reference; they never pass through GitHub.
+name: Deploy RU (Yandex Cloud)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "deploy ru" to proceed
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-yandex
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-ru
+    timeout-minutes: 30
+    steps:
+      - name: Check the confirmation phrase
+        if: inputs.confirm != 'deploy ru'
+        run: |
+          echo "Confirmation phrase does not match. Nothing deployed."
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Checks before deploying
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+      - name: Install yc
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -i "$HOME/yc" -n
+          echo "$HOME/yc/bin" >> "$GITHUB_PATH"
+      - name: Sign in to Yandex Cloud
+        env:
+          YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
+          YC_CLOUD_ID: ${{ vars.YC_CLOUD_ID }}
+          YC_FOLDER_ID: ${{ vars.YC_FOLDER_ID }}
+        run: |
+          test -n "$YC_SA_KEY_JSON" || { echo "YC_SA_KEY_JSON is not set"; exit 1; }
+          key="$RUNNER_TEMP/yc-key.json"
+          printf '%s' "$YC_SA_KEY_JSON" > "$key"
+          chmod 600 "$key"
+          yc config profile create deploy >/dev/null
+          yc config set service-account-key "$key"
+          yc config set cloud-id "$YC_CLOUD_ID"
+          yc config set folder-id "$YC_FOLDER_ID"
+          rm -f "$key"
+          yc config list | grep -v "service-account-key"
+      - name: Build, push and deploy
+        env:
+          YES: "1"
+          REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
+          SA_ID: ${{ vars.YC_SA_ID }}
+          LOCKBOX_ID: ${{ vars.YC_LOCKBOX_ID }}
+        run: ./deploy/yandex/deploy.sh
