@@ -117,3 +117,25 @@ test("the cron handler also sends due outbound rows when SMTP is configured, and
     await harness.close();
   }
 });
+
+test("on Workers, SMTP settings in the bindings send through the Workers socket dialer", async () => {
+  const { enqueueOutbound } = await import("../../../src/lib/mail/outbound/queue.ts");
+  const { dialWith } = await import("../../../src/lib/mail/outbound/cf-socket.ts");
+  const { fakeConnect } = await import("../../../src/lib/mail/outbound/cf-fake.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("worker-cf", "worker.cf@cumuluscloud.app", "Cf");
+    await openMailbox(harness.db, "worker-cf", me);
+    await enqueueOutbound(harness.db, "worker-cf", { messageId: "cf-1", from: me.email, recipient: "bea@example.org", raw: "Subject: hi\r\n\r\nhello\r\n" });
+    const log = { connects: [] as Array<{ host: string; port: number; secure: string }>, lines: [] as string[], tls: 0 };
+    const report = await handleScheduled({
+      ingest: { db: harness.db, storageFor: harness.storageFor },
+      MAIL_SMTP_HOST: "smtp.example.org",
+      smtpDial: dialWith(fakeConnect(log)),
+    });
+    assert.deepEqual(report.outbound, { sent: 1, retried: 0, bounced: 0 });
+    assert.deepEqual(log.connects, [{ host: "smtp.example.org", port: 587, secure: "starttls" }]);
+  } finally {
+    await harness.close();
+  }
+});
