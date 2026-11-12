@@ -25,6 +25,13 @@ export type AuditEvent = {
   detail: string;
 };
 
+export type Unsubscribed = {
+  /** List-Id or sender address, as `subscriptions()` keys it. */
+  key: string;
+  at: string;
+  method: "one-click" | "mailto" | "link";
+};
+
 export type MailSettings = {
   undoSendSeconds: number;
   linkConfirmation: boolean;
@@ -34,6 +41,8 @@ export type MailSettings = {
   sieve: string;
   events: CalEvent[];
   audit: AuditEvent[];
+  /** Lists the owner unsubscribed from, newest last. */
+  unsubscribed: Unsubscribed[];
 };
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
@@ -52,6 +61,7 @@ export function defaultSettings(): MailSettings {
     sieve: "",
     events: [],
     audit: [],
+    unsubscribed: [],
   };
 }
 
@@ -129,6 +139,31 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           }))
           .slice(-40)
       : [],
+    unsubscribed: Array.isArray(row.unsubscribed)
+      ? row.unsubscribed
+          .filter(
+            (item): item is Unsubscribed =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as Unsubscribed).key === "string" &&
+              ["one-click", "mailto", "link"].includes((item as Unsubscribed).method),
+          )
+          .map((item) => ({ key: text(item.key, 320).toLowerCase(), at: text(item.at, 40), method: item.method }))
+          .slice(-200)
+      : [],
+  };
+}
+
+export function noteUnsubscribed(
+  settings: MailSettings,
+  key: string,
+  method: Unsubscribed["method"],
+  now = new Date(),
+): MailSettings {
+  const clean = key.trim().toLowerCase();
+  return {
+    ...settings,
+    unsubscribed: [...settings.unsubscribed.filter((item) => item.key !== clean), { key: clean, at: now.toISOString(), method }].slice(-200),
   };
 }
 
