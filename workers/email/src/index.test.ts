@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHarness, profile } from "../../../src/lib/mail/test-support.ts";
 import { openMailbox } from "../../../src/lib/mail/mailbox.ts";
-import { readSnapshot } from "../../../src/lib/mail/records.ts";
-import handler, { handleEmail } from "./index.ts";
+import { insertMessage, readSnapshot } from "../../../src/lib/mail/records.ts";
+import handler, { handleEmail, handleScheduled } from "./index.ts";
 
 const RAW = new TextEncoder().encode(
   [
@@ -42,6 +42,44 @@ test("the email handler parses MIME and stores it through the storage adapter", 
     );
     const raw = await harness.storageFor("worker-ada").get(rawRows[0]?.raw_key ?? "");
     assert.equal(raw?.body.byteLength, RAW.byteLength);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("the cron handler releases a due scheduled draft through the worker ingest", async () => {
+  const harness = await createHarness();
+  try {
+    const me = profile("worker-cron", "worker.cron@cumuluscloud.app", "Cron");
+    await openMailbox(harness.db, "worker-cron", me);
+    await insertMessage(
+      harness.db,
+      "worker-cron",
+      {
+        id: "cron-1",
+        threadId: "cron-t1",
+        folder: "drafts",
+        from: { name: me.name, email: me.email },
+        to: [{ name: "Out", email: "out@example.org" }],
+        cc: [],
+        subject: "Cron",
+        body: "Sent by the cron.",
+        at: "2026-01-01T00:00:00.000Z",
+        unread: false,
+        starred: false,
+        labels: [],
+        extra: { scheduleAt: "2000-01-01T00:00:00.000Z" },
+      },
+      null,
+    );
+    const result = await handler.scheduled(
+      { scheduledTime: Date.now() },
+      { ingest: { db: harness.db, storageFor: harness.storageFor } },
+    );
+    assert.equal(result, undefined);
+    const box = await readSnapshot(harness.db, "worker-cron");
+    assert.equal(box.messages.find((item) => item.id === "cron-1")?.folder, "sent");
+    await assert.rejects(() => handleScheduled({}), /not deployed/);
   } finally {
     await harness.close();
   }

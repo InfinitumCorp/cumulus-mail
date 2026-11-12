@@ -2,6 +2,7 @@ import { resolverFromEnv, type DNSResolver } from "../../../src/lib/mail/authent
 import type { TenantStorage } from "../../../src/lib/mail/delivery.ts";
 import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
+import { releaseScheduledMail, type ReleaseReport } from "../../../src/lib/mail/release.ts";
 import { openWorkerIngest, type IngestHooks, type WorkerBindings } from "./bindings.ts";
 
 /**
@@ -85,7 +86,37 @@ export async function handleEmail(
   }
 }
 
+/**
+ * Cron handler (`triggers.crons` in wrangler.jsonc). Releases scheduled
+ * drafts and expired undo holds when no tab is open.
+ */
+export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<ReleaseReport> {
+  const opened = env.ingest ? null : await openWorkerIngest(env, env.ingestHooks);
+  const ingest = env.ingest ?? opened;
+  if (!ingest) {
+    throw new Error(
+      "Cumulus mail inbound ingest is not configured. This worker template is not deployed.",
+    );
+  }
+  try {
+    const report = await releaseScheduledMail(ingest.db, ingest.storageFor, now);
+    console.log(JSON.stringify({ event: "mail.schedule.ran", ...report }));
+    return report;
+  } finally {
+    await opened?.close();
+  }
+}
+
 export default {
+  async scheduled(controller: { scheduledTime?: number } | undefined, env: EmailEnv, _ctx?: unknown): Promise<void> {
+    try {
+      await handleScheduled(env, controller?.scheduledTime ?? Date.now());
+    } catch (error) {
+      console.error(JSON.stringify({ event: "mail.schedule.failed", error: safeError(error) }));
+      throw error;
+    }
+  },
+
   async email(message: EmailMessage, env: EmailEnv, _ctx?: unknown): Promise<void> {
     try {
       await handleEmail(message, env);

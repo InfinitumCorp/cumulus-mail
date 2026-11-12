@@ -38,8 +38,8 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Simple filters (from → star, archive, label) | existing | Account dialog, and Mute in the reader. |
 | Sieve subset | added | `if header\|address :contains\|:is "From\|Subject\|To"`, then `fileinto`, `addflag "\Starred"`, `stop`. `fileinto` takes a system folder, `label:Name`, or a custom folder name (`"Receipts"` or `"folder:Receipts"`). Bad scripts, including one naming a folder that no longer exists, are stored but not applied; the account dialog says why. |
 | Auto-reply | added | One reply per sender per day. It does not answer an auto-reply. |
-| Scheduled send | added | Stays in Drafts until the time, then Sent on the next save or within a few seconds while the app is open. |
-| Server-side scheduler when the tab is closed | deferred | Needs a worker. A later save still releases mail that is already due. |
+| Scheduled send | added | Stays in Drafts until the time, then Sent on the next save, within a few seconds while the app is open, or by the worker cron within about a minute when it is closed. |
+| Server-side scheduler when the tab is closed | added | The inbound worker (`cumulus-mail-inbound`) runs a cron every minute (`triggers.crons`, and `dist/inbound/schedules.json` for the Workers API). It moves due drafts to Sent and delivers them, and releases expired undo holds (`src/lib/mail/release.ts`). An edit saved in the app after the cron reads a draft wins; that draft waits for the next run. The worker is not deployed by this repo, so production still needs the worker and its schedule set. |
 | Undo send | added | Existing undo toast, plus a hold (default 10s, max 30s) before delivery is recorded. |
 | Snooze | existing | Until 08:00 UTC the next day. |
 | Contacts | existing | |
