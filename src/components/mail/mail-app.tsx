@@ -42,6 +42,7 @@ import { MessageList } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { CumulusBar } from "@/components/cumulus-bar";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -600,8 +601,8 @@ export function MailApp() {
 
   return (
     <div className="mail-shell">
-      <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
-        <div className="flex items-center gap-2">
+      <header className="relative flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
+        <div className="flex items-center gap-2 pr-12 md:pr-0">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">
             <Menu className="size-5" />
           </button>
@@ -631,6 +632,8 @@ export function MailApp() {
           <SquarePen className="size-4" />
           Compose
         </button>
+        {/* Cumulus://ID account bar: top right of the first row on phones, the header's right end on desktop. */}
+        <CumulusBar client="cumulus-mail" className="absolute right-3 top-[16px] flex md:static md:ml-auto" />
       </header>
       {syncError ? <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p> : null}
       <div className="mail-body">
