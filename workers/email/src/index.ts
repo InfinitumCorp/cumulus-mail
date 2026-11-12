@@ -3,6 +3,8 @@ import type { TenantStorage } from "../../../src/lib/mail/delivery.ts";
 import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
 import { releaseScheduledMail, type ReleaseReport } from "../../../src/lib/mail/release.ts";
+import { outboundFromEnv, type OutboundConfig } from "../../../src/lib/mail/outbound/config.ts";
+import { processOutboundQueue, type QueueReport } from "../../../src/lib/mail/outbound/queue.ts";
 import { openWorkerIngest, type IngestHooks, type WorkerBindings } from "./bindings.ts";
 
 /**
@@ -35,7 +37,37 @@ export type EmailEnv = WorkerBindings & {
   resolver?: DNSResolver;
   /** Test double for Hyperdrive and S3. Production leaves this unset. */
   ingestHooks?: Partial<IngestHooks>;
+  /** Outbound SMTP settings (see docs/deploy/outbound-smtp.md). Unset = outside mail stays held. */
+  MAIL_SMTP_HOST?: string;
+  MAIL_SMTP_PORT?: string;
+  MAIL_SMTP_SECURITY?: string;
+  MAIL_SMTP_USER?: string;
+  MAIL_SMTP_PASSWORD?: string;
+  MAIL_SMTP_HELO?: string;
+  MAIL_DKIM_SELECTOR?: string;
+  MAIL_DKIM_PRIVATE_KEY?: string;
+  MAIL_OUTBOUND_DEV?: string;
+  /** Test double for the outbound transport. Production leaves this unset. */
+  outbound?: OutboundConfig | null;
 };
+
+/** Outbound config from the worker's own bindings (not process.env, which Workers may leave empty). */
+export function workerOutbound(env: EmailEnv): OutboundConfig | null {
+  if (env.outbound !== undefined) return env.outbound;
+  return outboundFromEnv({
+    MAIL_SMTP_HOST: env.MAIL_SMTP_HOST,
+    MAIL_SMTP_PORT: env.MAIL_SMTP_PORT,
+    MAIL_SMTP_SECURITY: env.MAIL_SMTP_SECURITY,
+    MAIL_SMTP_USER: env.MAIL_SMTP_USER,
+    MAIL_SMTP_PASSWORD: env.MAIL_SMTP_PASSWORD,
+    MAIL_SMTP_HELO: env.MAIL_SMTP_HELO,
+    MAIL_DKIM_SELECTOR: env.MAIL_DKIM_SELECTOR,
+    MAIL_DKIM_PRIVATE_KEY: env.MAIL_DKIM_PRIVATE_KEY,
+    MAIL_OUTBOUND_DEV: env.MAIL_OUTBOUND_DEV,
+  });
+}
+
+export type ScheduledReport = ReleaseReport & { outbound: QueueReport | null };
 
 function safeError(error: unknown): string {
   const message = error instanceof Error ? error.message : "inbound failed";
@@ -88,9 +120,10 @@ export async function handleEmail(
 
 /**
  * Cron handler (`triggers.crons` in wrangler.jsonc). Releases scheduled
- * drafts and expired undo holds when no tab is open.
+ * drafts and expired undo holds when no tab is open, then sends due rows of
+ * the outbound SMTP queue (retries included) when SMTP is configured.
  */
-export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<ReleaseReport> {
+export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<ScheduledReport> {
   const opened = env.ingest ? null : await openWorkerIngest(env, env.ingestHooks);
   const ingest = env.ingest ?? opened;
   if (!ingest) {
@@ -99,8 +132,12 @@ export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<
     );
   }
   try {
-    const report = await releaseScheduledMail(ingest.db, ingest.storageFor, now);
-    console.log(JSON.stringify({ event: "mail.schedule.ran", ...report }));
+    const released = await releaseScheduledMail(ingest.db, ingest.storageFor, now);
+    // Retries for outside mail: every due queue row, all tenants. Off unless SMTP is configured.
+    const outbound = workerOutbound(env);
+    const queue = outbound ? await processOutboundQueue(ingest.db, outbound, { now: new Date(now) }) : null;
+    const report: ScheduledReport = { ...released, outbound: queue };
+    console.log(JSON.stringify({ event: "mail.schedule.ran", ...released, outbound: queue }));
     return report;
   } finally {
     await opened?.close();

@@ -84,3 +84,36 @@ test("the cron handler releases a due scheduled draft through the worker ingest"
     await harness.close();
   }
 });
+
+test("the cron handler also sends due outbound rows when SMTP is configured, and skips them when it is not", async () => {
+  const { enqueueOutbound } = await import("../../../src/lib/mail/outbound/queue.ts");
+  const { createMemoryTransport } = await import("../../../src/lib/mail/outbound/transport.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("worker-out", "worker.out@cumuluscloud.app", "Out");
+    await openMailbox(harness.db, "worker-out", me);
+    await enqueueOutbound(harness.db, "worker-out", {
+      messageId: "out-1",
+      from: me.email,
+      recipient: "bea@example.org",
+      raw: "Subject: hi\r\n\r\nhello\r\n",
+    });
+    const ingest = { db: harness.db, storageFor: harness.storageFor };
+
+    const off = await handleScheduled({ ingest, outbound: null });
+    assert.equal(off.outbound, null);
+
+    const transport = createMemoryTransport();
+    const on = await handleScheduled({ ingest, outbound: { transport, dkim: null } });
+    assert.deepEqual(on.outbound, { sent: 1, retried: 0, bounced: 0 });
+    assert.deepEqual(transport.sent.map((item) => item.to), [["bea@example.org"]]);
+
+    // Already sent: the next run has nothing to do.
+    const again = await handleScheduled({ ingest, outbound: { transport, dkim: null } });
+    assert.deepEqual(again.outbound, { sent: 0, retried: 0, bounced: 0 });
+    // No SMTP settings in the bindings means off.
+    assert.equal((await handleScheduled({ ingest })).outbound, null);
+  } finally {
+    await harness.close();
+  }
+});
