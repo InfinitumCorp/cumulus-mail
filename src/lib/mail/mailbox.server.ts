@@ -17,6 +17,9 @@ import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailAppHost, mailboxAddress } from "./domain.ts";
 import {
+  BILLING_OFF,
+  billingStatus,
+  type BillingStatus,
   handleStripeEvent,
   openBillingPortal,
   parseStripeEvent,
@@ -282,22 +285,10 @@ export async function startCheckoutForSession(
 }
 
 /** Whether billing is on, and whether this mailbox already pays (then only Manage billing is offered). */
-export async function billingStatusForSession(
-  contextUserId: string,
-  bearerToken?: string,
-): Promise<{ enabled: boolean; subscribed: boolean; hasCustomer: boolean }> {
-  if (!stripeConfig()) return { enabled: false, subscribed: false, hasCustomer: false };
+export async function billingStatusForSession(contextUserId: string, bearerToken?: string): Promise<BillingStatus> {
+  if (!stripeConfig()) return BILLING_OFF;
   const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
-  const rows = await (await database()).query<{ stripe_customer_id: string | null; stripe_subscription_id: string | null; plan_status: string }>(
-    `select stripe_customer_id, stripe_subscription_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
-    [tenantId],
-  );
-  const row = rows[0];
-  return {
-    enabled: true,
-    subscribed: Boolean(row?.stripe_subscription_id) && row?.plan_status !== "canceled",
-    hasCustomer: Boolean(row?.stripe_customer_id),
-  };
+  return billingStatus(await database(), tenantId);
 }
 
 export async function openBillingPortalForSession(contextUserId: string, bearerToken?: string): Promise<{ url: string }> {
