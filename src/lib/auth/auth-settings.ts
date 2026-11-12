@@ -37,7 +37,7 @@ export function resolveAuthSecret(env: AuthEnv, previewSecret: () => string): st
 /** The settings the auth instance is built from; a change in any of them builds a new instance. */
 export function authSettingsKey(env: AuthEnv): string {
   return JSON.stringify(
-    ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "DATABASE_URL", "VITE_AUTH_ENABLED", "CID_ISSUER", "CID_CLIENT_ID", "CUMULUS_RUNTIME"].map(
+    ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "DATABASE_URL", "VITE_AUTH_ENABLED", "CID_ISSUER", "CID_ISSUER_RU", "CID_CLIENT_ID", "MAIL_REGION", "CUMULUS_RUNTIME"].map(
       (key) => value(env, key) ?? null,
     ),
   );
