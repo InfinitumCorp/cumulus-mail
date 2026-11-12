@@ -242,3 +242,193 @@ test("undo holds and schedules release at their time, not before", () => {
   const list = [message({ folder: "inbox", extra: { scheduleAt: "2000-01-01T00:00:00.000Z" } })];
   assert.equal(releaseDue(list, now), list);
 });
+
+// ---- logic ---------------------------------------------------------------
+
+import {
+  applyRules,
+  audienceLabel,
+  briefKey,
+  formatSize,
+  initials,
+  inBox,
+  isE2E,
+  isSnoozed,
+  listThreads,
+  markThreadUnread,
+  parsePeople,
+  peopleToField,
+  planDelivery,
+  quota,
+  quote,
+  rowTitle,
+  threadOf,
+  tomorrowMorning,
+  transcript,
+  validEmail,
+  withSignature,
+} from "./logic.ts";
+import { parseInvite } from "./invite.ts";
+import { envelopeBlock, spendRead } from "./protect.ts";
+import type { ProtectedEnvelope } from "./model.ts";
+
+test("formatting helpers: sizes, initials, row titles", () => {
+  assert.deepEqual([0, 1023, 1024, 1536, 1024 * 1024 - 1, 1024 * 1024, 5.5 * 1024 * 1024].map(formatSize), [
+    "0 B",
+    "1023 B",
+    "1 KB",
+    "2 KB",
+    "1024 KB",
+    "1.0 MB",
+    "5.5 MB",
+  ]);
+  assert.equal(initials("Leah  Okafor-Smith"), "LO");
+  assert.equal(initials("cher"), "C");
+  assert.equal(initials("   "), "•");
+  assert.equal(rowTitle(message()), "Leah");
+  assert.equal(rowTitle(message({ from: { name: "Alex", email: "ALEX@cumuluscloud.app" } }), "alex@cumuluscloud.app"), "To Alex");
+  assert.equal(rowTitle(message({ from: { name: "Alex", email: "alex@cumuluscloud.app" }, to: [] }), "alex@cumuluscloud.app"), "To someone");
+});
+
+test("recipient fields parse and print back", () => {
+  const people = parsePeople('"Reid" <alex@cumuluscloud.app>; leah@cumuluscloud.app, Priya <priya@vyral.example>,,');
+  assert.deepEqual(people, [
+    { name: "Reid", email: "alex@cumuluscloud.app" },
+    { name: "leah", email: "leah@cumuluscloud.app" },
+    { name: "Priya", email: "priya@vyral.example" },
+  ]);
+  assert.equal(peopleToField(people), "Reid <alex@cumuluscloud.app>, leah <leah@cumuluscloud.app>, Priya <priya@vyral.example>");
+  assert.equal(peopleToField([{ name: "x@y.example", email: "x@y.example" }]), "x@y.example");
+  assert.deepEqual(["a@b.co", "a@b", "a b@c.co", "@c.co", "a@.co"].map(validEmail), [true, false, false, false, false]);
+});
+
+test("delivery plans dedupe recipients and say where each goes", () => {
+  const hops = planDelivery([
+    { name: "Leah", email: "Leah@cumuluscloud.app" },
+    { name: "Leah again", email: "leah@cumuluscloud.app" },
+    { name: "Priya", email: "priya@vyral.example" },
+  ]);
+  assert.deepEqual(hops.map((hop) => [hop.email, hop.status]), [["leah@cumuluscloud.app", "inside"], ["priya@vyral.example", "outbound"]]);
+  assert.match(planDelivery([{ name: "P", email: "p@x.example" }], { password: true })[0]?.detail ?? "", /Password-protected/);
+  assert.equal(audienceLabel([{ name: "L", email: "leah@cumuluscloud.app" }]), "Personal");
+  assert.equal(audienceLabel([{ name: "L", email: "leah@cumuluscloud.app" }, { name: "P", email: "p@x.example" }]), "External");
+  assert.equal(audienceLabel([]), "External");
+  assert.equal(isE2E(message()), true);
+  assert.equal(isE2E(message({ cc: [{ name: "P", email: "p@x.example" }] })), false);
+});
+
+test("rules star, archive and label inbox mail only", () => {
+  const rules = [
+    { id: "1", from: "LEAH", action: "star" as const },
+    { id: "2", from: "leah@", action: "label" as const, label: "Team" },
+    { id: "3", from: "  ", action: "archive" as const },
+  ];
+  const next = applyRules(message(), rules);
+  assert.equal(next.starred, true);
+  assert.deepEqual(next.labels, ["Team"]);
+  assert.equal(next.folder, "inbox");
+  assert.deepEqual(applyRules(next, rules).labels, ["Team"]);
+  assert.equal(applyRules(message({ folder: "sent" }), rules).starred, false);
+  const archived = applyRules(message(), [{ id: "4", from: "cumuluscloud.app", action: "archive" }]);
+  assert.equal(archived.folder, "archive");
+  assert.equal(archived.unread, false);
+});
+
+test("signature is added once, above a quoted reply", () => {
+  const signed = withSignature("Hello", "Alex\nInfinitum");
+  assert.equal(signed, "Hello\n\nAlex\nInfinitum");
+  assert.equal(withSignature(signed, "Alex\nInfinitum"), signed);
+  assert.equal(withSignature("Hello", "  "), "Hello");
+  assert.equal(withSignature("Thanks \n\n—\nOn Thu, Leah wrote:\n> hi", "Alex"), "Thanks\n\nAlex\n\n—\nOn Thu, Leah wrote:\n> hi");
+});
+
+test("threads, snooze and boxes", () => {
+  const now = Date.parse("2026-11-12T10:00:00.000Z");
+  const a1 = message({ id: "a1", threadId: "a", at: "2026-11-10T00:00:00.000Z", subject: "Budget", unread: false });
+  const a2 = message({ id: "a2", threadId: "a", at: "2026-11-11T00:00:00.000Z", subject: "Re: Budget", body: "Numbers attached" });
+  const ad = message({ id: "ad", threadId: "a", folder: "drafts", at: "2026-11-12T00:00:00.000Z" });
+  const b1 = message({ id: "b1", threadId: "b", at: "2026-11-09T00:00:00.000Z", snoozeUntil: "2026-11-13T08:00:00.000Z" });
+  const s1 = message({ id: "s1", threadId: "s", folder: "sent", delivery: [{ email: "p@x.example", status: "outbound", detail: "held" }] });
+  const t1 = message({ id: "t1", threadId: "t", folder: "trash", starred: true });
+  const all = [a1, a2, ad, b1, s1, t1];
+  assert.deepEqual(threadOf(all, "a").map((m) => m.id), ["a1", "a2"]);
+  assert.equal(isSnoozed(b1, now), true);
+  assert.equal(isSnoozed(b1, Date.parse("2026-11-13T08:00:00.000Z")), false);
+  assert.equal(inBox(b1, "inbox", now), false);
+  assert.equal(inBox(b1, "snoozed", now), true);
+  assert.equal(inBox(s1, "outbox", now), true);
+  assert.equal(inBox(t1, "starred", now), false);
+  const rows = listThreads(all, "inbox", "", false);
+  assert.deepEqual(rows.map((m) => m.id), ["a2"]);
+  assert.deepEqual(listThreads(all, "inbox", "numbers", false).map((m) => m.id), ["a2"]);
+  assert.deepEqual(listThreads(all, "inbox", "nothing-like-this", false), []);
+  const unread = markThreadUnread([a1, a2], "a", "alex@cumuluscloud.app");
+  assert.equal(unread.find((m) => m.id === "a2")?.unread, true);
+  assert.equal(briefKey([a1, a2]), "a1:a2");
+});
+
+test("snooze time, quoting, transcripts and quota", () => {
+  assert.equal(tomorrowMorning(new Date("2026-12-31T23:30:00.000Z")), "2027-01-01T08:00:00.000Z");
+  const quoted = quote(message({ body: "Line one\nLine two", at: "2026-11-05T20:00:00.000Z" }));
+  assert.match(quoted, /^\n\n—\nOn Thu 05 Nov, 20:00 UTC, Leah wrote:\n> Line one\n> Line two$/);
+  assert.match(transcript([message(), message({ id: "m-2", body: "Second" })]), /See you Thursday\.\n\n----\n\nFrom: Leah/);
+  const full = quota([message({ attachments: [{ name: "big", size: 50e9 }] })], 15);
+  assert.equal(full.pct, 100);
+  assert.match(quota([], 15).label, /^2\.41 GB of 15 GB$/);
+});
+
+// ---- invites -------------------------------------------------------------
+
+test("calendar invites: folded lines, parameters, all-day dates and colons in values", () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:abc/123@calendar.example",
+    "SUMMARY;LANGUAGE=en:Q4 review: budget and",
+    "  hiring",
+    "DTSTART;TZID=Europe/London:20261105T143000",
+    "LOCATION:Room 4: east wing",
+    "ORGANIZER;CN=Priya:mailto:priya@vyral.example",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const event = parseInvite(ics);
+  assert.equal(event?.title, "Q4 review: budget and hiring");
+  assert.equal(event?.where, "Room 4: east wing");
+  assert.equal(event?.with, "priya@vyral.example");
+  assert.equal(event?.id, "ics-abc123calendar.example");
+  assert.equal(event?.sort, "2026-11-05T14:30:00.000Z");
+
+  const allDay = parseInvite("BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Offsite\nDTSTART;VALUE=DATE:20261201\nEND:VEVENT\nEND:VCALENDAR");
+  assert.equal(allDay?.whenLabel, "2026-12-01 00:00 UTC");
+  assert.equal(allDay?.with, "Calendar invite");
+  assert.equal(allDay?.id, "ics-Offsite");
+  assert.equal(parseInvite("BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20261201\nEND:VEVENT\nEND:VCALENDAR"), null);
+  assert.equal(parseInvite("SUMMARY:not a calendar"), null);
+});
+
+// ---- password-protected envelopes ----------------------------------------
+
+test("protected envelopes expire, count reads, and self-destruct", () => {
+  const envelope: ProtectedEnvelope = {
+    salt: "c2FsdA==",
+    iv: "aXY=",
+    ciphertext: "Y2lwaGVy",
+    expiresAt: "2026-11-20T00:00:00.000Z",
+    readsLeft: 2,
+    selfDestruct: false,
+    iterations: 20000,
+  };
+  const now = Date.parse("2026-11-12T00:00:00.000Z");
+  assert.equal(envelopeBlock(envelope, now), null);
+  assert.match(envelopeBlock(envelope, Date.parse("2026-11-20T00:00:00.000Z")) ?? "", /expired/);
+  assert.match(envelopeBlock({ ...envelope, expiresAt: "junk" }, now) ?? "", /expired/);
+  const once = spendRead(envelope);
+  assert.equal(once.readsLeft, 1);
+  assert.equal(once.ciphertext, envelope.ciphertext);
+  const twice = spendRead(once);
+  assert.deepEqual([twice.readsLeft, twice.ciphertext, twice.salt, twice.iv], [0, "", "", ""]);
+  assert.match(envelopeBlock(twice, now) ?? "", /already been opened/);
+  const burned = spendRead({ ...envelope, selfDestruct: true });
+  assert.deepEqual([burned.readsLeft, burned.ciphertext], [0, ""]);
+});

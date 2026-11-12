@@ -12,13 +12,18 @@ function unfold(text: string): string[] {
   return lines;
 }
 
+/**
+ * A property's value: `NAME:value` or `NAME;PARAM=x;PARAM="a:b":value`. The value
+ * is everything after the first colon outside quoted parameters, so a colon
+ * inside the value (a title like "Q4 review: budget") is kept.
+ */
 function field(lines: string[], name: string): string {
-  const prefix = `${name}:`;
-  const line = lines.find((item) => item.toUpperCase().startsWith(prefix));
-  if (!line) return "";
-  const value = line.slice(prefix.length).trim();
-  const split = value.split(":");
-  return (split[split.length - 1] ?? value).replace(/^mailto:/i, "").trim();
+  const pattern = new RegExp(`^${name}((?:;(?:"[^"]*"|[^:";])*)*):(.*)$`, "i");
+  for (const line of lines) {
+    const match = pattern.exec(line);
+    if (match) return (match[2] ?? "").trim().replace(/^mailto:/i, "").trim();
+  }
+  return "";
 }
 
 function whenLabel(raw: string): { label: string; sort: string } {
