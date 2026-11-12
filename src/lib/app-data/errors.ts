@@ -64,7 +64,7 @@ export function classifyCallToolError(
   if (isLoginRequired(result)) {
     return {
       kind: "login",
-      message: "Sign in with Cumulus ID to load your data.",
+      message: "Sign in with Google to load your data.",
       detail,
     };
   }
