@@ -8,6 +8,7 @@ import type {
 } from "./model.ts";
 import type { MailSettings } from "./settings.ts";
 import { TenantAccessError } from "../storage/adapter.ts";
+import type { Limits } from "./plans.ts";
 import { isCustomFolderId } from "./folders.ts";
 
 export type MailProfile = {
@@ -16,6 +17,10 @@ export type MailProfile = {
   cid: string;
   plan: string;
   quotaGb: number;
+  /** Limits of the mailbox's plan (see plans.ts). Absent on profiles built outside the database. */
+  limits?: Limits;
+  /** Bytes stored, counted on the server. Absent on profiles built outside the database. */
+  usedBytes?: number;
 };
 
 export type MailboxSnapshot = {

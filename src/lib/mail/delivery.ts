@@ -11,6 +11,11 @@ import { isHeld } from "./schedule.ts";
 import { applySieve } from "./sieve.ts";
 import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
+import { mailDomain } from "./domain.ts";
+import { currentOutbound } from "./outbound/config.ts";
+import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
+import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
+import { limitsFromEnv, sendDecision } from "./outbound/limits.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
 
@@ -100,6 +105,17 @@ function uniquePeople(people: Person[]): Person[] {
   return result;
 }
 
+/** Read every attachment's bytes, or null if any is missing. */
+async function loadOutgoingFiles(storage: TenantBlobs, files: StoredAttachment[]): Promise<OutgoingFile[] | null> {
+  const out: OutgoingFile[] = [];
+  for (const file of files) {
+    const stored = await storage.get(file.objectKey);
+    if (!stored) return null;
+    out.push({ name: file.name, contentType: file.contentType ?? "application/octet-stream", bytes: stored.body });
+  }
+  return out;
+}
+
 export async function deliverMessage(
   db: MailQuery,
   storageFor: TenantStorage,
@@ -108,6 +124,8 @@ export async function deliverMessage(
 ): Promise<DeliveryHop[]> {
   const suppressions = createSuppressionList(db, senderTenant);
   const files = (await loadAttachmentMap(db, senderTenant)).get(message.id) ?? [];
+  // Attachment bytes for SMTP, loaded once per message and only when outbound is on.
+  let outgoing: OutgoingFile[] | null | undefined;
   const hops: DeliveryHop[] = [];
   for (const person of uniquePeople([...message.to, ...message.cc])) {
     if (await suppressions.has(person.email)) {
@@ -128,6 +146,46 @@ export async function deliverMessage(
           email: person.email,
           status: "outbound",
           detail: `Password-protected. ${link.href} External SMTP is not configured.`,
+        });
+      } else if (currentOutbound()) {
+        const sender = await readProfile(db, senderTenant);
+        const from = { name: sender?.name ?? message.from.name, email: sender?.email ?? message.from.email };
+        const domain = from.email.split("@")[1] || mailDomain();
+        // Hold oversized mail from the stored sizes, before reading any attachment bytes into memory.
+        if (estimatedRawBytes(message.body.length, files.map((file) => file.size)) > MAX_RAW_BYTES) {
+          hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. Too large to send by SMTP (24 MB limit)." });
+          continue;
+        }
+        outgoing ??= await loadOutgoingFiles(storageFor(senderTenant), files);
+        let raw: string | null = null;
+        let unencodable = false;
+        try {
+          raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing) : null;
+        } catch {
+          unencodable = true;
+        }
+        if (unencodable) {
+          hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. An address in this message cannot be sent by SMTP." });
+          continue;
+        }
+        if (!raw || raw.length > MAX_RAW_BYTES) {
+          hops.push({
+            email: person.email,
+            status: "outbound",
+            detail: !raw ? "Held in the outbox. An attachment could not be read." : "Held in the outbox. Too large to send by SMTP (24 MB limit).",
+          });
+          continue;
+        }
+        const decision = await sendDecision(db, senderTenant, limitsFromEnv());
+        if (decision.action === "hold") {
+          hops.push({ email: person.email, status: "outbound", detail: decision.reason });
+          continue;
+        }
+        await enqueueOutbound(db, senderTenant, { messageId: message.id, from: from.email, recipient: person.email, raw }, decision.at);
+        hops.push({
+          email: person.email,
+          status: "outbound",
+          detail: decision.action === "later" ? `${QUEUED} Hourly sending limit reached; it goes out after ${decision.at.toISOString()}.` : QUEUED,
         });
       } else {
         hops.push({ email: person.email, status: "outbound", detail: HELD });
@@ -197,6 +255,9 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
       [senderTenant, message.id],
     );
   }
+  // With SMTP configured, try this mailbox's due rows now; a scheduled run retries the rest.
+  const outbound = currentOutbound();
+  if (outbound) await processOutboundQueue(db, outbound, { tenantId: senderTenant });
 }
 
 export async function putBytes(storage: TenantBlobs, body: Uint8Array): Promise<{ blobId: string; sha256: string }> {

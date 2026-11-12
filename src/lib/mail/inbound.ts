@@ -7,7 +7,8 @@ import { applyRules } from "./logic.ts";
 import { parseMime } from "./mime.ts";
 import type { MailMessage, MailRule } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertAttachment, insertMessage } from "./records.ts";
+import { limitsFor } from "./plans.ts";
+import { insertAttachment, insertMessage, storageUsedBytes } from "./records.ts";
 
 export type InboundEmail = {
   from: string;
@@ -24,7 +25,8 @@ export async function ingestInboundEmail(
   storageFor: TenantStorage,
   message: InboundEmail,
   resolver: DNSResolver = emptyResolver,
-): Promise<{ stored: string[] }> {
+  options: { enforceStorage?: boolean } = {},
+): Promise<{ stored: string[]; rejected?: "mailbox_full" }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
   if (!tenantId) return { stored: [] };
@@ -36,6 +38,13 @@ export async function ingestInboundEmail(
     [tenantId, id],
   );
   if (existing.length > 0) return { stored: [id] };
+
+  // Storage enforcement (docs/plans.md step 7) is off unless the operator turns it on. When on, a
+  // message that would take the mailbox over its plan's quota is refused before anything is stored,
+  // so the sender gets a "mailbox full" bounce instead of the mail being lost silently.
+  if (options.enforceStorage && (await overQuotaWith(db, tenantId, message.raw.byteLength))) {
+    return { stored: [], rejected: "mailbox_full" };
+  }
 
   const parsed = parseMime(message.raw);
   const storage: TenantBlobs = storageFor(tenantId);
@@ -101,4 +110,21 @@ export async function ingestInboundEmail(
   await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
   return { stored: [id] };
+}
+
+/** True when storing `incoming` more bytes would take the mailbox over its plan's storage quota. */
+export async function overQuotaWith(db: MailQuery, tenantId: string, incoming: number): Promise<boolean> {
+  const rows = await db.query<{ plan_id: string; plan_status: string }>(
+    `select plan_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  const quotaBytes = limitsFor(row.plan_id, row.plan_status).quotaGb * 1e9;
+  return (await storageUsedBytes(db, tenantId)) + incoming > quotaBytes;
+}
+
+/** `MAIL_ENFORCE_STORAGE=1` (or `true`) turns storage enforcement on. Anything else leaves it off. */
+export function storageEnforced(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
 }
