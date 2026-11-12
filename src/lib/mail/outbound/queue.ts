@@ -37,6 +37,19 @@ export function backoffMs(attempt: number, policy: Pick<QueuePolicy, "baseDelayM
   return Math.min(policy.maxDelayMs, policy.baseDelayMs * 2 ** Math.min(exponent, 30));
 }
 
+/**
+ * The d= to sign with: the key's domain, when the sender is on it or a subdomain of it (relaxed DMARC
+ * alignment). Otherwise null: a signature for a domain whose DNS has no matching key fails verification,
+ * which receivers treat worse than an unsigned message. Without a configured key domain, the sender's.
+ */
+export function dkimDomainFor(from: string, keyDomain: string | undefined): string | null {
+  const sender = (from.split("@")[1] ?? "").trim().toLowerCase();
+  if (!sender) return null;
+  if (!keyDomain) return sender;
+  const key = keyDomain.trim().toLowerCase();
+  return sender === key || sender.endsWith(`.${key}`) ? key : null;
+}
+
 export async function enqueueOutbound(
   db: MailQuery,
   tenantId: string,
@@ -117,9 +130,9 @@ export async function processOutboundQueue(
       recipient = openText(tenantId, row.recipient);
       const from = openText(tenantId, row.mail_from);
       let raw = openText(tenantId, row.raw);
-      if (config.dkim) {
-        const domain = from.split("@")[1] ?? "";
-        raw = signMessage(raw, { ...config.dkim, domain });
+      const signingDomain = config.dkim ? dkimDomainFor(from, config.dkim.domain) : null;
+      if (config.dkim && signingDomain) {
+        raw = signMessage(raw, { ...config.dkim, domain: signingDomain });
       }
       [result] = await config.transport.send({ from, to: [recipient], raw });
     } catch (error) {

@@ -16,14 +16,17 @@ import type { DkimOptions } from "./dkim.ts";
  *   MAIL_SMTP_USER        optional AUTH PLAIN user
  *   MAIL_SMTP_PASSWORD    optional, a secret: set it with the platform's secret store
  *   MAIL_SMTP_HELO        EHLO name, default the mail domain
- *   MAIL_DKIM_SELECTOR    with a key, turns DKIM signing on (d= is the sender's domain)
+ *   MAIL_DKIM_SELECTOR    with a key, turns DKIM signing on
+ *   MAIL_DKIM_DOMAIN      the domain the key is published for (d=), default the mail domain. Mail from
+ *                         other domains (customers' custom domains) is sent unsigned, not wrongly signed.
  *   MAIL_DKIM_KEY_PATH    PEM file (Node hosts)
  *   MAIL_DKIM_PRIVATE_KEY PEM text (Workers, where there is no file system), a secret
  *   MAIL_OUTBOUND_DEV     "memory" = accept everything in memory, never send (local dev)
  */
 export type OutboundConfig = {
   transport: OutboundTransport;
-  dkim: Omit<DkimOptions, "domain" | "timestamp"> | null;
+  /** `domain` is the domain the key is published for; only mail from that domain (or a subdomain) is signed. */
+  dkim: (Omit<DkimOptions, "domain" | "timestamp"> & { domain?: string }) | null;
 };
 
 type Env = Record<string, string | undefined>;
@@ -58,7 +61,8 @@ function dkimFromEnv(env: Env): OutboundConfig["dkim"] {
   const path = env.MAIL_DKIM_KEY_PATH?.trim();
   const privateKeyPem = inline ? inline.replace(/\\n/g, "\n") : path ? readFileSync(path, "utf8") : "";
   if (!privateKeyPem) throw new Error("MAIL_DKIM_SELECTOR needs MAIL_DKIM_KEY_PATH or MAIL_DKIM_PRIVATE_KEY");
-  return { selector, privateKeyPem };
+  const domain = (env.MAIL_DKIM_DOMAIN?.trim() || mailDomain()).toLowerCase();
+  return { selector, privateKeyPem, domain };
 }
 
 /** True when the environment turns outbound sending on. */
