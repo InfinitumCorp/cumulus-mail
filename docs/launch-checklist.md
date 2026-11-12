@@ -4,17 +4,38 @@ Everything below is something only the owner can do: keys, accounts, DNS and dec
 item is in the PR named; nothing here is done by the repository, and nothing is on until it is set. Secrets
 go in the platform's secret store (`wrangler secret put`, Vercel encrypted env), never in this repository.
 
-## 1. Sign-in: Google (PR #63, #67)
+## 1. Sign-in: pick one path
+
+Both paths are ready. Each has its own combined draft PR, so the choice is which one to merge.
+
+| | Keep Cumulus ID | Google only |
+|---|---|---|
+| Combined PR | #70 | #46 |
+| PRs | everything except #63 and #67 | everything, including #63 and #67 |
+
+Both paths need `BETTER_AUTH_SECRET` (random, 32+ bytes, secret) and `BETTER_AUTH_URL` (this app's public origin).
+
+### Path A: keep Cumulus ID (nothing to change in code)
+
+- [ ] Cumulus ID (`https://id.cumuluscloud.app`) lists this app's origins for the public client `cumulus-mail`
+      in nexus (`mail.cumuluscloud.app`, `ru.mail.cumuluscloud.app`, and any other host that serves the app).
+      Cumulus ID returns codes only to those origins.
+- [ ] Optional: `CID_ISSUER` (a mirror, for example one that loads in Russia without a VPN) and `CID_CLIENT_ID`.
+      Neither is a secret; the flow is a public client with PKCE.
+- [ ] Bearer tokens from other Cumulus apps are verified against the Cumulus://ID Amazon Cognito user pool
+      by default. To use another pool or issuer, set `CUMULUS_COGNITO_USER_POOL_ID` (and
+      `CUMULUS_COGNITO_REGION`) or `CUMULUS_OIDC_ISSUER`.
+
+### Path B: Google only (PR #63, #67)
 
 - [ ] Google Cloud console → APIs & Services → Credentials → OAuth client, type **Web application**.
 - [ ] Authorized redirect URI: `<BETTER_AUTH_URL>/api/auth/callback/google` (one per host that serves the app).
-- [ ] Secrets: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Also `BETTER_AUTH_SECRET` (random, 32+ bytes) and
-      `BETTER_AUTH_URL`.
-- [ ] Decide what existing users need to know: someone whose Google email matches their old account email is
-      linked to it and keeps their mailbox; anyone else starts with a new, empty mailbox.
+- [ ] Secrets: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Sign-in stays off until both are set.
+- [ ] Decide what existing users need to know. Someone whose Google email matches their old account email is
+      linked to it and keeps their mailbox. Anyone else starts with a new, empty mailbox.
 
-New mailboxes get `<google username>@<MAIL_DOMAIN>` (numbered if taken), never the Google address itself.
-Sign-in stays off until both Google values are set.
+New mailboxes get `<google username>@<MAIL_DOMAIN>` (numbered if taken), never the Google address itself. The
+account dialog lists signed-in devices with sign-out (#67). The Amazon Cognito token check is removed.
 
 ## 2. Billing: Stripe (PR #64, test mode first)
 
@@ -57,7 +78,15 @@ Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today
 - [ ] Storage bucket credentials and `MAIL_BLOB_KEY` (32 random bytes; never reuse a local key).
 - [ ] Migrations in order (`0001`–`0010` once all PRs are in); `node scripts/smoke.mjs` afterwards.
 
-## 6. Before turning things on
+## 6. Merge order
 
-- [ ] Merge in the order listed in the integration PR (#46); each PR passes the full pipeline on its own.
+Each PR passes the full pipeline on its own. Stacked PRs retarget to `main` once their base merges.
+
+- **Path A, keep Cumulus ID:** #69, #59, #64, #65, #66, #68, #62, #41, #60, #42, #43, #48, #37, #58, #40,
+  #47, #56, #57, #61, #45, #49. Skip #63 and #67. Or merge #70 in one go.
+- **Path B, Google only:** the same, plus #63 then #67 after #66. Or merge #46 in one go.
+
+## 7. Before turning things on
+
 - [ ] `npm run test:e2e` on the merged main (browser smoke tests, local mode).
+- [ ] `node scripts/smoke.mjs` against the real database and storage.
