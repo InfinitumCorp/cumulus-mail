@@ -1,6 +1,9 @@
 import { Star } from "lucide-react";
 import type { BoxId, CustomFolder, MailMessage } from "@/lib/mail/model";
 import { isCustomFolderId } from "@/lib/mail/folders";
+import { CATEGORIES, type Category, type Subscription } from "@/lib/mail/categories";
+
+export type InboxTab = "all" | Category | "subscriptions";
 import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
 
 type Props = {
@@ -21,6 +24,14 @@ type Props = {
   onUnreadPicked: () => void;
   onClearPick: () => void;
   onEmptyTrash: () => void;
+  /** Inbox only. Omit to hide the category row. */
+  tab?: InboxTab;
+  onTab?: (tab: InboxTab) => void;
+  subscriptions?: Subscription[];
+  unsubscribedKeys?: string[];
+  unsubscribing?: string | null;
+  onUnsubscribe?: (subscription: Subscription) => void;
+  subscriptionNote?: string;
   folders?: CustomFolder[];
 };
 
@@ -54,9 +65,17 @@ export function MessageList({
   onUnreadPicked,
   onClearPick,
   onEmptyTrash,
+  tab = "all",
+  onTab,
+  subscriptions = [],
+  unsubscribedKeys = [],
+  unsubscribing = null,
+  onUnsubscribe,
+  subscriptionNote = "",
   folders = [],
 }: Props) {
   const title = isCustomFolderId(box) ? (folders.find((folder) => folder.id === box)?.name ?? "Folder") : TITLES[box];
+  const showTabs = box === "inbox" && Boolean(onTab);
   const visible = rows.map((row) => row.threadId);
   const allPicked = visible.length > 0 && visible.every((id) => picked.includes(id));
   return (
@@ -90,11 +109,21 @@ export function MessageList({
               Empty
             </button>
           ) : null}
+          {showTabs && !picked.length ? (
+            <button
+              type="button"
+              onClick={() => onTab?.(tab === "subscriptions" ? "all" : "subscriptions")}
+              className={`h-11 px-2 text-sm md:h-9 ${tab === "subscriptions" ? "text-accent" : "text-muted hover:text-ink"}`}
+              aria-pressed={tab === "subscriptions"}
+            >
+              Subscriptions
+            </button>
+          ) : null}
           {!picked.length ? (
             <button
               type="button"
               onClick={() => onUnreadOnly(!unreadOnly)}
-              className={`h-9 px-2 text-sm ${unreadOnly ? "text-accent" : "text-muted hover:text-ink"}`}
+              className={`h-11 px-2 text-sm md:h-9 ${unreadOnly ? "text-accent" : "text-muted hover:text-ink"}`}
               aria-pressed={unreadOnly}
             >
               Unread
@@ -111,6 +140,71 @@ export function MessageList({
           )}
         </div>
       </div>
+      {showTabs ? (
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-line px-2" role="tablist" aria-label="Inbox categories">
+          {([{ id: "all", label: "All" }, ...CATEGORIES] as { id: InboxTab; label: string }[]).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.id}
+              onClick={() => onTab?.(item.id)}
+              className={`h-11 shrink-0 border-b-2 px-2 text-sm md:h-10 ${tab === item.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showTabs && tab === "subscriptions" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {subscriptionNote ? (
+            <p role="status" className="border-b border-line px-4 py-2 text-sm">
+              {subscriptionNote}
+            </p>
+          ) : null}
+          {subscriptions.length === 0 ? (
+            <p className="px-4 py-10 text-sm text-muted">No mailing lists in this mailbox.</p>
+          ) : (
+            <ul>
+              {subscriptions.map((item) => {
+                const done = unsubscribedKeys.includes(item.key);
+                const how =
+                  item.option?.kind === "one-click"
+                    ? "One-click"
+                    : item.option?.kind === "mailto"
+                      ? "By email"
+                      : item.option?.kind === "link"
+                        ? "On their site"
+                        : "No unsubscribe link";
+                return (
+                  <li key={item.key} className="flex items-center gap-3 border-b border-line px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{item.name}</p>
+                      <p className="truncate font-mono text-xs text-muted">{item.email}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        {item.count} {item.count === 1 ? "message" : "messages"} · {how}
+                      </p>
+                    </div>
+                    {done ? (
+                      <span className="text-xs text-muted">Unsubscribed</span>
+                    ) : item.option ? (
+                      <button
+                        type="button"
+                        disabled={unsubscribing === item.key}
+                        onClick={() => onUnsubscribe?.(item)}
+                        className="h-9 shrink-0 border border-line px-3 text-sm hover:text-accent disabled:opacity-50"
+                      >
+                        {unsubscribing === item.key ? "Working…" : "Unsubscribe"}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (
           <p className="px-4 py-10 text-sm text-muted">Nothing in {title.toLowerCase()}.</p>
@@ -170,6 +264,7 @@ export function MessageList({
           })
         )}
       </div>
+      )}
     </section>
   );
 }

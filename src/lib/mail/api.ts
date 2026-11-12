@@ -82,6 +82,21 @@ export const submitAbuseReport = createServerFn({ method: "POST" })
     return submitAbuseForSession(context.userId, data, context.bearerToken);
   });
 
+export const unsubscribeList = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    rejectCallerTenant(input);
+    const value = input as { messageId?: unknown };
+    if (typeof value?.messageId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,200}$/.test(value.messageId)) {
+      throw new Error("Missing message");
+    }
+    return { messageId: value.messageId };
+  })
+  .handler(async ({ context, data }) => {
+    const { unsubscribeForSession } = await import("./mailbox.server");
+    return unsubscribeForSession(context.userId, data.messageId, context.bearerToken);
+  });
+
 export const createShareLink = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => {
