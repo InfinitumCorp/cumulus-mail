@@ -72,6 +72,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |
 | Dark mode for the mail shell | deferred | The shell is light. Adding a theme would restyle it, which the layout rule forbids. Sign-in and error pages already ship `dark:` classes; those pages were not restyled. |
+| Phone layout (under 768px) | added | One column: list, then message, with back; folders in a full-screen drawer; Compose as a full-screen sheet; Compose moves into the title row; touch targets at least 44px. The layout rule was waived for small screens only, and the desktop layout is pixel-identical (checked at 1280px and 800px). Screenshots: `docs/screenshots/mobile-390/`. |
 | Keyboard shortcuts | existing | `c r e # j k x u z`. |
 | Shortcut help | added | `?` |
 | Installable PWA | existing | `/__grok/manifest.webmanifest` and the install page. |
