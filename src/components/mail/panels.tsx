@@ -5,8 +5,19 @@ import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
 import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
-import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { parseSieve } from "@/lib/mail/sieve";
 import type { MailProfile } from "@/lib/mail/snapshot";
+
+function sieveProblem(source: string, folders: CustomFolder[]): string {
+  if (!source.trim()) return "";
+  try {
+    parseSieve(source, folders);
+    return "";
+  } catch (error) {
+    return error instanceof Error ? error.message : "The filter could not be read.";
+  }
+}
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -326,6 +337,14 @@ export function AccountPanel({
                   placeholder={'if header :contains "From" "vyral" {\n  fileinto "archive";\n}'}
                   className="min-h-28 w-full border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none"
                 />
+                <p className="mt-2 text-xs text-muted">
+                  fileinto takes inbox, archive, trash, Spam, label:Name, or the name of one of your folders.
+                </p>
+                {sieveProblem(settings.sieve, settings.folders) ? (
+                  <p role="alert" className="mt-1 text-xs">
+                    {sieveProblem(settings.sieve, settings.folders)} The filter is saved but not applied until this is fixed.
+                  </p>
+                ) : null}
               </dd>
             </div>
             <div className="border-b border-line py-4">

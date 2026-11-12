@@ -1,5 +1,6 @@
 import { Star } from "lucide-react";
-import type { BoxId, MailMessage } from "@/lib/mail/model";
+import type { BoxId, CustomFolder, MailMessage } from "@/lib/mail/model";
+import { isCustomFolderId } from "@/lib/mail/folders";
 import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
 
 type Props = {
@@ -20,9 +21,10 @@ type Props = {
   onUnreadPicked: () => void;
   onClearPick: () => void;
   onEmptyTrash: () => void;
+  folders?: CustomFolder[];
 };
 
-const TITLES: Record<BoxId, string> = {
+const TITLES: Record<Exclude<BoxId, `folder-${string}`>, string> = {
   inbox: "Inbox",
   snoozed: "Snoozed",
   outbox: "Outbox",
@@ -52,11 +54,13 @@ export function MessageList({
   onUnreadPicked,
   onClearPick,
   onEmptyTrash,
+  folders = [],
 }: Props) {
+  const title = isCustomFolderId(box) ? (folders.find((folder) => folder.id === box)?.name ?? "Folder") : TITLES[box];
   const visible = rows.map((row) => row.threadId);
   const allPicked = visible.length > 0 && visible.every((id) => picked.includes(id));
   return (
-    <section className="list-pane" aria-label={TITLES[box]}>
+    <section className="list-pane" aria-label={title}>
       <div className="flex h-14 items-center justify-between gap-2 border-b border-line px-4">
         {picked.length ? (
           <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -78,7 +82,7 @@ export function MessageList({
             </button>
           </div>
         ) : (
-          <h2 className="text-lg tracking-tight">{TITLES[box]}</h2>
+          <h2 className="text-lg tracking-tight">{title}</h2>
         )}
         <div className="flex items-center gap-1">
           {box === "trash" && !picked.length ? (
@@ -109,7 +113,7 @@ export function MessageList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <p className="px-4 py-10 text-sm text-muted">Nothing in {TITLES[box].toLowerCase()}.</p>
+          <p className="px-4 py-10 text-sm text-muted">Nothing in {title.toLowerCase()}.</p>
         ) : (
           rows.map((message) => {
             const threadCount = messages.filter(

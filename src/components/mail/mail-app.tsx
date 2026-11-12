@@ -26,7 +26,8 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { EVENTS, type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { parseInvite } from "@/lib/mail/invite";
 import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
 import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } from "@/lib/mail/protect";
@@ -546,6 +547,55 @@ export function MailApp() {
     setPicked([]);
   }
 
+  function moveToFolder(id: string, folder: FolderId) {
+    const message = messages.find((item) => item.id === id);
+    const threadId = message?.threadId ?? id;
+    remember(`Moved to ${folderLabel(settings?.folders ?? [], folder)}.`);
+    replaceMessages(moveThreads(messages, [threadId], folder));
+    if (selectedId === id) setSelectedId(null);
+    setPicked([]);
+  }
+
+  function addFolder(name: string): string | null {
+    const current = settings ?? defaultSettings();
+    const error = folderNameError(current.folders, name);
+    if (error) return error;
+    try {
+      const { folders, folder } = createFolder(current.folders, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.create", folder.name));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not create the folder.";
+    }
+  }
+
+  function renameFolderTo(id: CustomFolderId, name: string): string | null {
+    const current = settings ?? defaultSettings();
+    try {
+      const folders = renameFolder(current.folders, id, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.rename", name.trim()));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not rename the folder.";
+    }
+  }
+
+  function removeFolder(id: CustomFolderId) {
+    const current = settings ?? defaultSettings();
+    const folder = current.folders.find((item) => item.id === id);
+    if (!folder) return;
+    const result = deleteFolder(current.folders, messages, id);
+    const note = result.moved ? ` ${result.moved === 1 ? "Its message goes" : `Its ${result.moved} messages go`} back to the Inbox.` : "";
+    if (!window.confirm(`Delete the folder “${folder.name}”?${note}`)) return;
+    if (result.moved) replaceMessages(result.messages);
+    setSettings(recordAudit({ ...current, folders: result.folders }, "folder.delete", folder.name));
+    if (box === id) {
+      setBox("inbox");
+      setSelectedId(null);
+    }
+    setNotice(`Folder “${folder.name}” deleted.`);
+  }
+
   function actOnPicked(kind: "archive" | "trash" | "unread") {
     if (!picked.length) return;
     const count = picked.length;
@@ -647,6 +697,10 @@ export function MailApp() {
             setAccountOpen(true);
             setNavOpen(false);
           }}
+          folders={settings?.folders ?? []}
+          onCreateFolder={addFolder}
+          onRenameFolder={renameFolderTo}
+          onDeleteFolder={removeFolder}
         />
         {view === "mail" ? (
           <>
@@ -667,6 +721,7 @@ export function MailApp() {
               onTrashPicked={() => actOnPicked("trash")}
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
+              folders={settings?.folders ?? []}
               onEmptyTrash={() => {
                 if (!messages.some((message) => message.folder === "trash")) return;
                 if (!window.confirm("Delete everything in Trash? This can be undone.")) return;
@@ -713,6 +768,8 @@ export function MailApp() {
                 setSelectedId(null);
               }}
               onRestore={(id) => moveSelected(id, "inbox")}
+              folders={settings?.folders ?? []}
+              onMoveTo={moveToFolder}
               onRemove={(id) => {
                 remember("Deleted.");
                 remove(id);

@@ -1,4 +1,5 @@
-import type { CalEvent } from "./model.ts";
+import type { CalEvent, CustomFolder } from "./model.ts";
+import { sanitizeFolders } from "./folders.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 
@@ -32,6 +33,8 @@ export type MailSettings = {
   autoReply: AutoReply;
   domains: CustomDomain[];
   sieve: string;
+  /** User folders shown in the sidebar under the system folders. */
+  folders: CustomFolder[];
   events: CalEvent[];
   audit: AuditEvent[];
 };
@@ -50,6 +53,7 @@ export function defaultSettings(): MailSettings {
     autoReply: { enabled: false, subject: "Away", body: "", sent: [] },
     domains: [],
     sieve: "",
+    folders: [],
     events: [],
     audit: [],
   };
@@ -118,6 +122,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       return true;
     }),
     sieve: text(row.sieve, 8000),
+    folders: sanitizeFolders(row.folders),
     events: Array.isArray(row.events) ? row.events.map(asEvent).filter((event): event is CalEvent => Boolean(event)).slice(0, 50) : [],
     audit: Array.isArray(row.audit)
       ? row.audit
