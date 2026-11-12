@@ -1,5 +1,5 @@
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
-import type { Attachment, CalEvent, MailMessage } from "@/lib/mail/model";
+import type { Attachment, CalEvent, CustomFolder, FolderId, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
@@ -23,6 +23,9 @@ type Props = {
   onMute: () => void;
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Custom folders offered by "Move to". The control is hidden when there are none. */
+  folders?: CustomFolder[];
+  onMoveTo?: (id: string, folder: FolderId) => void;
   onReply: () => void;
   onReplyAll: () => void;
   onForward: () => void;
@@ -88,6 +91,8 @@ function Opened({
   onMute,
   onRestore,
   onRemove,
+  folders = [],
+  onMoveTo,
   onReply,
   onReplyAll,
   onForward,
@@ -156,6 +161,27 @@ function Opened({
             <button type="button" className="grid size-11 place-items-center" onClick={onSnooze} aria-label="Snooze until tomorrow morning">
               <Clock className="size-4" />
             </button>
+            {onMoveTo && folders.length > 0 && message.folder !== "drafts" && message.folder !== "sent" ? (
+              <select
+                className="h-11 bg-transparent px-2 text-sm hover:text-accent"
+                aria-label="Move to folder"
+                value=""
+                onChange={(event) => {
+                  const target = event.target.value as FolderId;
+                  if (target) onMoveTo(message.id, target);
+                }}
+              >
+                <option value="">Move to…</option>
+                {message.folder !== "inbox" ? <option value="inbox">Inbox</option> : null}
+                {folders
+                  .filter((folder) => folder.id !== message.folder)
+                  .map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
           </>
         )}
         <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onUnread}>
