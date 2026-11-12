@@ -4,6 +4,7 @@ import { TenantAccessError } from "../storage/adapter.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import { rejectCallerTenant } from "./snapshot.ts";
+import { readSnapshot, replaceMailboxContents } from "./records.ts";
 import { createHarness, profile } from "./test-support.ts";
 import type { MailMessage } from "./model.ts";
 import { bytesToBase64 } from "./bytes.ts";
@@ -104,6 +105,41 @@ test("the preview mailbox is seeded once and keeps its address", async () => {
   assert.equal(await findTenantByAddress(db, "leah@cumuluscloud.app"), "demo-leah");
   const second = await openMailbox(db, "dev-user", profile("dev-user", "alex@cumuluscloud.app", "Alex Reid"));
   assert.equal(second.messages.length, first.messages.length);
+});
+
+test("the server enforces the address limit, but keeps mailboxes that already went over it", async () => {
+  const { MAX_ALIASES } = await import("./model.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("alias-cap", "cap@cumuluscloud.app", "Cap");
+    await openMailbox(harness.db, "alias-cap", me);
+    const base = await readSnapshot(harness.db, "alias-cap");
+    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap.alias${index}@cumuluscloud.app`);
+    const saved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...base, aliases: many(MAX_ALIASES) });
+    assert.equal(saved.aliases.length, MAX_ALIASES);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: many(MAX_ALIASES + 1) }),
+      /up to 15 addresses/,
+    );
+    assert.equal((await readSnapshot(harness.db, "alias-cap")).aliases.length, MAX_ALIASES);
+    // Duplicates and the mailbox's own address do not count toward the limit.
+    const dupes = [...many(MAX_ALIASES), "CAP.ALIAS0@cumuluscloud.app", me.email];
+    assert.equal((await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: dupes })).aliases.length, MAX_ALIASES);
+
+    // A mailbox stored with more than the limit before this check existed can still save, but not grow.
+    const over = await readSnapshot(harness.db, "alias-cap");
+    await replaceMailboxContents(harness.db, "alias-cap", { ...over, aliases: many(MAX_ALIASES + 2) }, [], new Map());
+    const legacy = await readSnapshot(harness.db, "alias-cap");
+    assert.equal(legacy.aliases.length, MAX_ALIASES + 2);
+    const resaved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...legacy, signature: "still works" });
+    assert.equal(resaved.aliases.length, MAX_ALIASES + 2);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...legacy, aliases: many(MAX_ALIASES + 3) }),
+      /up to 15 addresses/,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
 test("the server refuses a fourth custom domain instead of silently dropping it", async () => {
