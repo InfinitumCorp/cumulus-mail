@@ -33,6 +33,12 @@ in-process PGLite database (sample mail included). The server refuses this mode 
 set, so it can never share one user across a real database. Without `MAIL_BLOB_KEY` the page shows
 "MAIL_BLOB_KEY is not set" and nothing is saved. Never reuse a local key in production.
 
+### Browser tests
+
+`npm run test:e2e` starts the dev server in that local mode on a free port, runs the Playwright smoke tests in
+`e2e/` (inbox, saving, keyboard shortcuts, folders, phone layout) in Chromium, and stops the server. Set
+`E2E_CHROMIUM_PATH` to use a specific Chromium; `npx playwright install chromium` installs Playwright's own.
+
 ## Stack
 
 TanStack Start, React 19, Tailwind 4. `npm run build` produces the Vercel output.
