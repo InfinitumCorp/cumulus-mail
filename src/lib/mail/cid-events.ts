@@ -9,6 +9,9 @@
  *
  * Cumulus://ID POSTs `{ cid, type, detail, at }` with `x-cid-signature: sha256=<hex HMAC-SHA256 of
  * the raw body>` (secret `CID_EVENTS_SECRET`, the same value as the issuer's `EVENTS_WEBHOOK_SECRET`).
+ * - `account.deleted`: the mailbox's addresses (including aliases) stop receiving mail, so new mail to a
+ *   deleted Cumulus://ID bounces. Stored mail is kept; Cumulus://ID never gives the address to anyone else.
+ *
  * Notices are idempotent: a retried event stores nothing new. Nothing here creates a mailbox for a
  * security event alone; only `account.created` (or opening Mail) does.
  */
@@ -17,6 +20,7 @@ import { sha256Hex } from "../storage/index.ts";
 import type { MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { insertMessage } from "./records.ts";
+import { replaceRoutedAddresses } from "./directory.ts";
 import { provisionMailbox } from "./seed.ts";
 
 export type CidEvent = {
@@ -104,7 +108,7 @@ async function mailboxExists(db: MailQuery, tenantId: string): Promise<boolean> 
   return (await db.query<{ tenant_id: string }>(`select tenant_id from cumulus_mail.mailboxes where tenant_id = $1 limit 1`, [tenantId])).length > 0;
 }
 
-export type HandleResult = "provisioned" | "notified" | "duplicate" | "no-mailbox" | "ignored";
+export type HandleResult = "provisioned" | "unrouted" | "notified" | "duplicate" | "no-mailbox" | "ignored";
 
 /** Apply one verified event. The tenant is the cid, exactly as for a signed-in Mail session. */
 export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: string): Promise<HandleResult> {
@@ -116,6 +120,11 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     const name = s(e.detail.username) || email.split("@")[0]!;
     await provisionMailbox(db, tenantId, { name, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 });
     return "provisioned";
+  }
+  if (e.type === "account.deleted") {
+    if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
+    await replaceRoutedAddresses(db, tenantId, []);
+    return "unrouted";
   }
   const notice = noticeFor(e);
   if (!notice) return "ignored";

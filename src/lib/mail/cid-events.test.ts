@@ -65,3 +65,11 @@ test("every forwarded security event has a notice", () => {
     assert.ok(noticeFor({ cid: CID, type, detail: {}, at }), type);
   }
 });
+
+test("account.deleted stops routing the address; stored mail stays", async () => {
+  assert.equal(await findTenantByAddress(harness.db, "robin@cumuluscloud.app"), CID);
+  const before = (await readSnapshot(harness.db, CID)).messages.length;
+  assert.equal(await handleCidEvent(harness.db, { cid: CID, type: "account.deleted", detail: { username: "robin" }, at }, "cumuluscloud.app"), "unrouted");
+  assert.equal(await findTenantByAddress(harness.db, "robin@cumuluscloud.app"), null);
+  assert.equal((await readSnapshot(harness.db, CID)).messages.length, before);
+});
