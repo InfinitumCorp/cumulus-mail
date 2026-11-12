@@ -26,6 +26,9 @@ const COPIED = [
   "GROK_AUTH_ISSUER",
   "GROK_AUTH_CLIENT_ID",
   "GROK_AUTH_CLIENT_SECRET",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "BILLING_RETURN_URL",
 ] as const;
 
 function bindingEnv(): Record<string, unknown> | undefined {
