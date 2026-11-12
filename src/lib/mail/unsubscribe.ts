@@ -1,5 +1,5 @@
 import { assertTenantId } from "../storage/adapter.ts";
-import { oneClickUnsubscribe, subscriptions, unsubscribeOptions, type Unsubscribe } from "./categories.ts";
+import { oneClickUnsubscribe, subscriptions, unsubscribeOptions, type Resolver, type Unsubscribe } from "./categories.ts";
 import type { MailQuery } from "./query.ts";
 import { readMessages, readSettings, writeSettings } from "./records.ts";
 import { noteUnsubscribed } from "./settings.ts";
@@ -20,6 +20,7 @@ export async function unsubscribeMessage(
   tenantId: string,
   messageId: string,
   fetcher: typeof fetch = fetch,
+  resolve: Resolver | null = null,
 ): Promise<UnsubscribeResult> {
   assertTenantId(tenantId);
   const messages = await readMessages(db, tenantId);
@@ -29,7 +30,7 @@ export async function unsubscribeMessage(
   if (!option) return { method: "none" };
   const key = subscriptions([message])[0]?.key ?? message.from.email.toLowerCase();
   if (option.kind !== "one-click") return { method: option.kind, option };
-  const result = await oneClickUnsubscribe(option.url, fetcher);
+  const result = await oneClickUnsubscribe(option.url, fetcher, 10_000, resolve);
   if (result.ok) {
     const settings = await readSettings(db, tenantId);
     await writeSettings(db, tenantId, noteUnsubscribed(settings, key, "one-click"));
