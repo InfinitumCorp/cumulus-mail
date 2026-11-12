@@ -221,6 +221,8 @@ export function MessageList({
             return (
               <div
                 key={message.id}
+                data-row-id={message.id}
+                aria-current={selected ? "true" : undefined}
                 className={`flex border-b border-line border-l-2 ${selected ? "border-l-accent bg-accent/10" : "border-l-transparent"}`}
               >
                 <label className="grid w-11 shrink-0 place-items-center md:w-10">
