@@ -19,6 +19,20 @@ npm run dev
 
 Open the printed local address. The dev server listens on port 8080.
 
+### Without Cumulus ID (local only)
+
+To try the app on your machine without signing in, turn sign-in off and give it a throwaway encryption key:
+
+```sh
+export MAIL_BLOB_KEY=$(openssl rand -hex 32)   # 32 random bytes; a new one each time is fine
+VITE_AUTH_ENABLED=false npm run dev
+```
+
+With sign-in off and no `DATABASE_URL`, every visitor is the same dev user and the mailbox lives in an
+in-process PGLite database (sample mail included). The server refuses this mode when `DATABASE_URL` is
+set, so it can never share one user across a real database. Without `MAIL_BLOB_KEY` the page shows
+"MAIL_BLOB_KEY is not set" and nothing is saved. Never reuse a local key in production.
+
 ## Stack
 
 TanStack Start, React 19, Tailwind 4. `npm run build` produces the Vercel output.
