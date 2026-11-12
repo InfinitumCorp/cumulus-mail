@@ -4,11 +4,29 @@ export const DEFAULT_MAIL_DOMAIN = "cumuluscloud.app";
 /** Default web host for the mail app. Override with MAIL_APP_HOST or VITE_MAIL_APP_HOST. */
 export const DEFAULT_MAIL_APP_HOST = "mail.cumuluscloud.app";
 
-function envValue(name: string): string | undefined {
+type EnvName = "MAIL_DOMAIN" | "MAIL_APP_HOST";
+
+/**
+ * Vite's env, read with fixed names only. Vite replaces `import.meta.env.NAME` at build time and its dev
+ * SSR runner refuses computed access (`import.meta.env[name]`), which used to throw in `npm run dev`.
+ * Plain Node (tests, scripts) has no `import.meta.env`, hence the try.
+ */
+function viteEnv(name: EnvName): string | undefined {
+  try {
+    const values: Record<EnvName, Array<string | undefined>> = {
+      MAIL_DOMAIN: [import.meta.env.MAIL_DOMAIN, import.meta.env.VITE_MAIL_DOMAIN],
+      MAIL_APP_HOST: [import.meta.env.MAIL_APP_HOST, import.meta.env.VITE_MAIL_APP_HOST],
+    };
+    return values[name].map((value) => (typeof value === "string" ? value.trim() : "")).find(Boolean);
+  } catch {
+    return undefined;
+  }
+}
+
+function envValue(name: EnvName): string | undefined {
   const fromProcess = typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined;
   if (fromProcess) return fromProcess;
-  const meta = import.meta as { env?: Record<string, string | undefined> };
-  return meta.env?.[name]?.trim() || meta.env?.[`VITE_${name}`]?.trim() || undefined;
+  return viteEnv(name);
 }
 
 function hostName(value: string, fallback: string): string {
