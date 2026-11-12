@@ -73,7 +73,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |
 | Dark mode for the mail shell | deferred | The shell is light. Adding a theme would restyle it, which the layout rule forbids. Sign-in and error pages already ship `dark:` classes; those pages were not restyled. |
-| Keyboard shortcuts | existing, extended | `c r e # j k x u z`, plus `/` to search (Esc clears, then leaves), `o` or Enter to open, and Esc back to the list with focus on the row that was open. The open row scrolls into view. |
+| Keyboard shortcuts | existing, extended | `c r e # j k x u z`, plus `a` reply all, `f` forward, `/` to search (Esc clears, then leaves), `o` or Enter to open, and Esc back to the list with focus on the row that was open. The open row scrolls into view. |
 | Shortcut help | added | `?` |
 | Keyboard and screen-reader access | added | A visible focus ring on every control for keyboard users (drawn inset so panes cannot clip it). Dialogs are `aria-modal`, take focus when they open, keep Tab inside, close on Esc (except Compose, so a draft is not lost), and give focus back. The open list row has `aria-current`. Reduced-motion is respected. The layout is unchanged. |
 | Installable PWA | existing | `/__grok/manifest.webmanifest` and the install page. |
