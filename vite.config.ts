@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
@@ -147,7 +148,19 @@ function authPopupPlugin(): Plugin {
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
+/** Short commit for `/api/health`: `APP_COMMIT` when the builder sets it (Docker, CI), else git. */
+function buildCommit(): string {
+  const fromEnv = process.env.APP_COMMIT?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return execSync("git rev-parse --short=12 HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 export default defineConfig(({ command, isPreview }) => ({
+  define: { __APP_COMMIT__: JSON.stringify(buildCommit()) },
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -181,6 +194,12 @@ export default defineConfig(({ command, isPreview }) => ({
             serverDir: "./server",
             ...(nitroPreset() === "cloudflare-module"
               ? { cloudflare: workersApiCloudflareOptions() }
+              : {}),
+            // Node server (Russia copy): keep PGLite out of the bundle so its
+            // wasm/data files load from node_modules (the local-mode fallback
+            // when DATABASE_URL is unset; production uses Postgres).
+            ...(nitroPreset() === "node-server"
+              ? { rollupConfig: { external: [/^@electric-sql\/pglite/] } }
               : {}),
           }),
         ]
