@@ -61,6 +61,8 @@ const subscription = (id: string, customer: string, lookupKey: string, status = 
 });
 
 /** A Stripe stand-in that records calls and answers like the real API. */
+const liveSubscriptions = new Map<string, Array<{ status: string }>>();
+
 function fakeStripe() {
   const calls: Array<{ method: string; path: string; params: Record<string, unknown>; key?: string }> = [];
   let customers = 0;
@@ -71,6 +73,7 @@ function fakeStripe() {
       return { data: key === "pro_yearly" ? [] : [{ id: `price_${key}` }] };
     }
     if (path === "/v1/customers") return { id: `cus_${++customers}` };
+    if (path === "/v1/subscriptions") return { data: liveSubscriptions.get(String(params.customer)) ?? [] };
     if (path === "/v1/checkout/sessions") return { url: "https://checkout.stripe.com/c/pay/cs_test_1" };
     if (path === "/v1/billing_portal/sessions") return { url: "https://billing.stripe.com/p/session/test_1" };
     throw new Error(`unexpected ${path}`);
@@ -168,6 +171,15 @@ test("checkout creates the customer once, by lookup key, scoped to the calling m
     /No active Stripe price/,
   );
 
+  // A Checkout finished in Stripe but its webhook has not arrived: Stripe is asked, so no second subscription.
+  liveSubscriptions.set("cus_1", [{ status: "canceled" }, { status: "active" }]);
+  await assert.rejects(
+    () => startCheckout(harness.db, stripe, { tenantId: "bill-ada", lookupKey: "pro_monthly", returnUrl }),
+    /already have a plan/,
+  );
+  liveSubscriptions.set("cus_1", [{ status: "canceled" }, { status: "incomplete_expired" }]);
+  await startCheckout(harness.db, stripe, { tenantId: "bill-ada", lookupKey: "pro_monthly", returnUrl });
+
   const portal = await openBillingPortal(harness.db, stripe, { tenantId: "bill-ada", returnUrl });
   assert.equal(portal.url, "https://billing.stripe.com/p/session/test_1");
   assert.equal(calls.at(-1)!.params.customer, "cus_1");
@@ -214,6 +226,14 @@ test("subscription events set the plan, are idempotent, and never touch another 
   assert.equal(snap.me.plan, "Pro");
   assert.equal(snap.me.quotaGb, 50);
   assert.equal((await row("bill-cy")).plan_id, "plus");
+
+  // Subscribed: a second Checkout is refused from the stored state alone.
+  const second = fakeStripe();
+  await assert.rejects(
+    () => startCheckout(db, second.stripe, { tenantId: "bill-bea", lookupKey: "plus_monthly", returnUrl: "https://mail.cumuluscloud.app/" }),
+    /already have a plan/,
+  );
+  assert.equal(second.calls.length, 0);
 
   // Payment fails: past due keeps the plan's limits.
   assert.equal(await handleStripeEvent(db, event("evt_i1", "invoice.payment_failed", { customer: "cus_bea" })), "applied");

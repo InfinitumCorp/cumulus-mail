@@ -156,14 +156,32 @@ async function priceIdFor(stripe: StripeClient, lookupKey: PriceLookupKey): Prom
 }
 
 async function mailboxBilling(db: MailQuery, tenantId: string) {
-  const rows = await db.query<{ stripe_customer_id: string | null; address: string | null }>(
-    `select stripe_customer_id, address from cumulus_mail.mailboxes where tenant_id = $1`,
+  const rows = await db.query<{
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+    plan_status: string;
+    address: string | null;
+  }>(
+    `select stripe_customer_id, stripe_subscription_id, plan_status, address from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
   const box = rows[0];
   if (!box) throw new Error("Mailbox not found");
   // The address is sealed at rest; Stripe gets the plain address for receipts.
-  return { stripe_customer_id: box.stripe_customer_id, address: box.address ? openText(tenantId, box.address) : null };
+  return {
+    stripe_customer_id: box.stripe_customer_id,
+    subscribed: Boolean(box.stripe_subscription_id) && box.plan_status !== "canceled",
+    address: box.address ? openText(tenantId, box.address) : null,
+  };
+}
+
+export const ALREADY_SUBSCRIBED = "You already have a plan. Use Manage billing to change it.";
+
+/** Any subscription on the customer that is not over yet (active, trialing, past due, unpaid, incomplete). */
+async function hasLiveSubscription(stripe: StripeClient, customer: string): Promise<boolean> {
+  const list = await stripe("GET", "/v1/subscriptions", { customer, status: "all", limit: 10 });
+  const subs = (list.data as Array<{ status?: unknown }> | undefined) ?? [];
+  return subs.some((sub) => sub.status !== "canceled" && sub.status !== "incomplete_expired");
 }
 
 /** The mailbox's Stripe customer, created (and stored) on first use. */
@@ -194,6 +212,12 @@ export async function startCheckout(
   input: { tenantId: string; lookupKey: unknown; returnUrl: string },
 ): Promise<{ url: string }> {
   if (!isPriceLookupKey(input.lookupKey)) throw new Error("Unknown plan");
+  // One subscription per mailbox: a second Checkout would bill twice. Plan changes go through the
+  // Portal. Stripe is asked too, since the webhook for a just-finished Checkout may not have arrived.
+  const box = await mailboxBilling(db, input.tenantId);
+  if (box.subscribed || (box.stripe_customer_id && (await hasLiveSubscription(stripe, box.stripe_customer_id)))) {
+    throw new Error(ALREADY_SUBSCRIBED);
+  }
   const price = await priceIdFor(stripe, input.lookupKey);
   const customer = await ensureCustomer(db, stripe, input.tenantId);
   const session = await stripe("POST", "/v1/checkout/sessions", {
