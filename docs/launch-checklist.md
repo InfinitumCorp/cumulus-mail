@@ -11,7 +11,7 @@ Both paths are ready. Each has its own combined draft PR, so the choice is which
 | | Keep Cumulus ID | Google only |
 |---|---|---|
 | Combined PR | #70 | #46 |
-| PRs | everything except #63 and #67 | everything, including #63 and #67 |
+| PRs | everything except #63 and #67 (signed-in devices come from #71) | everything except #71 (#67 has the same devices list) |
 
 Both paths need `BETTER_AUTH_SECRET` (random, 32+ bytes, secret) and `BETTER_AUTH_URL` (this app's public origin).
 
@@ -82,9 +82,9 @@ Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today
 
 Each PR passes the full pipeline on its own. Stacked PRs retarget to `main` once their base merges.
 
-- **Path A, keep Cumulus ID:** #69, #59, #64, #65, #66, #68, #62, #41, #60, #42, #43, #48, #37, #58, #40,
+- **Path A, keep Cumulus ID:** #69, #59, #64, #65, #66, #68, #71, #62, #41, #60, #42, #43, #48, #37, #58, #40,
   #47, #56, #57, #61, #45, #49. Skip #63 and #67. Or merge #70 in one go.
-- **Path B, Google only:** the same, plus #63 then #67 after #66. Or merge #46 in one go.
+- **Path B, Google only:** the same without #71, plus #63 then #67 after #66. Or merge #46 in one go.
 
 ## 7. Before turning things on
 
