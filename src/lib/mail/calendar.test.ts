@@ -28,7 +28,7 @@ test("RRULE parsing: supported parts, and unsupported rules rejected", () => {
   assert.equal(parseRRule("FREQ=MONTHLY;BYDAY=-1FR")?.byDay[0]?.ordinal, -1);
   assert.equal(parseRRule("FREQ=DAILY;UNTIL=20261120")?.until, "2026-11-20T23:59:59.000Z");
   assert.equal(parseRRule("FREQ=DAILY;UNTIL=20261120T100000Z")?.until, "2026-11-20T10:00:00.000Z");
-  for (const bad of ["", "FREQ=YEARLY", "FREQ=HOURLY", "FREQ=WEEKLY;BYDAY=XX", "FREQ=MONTHLY;BYDAY=0MO", "FREQ=DAILY;UNTIL=soon"]) {
+  for (const bad of ["", "FREQ=HOURLY", "FREQ=WEEKLY;BYDAY=XX", "FREQ=MONTHLY;BYDAY=0MO", "FREQ=DAILY;UNTIL=soon"]) {
     assert.equal(parseRRule(bad), null, bad);
   }
   assert.equal(parseRRule("FREQ=DAILY;COUNT=999999")?.count, 500);
@@ -189,4 +189,48 @@ test("an RSVP to an internal organizer is delivered through the normal path", as
   assert.ok(received);
   assert.deepEqual(parseReply(received.body), { uid: "standup-1@vyral.example", attendee: alex.email, partstat: "ACCEPTED" });
   assert.equal(parseInvite(received.body), null);
+});
+
+test("YEARLY repeats month and day; 29 February skips non-leap years; YEARLY with BYDAY is refused", () => {
+  assert.deepEqual(occurrences("2026-05-14T18:00:00.000Z", rule("FREQ=YEARLY;COUNT=3")), [
+    "2026-05-14T18:00:00.000Z",
+    "2027-05-14T18:00:00.000Z",
+    "2028-05-14T18:00:00.000Z",
+  ]);
+  assert.deepEqual(occurrences("2028-02-29T09:00:00.000Z", rule("FREQ=YEARLY;COUNT=2")), [
+    "2028-02-29T09:00:00.000Z",
+    "2032-02-29T09:00:00.000Z",
+  ]);
+  assert.deepEqual(occurrences("2026-01-01T00:00:00.000Z", rule("FREQ=YEARLY;INTERVAL=2;UNTIL=20300101")), [
+    "2026-01-01T00:00:00.000Z",
+    "2028-01-01T00:00:00.000Z",
+    "2030-01-01T00:00:00.000Z",
+  ]);
+  assert.equal(parseRRule("FREQ=YEARLY;BYDAY=1MO"), null);
+  assert.equal(describeRule(rule("FREQ=YEARLY")), "Every year");
+});
+
+test("EXDATE removes occurrences (still counted toward COUNT) and survives settings", () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:weekly-1",
+    "SUMMARY:Weekly sync",
+    "DTSTART;TZID=America/New_York:20261104T100000",
+    "RRULE:FREQ=WEEKLY;COUNT=4",
+    "EXDATE;TZID=America/New_York:20261111T100000,20261118T100000",
+    "EXDATE:20991231T000000Z",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const invite = parseInvite(ics)!;
+  assert.deepEqual(invite.exdates, ["2026-11-11T15:00:00.000Z", "2026-11-18T15:00:00.000Z", "2099-12-31T00:00:00.000Z"]);
+  const rows = expandEvents([invite], new Date("2026-11-01T00:00:00Z"));
+  // COUNT=4 gives 4, 11, 18, 25 Nov; 11 and 18 are excluded.
+  assert.deepEqual(rows.map((row) => row.sort), ["2026-11-04T15:00:00.000Z", "2026-11-25T15:00:00.000Z"]);
+  const kept = sanitizeSettings({ events: [invite, { ...invite, id: "x", exdates: ["junk", 5] }] }).events;
+  assert.deepEqual(kept[0]?.exdates, invite.exdates);
+  assert.deepEqual(kept[1]?.exdates, []);
+  // A one-off event ignores EXDATE.
+  assert.equal(parseInvite(ics.replace("RRULE:FREQ=WEEKLY;COUNT=4\r\n", ""))?.exdates, undefined);
 });

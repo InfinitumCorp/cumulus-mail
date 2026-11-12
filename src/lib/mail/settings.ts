@@ -86,6 +86,9 @@ function asEvent(value: unknown): CalEvent | null {
     with: text(row.with, 200),
     sort: text(row.sort, 40),
     ...(typeof row.rrule === "string" && row.rrule ? { rrule: row.rrule.slice(0, 300) } : {}),
+    ...(Array.isArray(row.exdates)
+      ? { exdates: row.exdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
+      : {}),
     ...(typeof row.uid === "string" && row.uid ? { uid: row.uid.slice(0, 300) } : {}),
     ...(typeof row.organizer === "string" && validEmail(row.organizer) ? { organizer: row.organizer.toLowerCase().slice(0, 320) } : {}),
     ...(row.rsvp === "accepted" || row.rsvp === "tentative" || row.rsvp === "declined" ? { rsvp: row.rsvp } : {}),
