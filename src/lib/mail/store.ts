@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getMailbox, putMailbox } from "@/lib/mail/api";
 import {
   ME,
+  MAX_ALIASES,
   SEED_CONTACTS,
   SEED_MESSAGES,
   SEED_TASKS,
@@ -152,7 +153,7 @@ export const useMail = create<MailStore>((set, get) => ({
   addAlias: (alias) => {
     const email = alias.trim().toLowerCase();
     if (!email || get().aliases.includes(email) || email === get().me.email) return;
-    if (get().aliases.length >= 15) return;
+    if (get().aliases.length >= MAX_ALIASES) return;
     commit(set, get, { aliases: [...get().aliases, email] });
   },
   saveBrief: (key, text) => {

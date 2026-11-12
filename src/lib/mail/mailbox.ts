@@ -8,7 +8,7 @@ import { addressOwnedByOther } from "./directory.ts";
 import { MAX_DOMAINS, requestedDomainCount, sanitizeSettings } from "./settings.ts";
 import { mailDomain } from "./domain.ts";
 import { validEmail } from "./logic.ts";
-import type { Attachment, MailMessage } from "./model.ts";
+import { MAX_ALIASES, type Attachment, type MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { releaseDue } from "./schedule.ts";
 import { reconcileFolders } from "./folders.ts";
@@ -28,6 +28,7 @@ const MAX_ATTACHMENT = 25 * 1024 * 1024;
 const MAX_FILES = 8;
 const MAX_MESSAGES = 5000;
 const MAX_BODY = 1_000_000;
+
 
 export async function openMailbox(db: MailQuery, tenantId: string, profile: MailProfile): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
@@ -131,6 +132,11 @@ export async function writeSnapshot(
       throw new TenantAccessError("That address belongs to another mailbox");
     }
     aliases.push(email);
+  }
+  // A mailbox that already holds more (saved before this check existed) keeps them, but cannot add more.
+  const allowed = Math.max(MAX_ALIASES, current.aliases.length);
+  if (aliases.length > allowed) {
+    throw new Error(`You can have up to ${MAX_ALIASES} addresses.`);
   }
 
   const next: MailboxSnapshot = {
