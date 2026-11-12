@@ -286,3 +286,35 @@ test("attachments go out as multipart/mixed and parse back byte for byte", async
   assert.match(raw, /filename\*=UTF-8''R%C3%A9sum%C3%A9%20_final_.txt/);
   assert.match((await hopFor("ob-att", "att-1")) ?? "", /^Sent by SMTP\./);
 });
+
+test("two runs at the same time send a queued row once; a row stuck mid-send is picked up later", async () => {
+  const { db } = harness;
+  const { enqueueOutbound, STALE_SENDING_MS } = await import("./queue.ts");
+  const ada = profile("ob-race", "race.ob@cumuluscloud.app", "Ada");
+  await openMailbox(db, "ob-race", ada);
+  await enqueueOutbound(db, "ob-race", { messageId: "race-1", from: ada.email, recipient: "bea@example.org", raw: "Subject: x\r\n\r\ny\r\n" });
+  const sent: string[] = [];
+  const slow: OutboundTransport = {
+    name: "slow",
+    async send(envelope) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      sent.push(envelope.to[0]!);
+      return envelope.to.map((recipient) => ({ recipient, ok: true as const, detail: "250 ok" }));
+    },
+  };
+  const config: OutboundConfig = { transport: slow, dkim: null };
+  const [a, b] = await Promise.all([
+    processOutboundQueue(db, config, { tenantId: "ob-race" }),
+    processOutboundQueue(db, config),
+  ]);
+  assert.equal(a.sent + b.sent, 1);
+  assert.deepEqual(sent, ["bea@example.org"]);
+
+  // Simulate a crash after claiming: the row is 'sending' and nobody finished it.
+  await enqueueOutbound(db, "ob-race", { messageId: "race-2", from: ada.email, recipient: "cy@example.org", raw: "Subject: x\r\n\r\ny\r\n" });
+  const claimedAt = new Date();
+  await db.query(`update cumulus_mail.outbound_queue set status = 'sending', updated_at = $2 where tenant_id = $1 and message_id = 'race-2'`, ["ob-race", claimedAt.toISOString()]);
+  assert.equal((await processOutboundQueue(db, config, { tenantId: "ob-race", now: new Date(claimedAt.getTime() + 60_000) })).sent, 0);
+  assert.equal((await processOutboundQueue(db, config, { tenantId: "ob-race", now: new Date(claimedAt.getTime() + STALE_SENDING_MS + 1000) })).sent, 1);
+  assert.deepEqual(sent, ["bea@example.org", "cy@example.org"]);
+});
