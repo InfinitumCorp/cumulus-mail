@@ -299,7 +299,7 @@ export async function receiveStripeWebhook(payload: string, signature: string | 
     return new Response("Invalid signature", { status: 400 });
   }
   try {
-    const outcome = await handleStripeEvent(await database(), event);
+    const outcome = await handleStripeEvent(await database(), event, stripeClient(config.secretKey));
     return Response.json({ received: true, outcome });
   } catch (error) {
     console.error("[billing] webhook failed", event.type, error instanceof Error ? error.message : error);

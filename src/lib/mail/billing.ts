@@ -282,7 +282,26 @@ export type EventOutcome = "applied" | "duplicate" | "ignored";
  * Apply one verified event. The event id goes into `billing_events` first, so a redelivery is a no-op;
  * if applying fails the id is removed again so Stripe's retry gets another go.
  */
-export async function handleStripeEvent(db: MailQuery, event: StripeEvent): Promise<EventOutcome> {
+/**
+ * Stripe does not deliver events in order, so a late `updated` could undo a newer one. With a client,
+ * subscription state is re-read from Stripe when the event arrives (Stripe's recommended pattern) and
+ * the payload is used only to find the subscription. Without one (tests, or no key), the payload is used.
+ */
+async function currentSubscription(
+  stripe: StripeClient | undefined,
+  id: string | null,
+): Promise<Record<string, unknown> | null> {
+  if (!stripe || !id || !/^sub_[A-Za-z0-9]+$/.test(id)) return null;
+  return stripe("GET", `/v1/subscriptions/${id}`);
+}
+
+/** The subscription an invoice belongs to (top-level in older API versions, under `parent` in newer). */
+function invoiceSubscription(invoice: Record<string, unknown>): string | null {
+  const parent = invoice.parent as { subscription_details?: { subscription?: unknown } } | undefined;
+  return idOf(invoice.subscription) ?? idOf(parent?.subscription_details?.subscription);
+}
+
+export async function handleStripeEvent(db: MailQuery, event: StripeEvent, stripe?: StripeClient): Promise<EventOutcome> {
   if (!(HANDLED_EVENTS as readonly string[]).includes(event.type)) return "ignored";
   const claimed = await db.query(
     `insert into cumulus_mail.billing_events (id, type) values ($1, $2) on conflict (id) do nothing returning id`,
@@ -290,14 +309,14 @@ export async function handleStripeEvent(db: MailQuery, event: StripeEvent): Prom
   );
   if (claimed.length === 0) return "duplicate";
   try {
-    return await applyEvent(db, event);
+    return await applyEvent(db, event, stripe);
   } catch (error) {
     await db.query(`delete from cumulus_mail.billing_events where id = $1`, [event.id]);
     throw error;
   }
 }
 
-async function applyEvent(db: MailQuery, event: StripeEvent): Promise<EventOutcome> {
+async function applyEvent(db: MailQuery, event: StripeEvent, stripe?: StripeClient): Promise<EventOutcome> {
   const object = event.data.object;
   switch (event.type) {
     case "checkout.session.completed": {
@@ -318,9 +337,10 @@ async function applyEvent(db: MailQuery, event: StripeEvent): Promise<EventOutco
     case "customer.subscription.created":
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
-      const sub = readSubscription(object);
+      const fresh = event.type === "customer.subscription.deleted" ? null : await currentSubscription(stripe, str(object.id));
+      const sub = readSubscription(fresh ?? object);
       if (!sub.customer) return "ignored";
-      const deleted = event.type === "customer.subscription.deleted";
+      const deleted = event.type === "customer.subscription.deleted" || (fresh !== null && sub.status === "canceled");
       const status: PlanStatus = deleted ? "canceled" : sub.status;
       // The label and quota shown in the account dialog follow the limits now in force.
       const shown: PlanId | null = status === "canceled" ? "free" : sub.planId;
@@ -356,6 +376,9 @@ async function applyEvent(db: MailQuery, event: StripeEvent): Promise<EventOutco
     case "invoice.payment_failed": {
       const customer = idOf(object.customer);
       if (!customer) return "ignored";
+      // Re-read the subscription: a failure reported after the card was fixed must not mark it past due.
+      const fresh = await currentSubscription(stripe, invoiceSubscription(object));
+      if (fresh && planStatusFromStripe(fresh.status) === "active") return "ignored";
       const rows = await db.query(
         `update cumulus_mail.mailboxes set plan_status = 'past_due'
           where stripe_customer_id = $1 and plan_status = 'active' returning tenant_id`,
