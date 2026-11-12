@@ -26,7 +26,8 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { EVENTS, type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
 import { expandEvents, withRsvp } from "@/lib/mail/calendar";
 import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
@@ -547,6 +548,55 @@ export function MailApp() {
     setPicked([]);
   }
 
+  function moveToFolder(id: string, folder: FolderId) {
+    const message = messages.find((item) => item.id === id);
+    const threadId = message?.threadId ?? id;
+    remember(`Moved to ${folderLabel(settings?.folders ?? [], folder)}.`);
+    replaceMessages(moveThreads(messages, [threadId], folder));
+    if (selectedId === id) setSelectedId(null);
+    setPicked([]);
+  }
+
+  function addFolder(name: string): string | null {
+    const current = settings ?? defaultSettings();
+    const error = folderNameError(current.folders, name);
+    if (error) return error;
+    try {
+      const { folders, folder } = createFolder(current.folders, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.create", folder.name));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not create the folder.";
+    }
+  }
+
+  function renameFolderTo(id: CustomFolderId, name: string): string | null {
+    const current = settings ?? defaultSettings();
+    try {
+      const folders = renameFolder(current.folders, id, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.rename", name.trim()));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not rename the folder.";
+    }
+  }
+
+  function removeFolder(id: CustomFolderId) {
+    const current = settings ?? defaultSettings();
+    const folder = current.folders.find((item) => item.id === id);
+    if (!folder) return;
+    const result = deleteFolder(current.folders, messages, id);
+    const note = result.moved ? ` ${result.moved === 1 ? "Its message goes" : `Its ${result.moved} messages go`} back to the Inbox.` : "";
+    if (!window.confirm(`Delete the folder “${folder.name}”?${note}`)) return;
+    if (result.moved) replaceMessages(result.messages);
+    setSettings(recordAudit({ ...current, folders: result.folders }, "folder.delete", folder.name));
+    if (box === id) {
+      setBox("inbox");
+      setSelectedId(null);
+    }
+    setNotice(`Folder “${folder.name}” deleted.`);
+  }
+
   async function answerInvite(answer: "accepted" | "tentative" | "declined") {
     if (!reading || !settings) return;
     const invite = parseInvite(reading.body);
@@ -638,6 +688,15 @@ export function MailApp() {
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
+          {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
+          <button
+            type="button"
+            onClick={() => writeNew()}
+            className="ml-auto grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
+            aria-label="Compose"
+          >
+            <SquarePen className="size-5" />
+          </button>
         </div>
         <label className="flex h-11 min-w-0 flex-1 items-center gap-2 border border-line px-3 md:max-w-xl">
           <Search className="size-4 shrink-0 text-muted" />
@@ -653,7 +712,7 @@ export function MailApp() {
         <button
           type="button"
           onClick={() => writeNew()}
-          className="inline-flex h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent"
+          className="hidden h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent md:inline-flex"
         >
           <SquarePen className="size-4" />
           Compose
@@ -684,6 +743,10 @@ export function MailApp() {
             setAccountOpen(true);
             setNavOpen(false);
           }}
+          folders={settings?.folders ?? []}
+          onCreateFolder={addFolder}
+          onRenameFolder={renameFolderTo}
+          onDeleteFolder={removeFolder}
         />
         {view === "mail" ? (
           <>
@@ -704,6 +767,7 @@ export function MailApp() {
               onTrashPicked={() => actOnPicked("trash")}
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
+              folders={settings?.folders ?? []}
               onEmptyTrash={() => {
                 if (!messages.some((message) => message.folder === "trash")) return;
                 if (!window.confirm("Delete everything in Trash? This can be undone.")) return;
@@ -750,6 +814,8 @@ export function MailApp() {
                 setSelectedId(null);
               }}
               onRestore={(id) => moveSelected(id, "inbox")}
+              folders={settings?.folders ?? []}
+              onMoveTo={moveToFolder}
               onRemove={(id) => {
                 remember("Deleted.");
                 remove(id);
@@ -847,7 +913,7 @@ export function MailApp() {
       </div>
       {modal ? (
         <div className="scrim fixed inset-0 z-40 flex items-end md:items-center md:justify-center md:p-6" role="presentation">
-          <div className="flex max-h-dvh w-full flex-col bg-paper md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
+          <div className="flex h-dvh max-h-dvh w-full flex-col bg-paper md:h-auto md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
             <Composer
               form={modal}
               error={composeError}
