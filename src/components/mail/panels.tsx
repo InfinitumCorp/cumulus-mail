@@ -465,7 +465,7 @@ export function AccountPanel({
                     ) : null}
                   </>
                 ) : (
-                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox.</p>
+                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox, and it is not published to the Cumulus://ID key directory, because mail encrypted to it could not be opened after the tab closes.</p>
                 )}
               </dd>
             </div>

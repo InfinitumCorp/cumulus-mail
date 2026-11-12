@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
-import { lookupRecipientKeys, publishMailKey, withdrawMailKey } from "@/lib/auth/cid-api";
+import { lookupRecipientKeys, withdrawMailKey } from "@/lib/auth/cid-api";
 import { recipientKeys } from "@/lib/auth/cid-account";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
@@ -847,17 +847,9 @@ export function MailApp() {
           pgpPublic={pgp?.publicKey ?? ""}
           keyError={keyError}
           publishedKey={publishedKey}
-          onPublishKey={() => {
-            if (!pgp) return;
-            setKeyError("");
-            void publishMailKey({ data: { armored: pgp.publicKey } })
-              .then((result) => {
-                if (result.status === "ok") setPublishedKey({ id: result.value.id, fingerprint: result.value.fingerprint });
-                else if (result.status === "signed-out") setKeyError("Mail's Cumulus://ID sign-in has expired. Sign in again to publish.");
-                else setKeyError(result.message);
-              })
-              .catch(() => setKeyError("Could not publish the key."));
-          }}
+          // No onPublishKey: the session key lives only in this tab, so publishing it
+          // would let others send mail that becomes unreadable when the tab closes.
+          // Publishing returns once Mail keeps a durable key (publishMailKey in cid-api).
           onWithdrawKey={() => {
             if (!publishedKey) return;
             setKeyError("");

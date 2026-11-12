@@ -7,10 +7,10 @@ import { auth, authConfigured } from "./server";
  * The Cumulus://ID access token Better Auth stored (encrypted) on the signed-in
  * person's account row at sign-in. Server-only.
  *
- * Mail asks for `openid profile email` without `offline_access`, so there is no
- * refresh token: once the access token expires (an hour at most) this returns
- * it with its expiry, and `cid-account.ts` reports "signed-out" instead of
- * calling Cumulus://ID.
+ * Mail asks for `offline_access`, so Better Auth's `getAccessToken` refreshes an
+ * expired access token with the stored (rotating) refresh token. Accounts that
+ * signed in before that scope was added have no refresh token: once their access
+ * token expires, `cid-account.ts` reports "signed-out" until they sign in again.
  */
 const CID_PROVIDERS = new Set(SIGN_IN_PROVIDERS.map((p) => p.providerId));
 
