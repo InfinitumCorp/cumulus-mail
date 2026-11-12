@@ -28,6 +28,28 @@ const COPIED = [
   "GROK_AUTH_CLIENT_SECRET",
 ] as const;
 
+/**
+ * Any string binding whose name starts with one of these is this app's setting and is copied too, so a
+ * new setting (outbound SMTP, DKIM, send limits, billing, sign-in, plan switches) reaches `process.env`
+ * on Workers without having to be added to the list above. Other bindings are left alone.
+ */
+export const COPIED_PREFIXES = [
+  "MAIL_",
+  "STRIPE_",
+  "BILLING_",
+  "GOOGLE_CLIENT_",
+  "CID_",
+  "CUMULUS_",
+  "SUPABASE_S3_",
+  "BETTER_AUTH_",
+  "GROK_AUTH_",
+] as const;
+
+/** True for a binding name `applyWorkerBindings` copies into `process.env`. */
+export function isCopiedBinding(name: string): boolean {
+  return (COPIED as readonly string[]).includes(name) || COPIED_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
 function bindingEnv(): Record<string, unknown> | undefined {
   const env = (globalThis as { __env__?: unknown }).__env__;
   if (!env || typeof env !== "object") return undefined;
@@ -47,8 +69,8 @@ export function applyWorkerBindings(): void {
   const hyperdrive = env.HYPERDRIVE as HyperdriveBinding | undefined;
   const connectionString = hyperdrive?.connectionString?.trim();
   if (connectionString) process.env.DATABASE_URL = connectionString;
-  for (const key of COPIED) {
-    const value = env[key];
+  for (const [key, value] of Object.entries(env)) {
+    if (!isCopiedBinding(key)) continue;
     if (typeof value === "string" && value.length > 0) process.env[key] = value;
   }
 }
