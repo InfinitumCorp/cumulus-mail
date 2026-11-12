@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getBillingStatus, openBillingPortal, startCheckout } from "@/lib/mail/api";
+import { BILLING_OFF, billingNotice, type BillingStatus } from "@/lib/mail/billing-status";
 
 const CHOICES = [
   { key: "plus_monthly", label: "Plus, monthly" },
@@ -15,7 +16,7 @@ const CHOICES = [
  * server says Stripe is configured, so the account dialog is unchanged when billing is off.
  */
 export function BillingControls() {
-  const [status, setStatus] = useState({ enabled: false, subscribed: false, hasCustomer: false });
+  const [status, setStatus] = useState<BillingStatus>(BILLING_OFF);
   const [choice, setChoice] = useState<string>(CHOICES[0].key);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +32,7 @@ export function BillingControls() {
   }, []);
 
   if (!status.enabled) return null;
+  const notice = billingNotice(status);
 
   const go = async (open: () => Promise<{ url: string }>) => {
     setBusy(true);
@@ -82,6 +84,11 @@ export function BillingControls() {
           </button>
         ) : null}
       </div>
+      {notice ? (
+        <p role={notice.urgent ? "alert" : undefined} className={notice.urgent ? "text-xs text-accent" : "text-xs text-muted"}>
+          {notice.text}
+        </p>
+      ) : null}
       {error && (
         <p role="alert" className="text-xs text-muted">
           {error}

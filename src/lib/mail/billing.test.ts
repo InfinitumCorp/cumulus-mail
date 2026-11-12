@@ -377,3 +377,29 @@ test("if Stripe cannot be reached the event is released so it is retried", async
   await assert.rejects(() => handleStripeEvent(harness.db, retry, down), /503/);
   assert.equal((await harness.db.query(`select id from cumulus_mail.billing_events where id = 'evt_o7'`)).length, 0);
 });
+
+test("billing status for the dialog: renewal date while active, a payment warning when past due", async () => {
+  const { billingStatus, billingNotice, BILLING_OFF } = await import("./billing.ts");
+  const db = harness.db;
+  await openMailbox(db, "bill-fay", profile("bill-fay", "bill.fay@cumuluscloud.app", "Fay"));
+  const none = await billingStatus(db, "bill-fay");
+  assert.deepEqual({ ...none }, { enabled: true, subscribed: false, hasCustomer: false, planStatus: "active", renewsAt: null });
+  assert.equal(billingNotice(none), null);
+  assert.equal(billingNotice(BILLING_OFF), null);
+
+  await handleStripeEvent(
+    db,
+    event("evt_f1", "customer.subscription.created", subscription("sub_fay", "cus_fay", "plus_yearly", "active", { metadata: { tenant_id: "bill-fay" } })),
+  );
+  const active = await billingStatus(db, "bill-fay");
+  assert.equal(active.subscribed, true);
+  assert.equal(active.hasCustomer, true);
+  assert.equal(active.renewsAt, new Date(1_800_000_000 * 1000).toISOString());
+  assert.deepEqual(billingNotice(active), { text: "Renews Jan 15, 2027.", urgent: false });
+
+  await handleStripeEvent(db, event("evt_f2", "invoice.payment_failed", { customer: "cus_fay" }));
+  const late = await billingStatus(db, "bill-fay");
+  assert.equal(late.planStatus, "past_due");
+  assert.equal(billingNotice(late)?.urgent, true);
+  assert.match(billingNotice(late)!.text, /Payment failed/);
+});

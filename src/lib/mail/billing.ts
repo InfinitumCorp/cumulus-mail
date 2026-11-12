@@ -12,6 +12,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { openText } from "./field-crypto.ts";
 import type { MailQuery } from "./query.ts";
 import { isPlanId, limitsFor, type PlanId, type PlanStatus } from "./plans.ts";
+import { BILLING_OFF, type BillingStatus } from "./billing-status.ts";
 
 /** Display name stored in `mailboxes.plan` (shown in the account dialog). */
 export const PLAN_LABELS: Record<PlanId, string> = { free: "Free", plus: "Plus", pro: "Pro", business: "Business" };
@@ -413,4 +414,33 @@ async function applyEvent(db: MailQuery, event: StripeEvent, stripe?: StripeClie
     default:
       return "ignored";
   }
+}
+
+// ---------------------------------------------------------------- status for the account dialog
+
+export { BILLING_OFF, billingNotice, type BillingStatus } from "./billing-status.ts";
+
+export async function billingStatus(db: MailQuery, tenantId: string): Promise<BillingStatus> {
+  const rows = await db.query<{
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+    plan_status: string;
+    plan_renews_at: Date | string | null;
+  }>(
+    `select stripe_customer_id, stripe_subscription_id, plan_status, plan_renews_at
+       from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  const row = rows[0];
+  if (!row) return { ...BILLING_OFF, enabled: true };
+  const planStatus: PlanStatus =
+    row.plan_status === "past_due" || row.plan_status === "canceled" ? row.plan_status : "active";
+  const renews = row.plan_renews_at ? new Date(row.plan_renews_at) : null;
+  return {
+    enabled: true,
+    subscribed: Boolean(row.stripe_subscription_id) && planStatus !== "canceled",
+    hasCustomer: Boolean(row.stripe_customer_id),
+    planStatus,
+    renewsAt: renews && !Number.isNaN(renews.getTime()) ? renews.toISOString() : null,
+  };
 }
