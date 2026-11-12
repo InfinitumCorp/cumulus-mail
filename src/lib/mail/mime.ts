@@ -110,7 +110,8 @@ function decodeBody(body: string, encoding: string | undefined, asText: boolean)
 }
 
 function decodeWords(value: string): string {
-  return value.replace(/=\?([^?]+)\?([BbQq])\?([^?]+)\?=/g, (_all, _charset, encoding, data) => {
+  // RFC 2047 §6.2: whitespace between two adjacent encoded words is not part of the text.
+  return value.replace(/(\?=)\s+(?==\?)/g, "$1").replace(/=\?([^?]+)\?([BbQq])\?([^?]+)\?=/g, (_all, _charset, encoding, data) => {
     if (String(encoding).toLowerCase() === "b") {
       return new TextDecoder("utf-8").decode(decodeBase64(String(data)));
     }
