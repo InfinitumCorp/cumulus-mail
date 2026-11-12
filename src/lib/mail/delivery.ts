@@ -11,6 +11,10 @@ import { isHeld } from "./schedule.ts";
 import { applySieve } from "./sieve.ts";
 import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
+import { mailDomain } from "./domain.ts";
+import { currentOutbound } from "./outbound/config.ts";
+import { buildRawMessage } from "./outbound/message.ts";
+import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
 
@@ -128,6 +132,19 @@ export async function deliverMessage(
           status: "outbound",
           detail: `Password-protected. ${link.href} External SMTP is not configured.`,
         });
+      } else if (currentOutbound() && files.length === 0) {
+        const sender = await readProfile(db, senderTenant);
+        const from = { name: sender?.name ?? message.from.name, email: sender?.email ?? message.from.email };
+        const domain = from.email.split("@")[1] || mailDomain();
+        await enqueueOutbound(db, senderTenant, {
+          messageId: message.id,
+          from: from.email,
+          recipient: person.email,
+          raw: buildRawMessage({ ...message, from }, from, domain),
+        });
+        hops.push({ email: person.email, status: "outbound", detail: QUEUED });
+      } else if (currentOutbound()) {
+        hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. SMTP does not send attachments yet." });
       } else {
         hops.push({ email: person.email, status: "outbound", detail: HELD });
       }
@@ -196,6 +213,9 @@ export async function deliverPending(db: MailQuery, storageFor: TenantStorage, s
       [senderTenant, message.id],
     );
   }
+  // With SMTP configured, try this mailbox's due rows now; a scheduled run retries the rest.
+  const outbound = currentOutbound();
+  if (outbound) await processOutboundQueue(db, outbound, { tenantId: senderTenant });
 }
 
 export async function putBytes(storage: TenantBlobs, body: Uint8Array): Promise<{ blobId: string; sha256: string }> {
