@@ -17,6 +17,8 @@ this repository.
 - [x] Production database (Supabase `ivqiskeziohbbtkcvlun`): migrations `0006`–`0010` applied and recorded in
       `public._migrations` (2026-11-12). The mail tables were empty.
 - [ ] Vercel auto-deploy off: merge #75 (`git.deploymentEnabled: false`).
+- [ ] Production database: apply migration **`0011_message_words.sql`** (server-side search, #84) before deploying
+      code that includes it, recorded in `public._migrations` like the others.
 
 ## 1. Both regions
 
@@ -39,8 +41,12 @@ Routing catch-all** from `cumulus-mail` until the handoff's section 6 test has p
       `workers/email/wrangler.jsonc` (and `workers/api/wrangler.jsonc` if the API worker is deployed).
 - [ ] Inbound worker secrets: `MAIL_BLOB_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`;
       API worker also `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (its workers.dev origin).
-- [ ] `npx wrangler whoami` is the account that owns `cumulus-mail`; then deploy `cumulus-mail-inbound`
-      (`workers/email`), run the real-database probe, and only then switch the catch-all (handoff section 7).
+- [ ] Deploy with **Actions → Deploy US (Cloudflare)** (#80): manual only, `production-us` environment (add
+      required reviewers and the secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `HYPERDRIVE_ID`, plus
+      `BETTER_AUTH_SECRET` for the API worker). `scripts/deploy-guard.mjs` refuses `cumulus-mail`, routes,
+      Email Routing, send_email and R2 before anything is uploaded.
+- [ ] Check: `node scripts/smoke.mjs --host https://cumulus-mail-api.<account>.workers.dev` (#82, `/api/health` from #78).
+- [ ] Then follow `docs/deploy/cutover.md` (#83): real-database probe, catch-all, custom domain, each with rollback.
 - [ ] Settings reach the API worker by prefix (`MAIL_`, `STRIPE_`, `BILLING_`, `CID_`, `CUMULUS_`, ...; #72).
 
 ## 3. RU: Yandex Cloud (`docs/deploy/yandex-ru.md`, PR #76)
@@ -52,10 +58,14 @@ Routing catch-all** from `cumulus-mail` until the handoff's section 6 test has p
 - [ ] Lockbox secret with `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`, `MAIL_S3_ACCESS_KEY_ID`,
       `MAIL_S3_SECRET_ACCESS_KEY`.
 - [ ] If RU gets its own database: apply `migrations/0001`–`0010` there, recorded in `public._migrations`.
-- [ ] `REGISTRY_ID=… SA_ID=… LOCKBOX_ID=… ./deploy/yandex/deploy.sh` (asks before acting).
+- [ ] Deploy with **Actions → Deploy RU (Yandex Cloud)** (#81; `production-ru` environment with the secret
+      `YC_SA_KEY_JSON` and vars `YC_CLOUD_ID`, `YC_FOLDER_ID`, `YC_REGISTRY_ID`, `YC_SA_ID`, `YC_LOCKBOX_ID`), or
+      by hand: `REGISTRY_ID=… SA_ID=… LOCKBOX_ID=… ./deploy/yandex/deploy.sh` (asks before acting).
+- [ ] Check before DNS: `node scripts/smoke.mjs --host https://<id>.apigw.yandexcloud.net --region ru`.
 - [ ] API Gateway (or ALB) with the `ru.mail.cumuluscloud.app` certificate; DNS for it (owner). Keep it off
       Cloudflare so it loads in Russia without a VPN.
-- [ ] Check: `GET /api/auth/get-session` → 200, "Sign in with Cumulus ID" shows, sign-in round-trips the mirror.
+- [ ] Check after DNS: `node scripts/smoke.mjs --host https://ru.mail.cumuluscloud.app` all ok (region `ru`, not
+      via AWS/Cloudflare, sign-in through `ru.id.cumuluscloud.app` per #79); sign in once from Russia without a VPN.
 
 ## 4. Billing: Stripe (PR #64, test mode first)
 
