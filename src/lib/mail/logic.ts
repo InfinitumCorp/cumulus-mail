@@ -259,15 +259,32 @@ export function rowTitle(message: MailMessage, meEmail: string = ME.email): stri
   return message.from.name;
 }
 
-export function quota(messages: MailMessage[], quotaGb: number = ME.quotaGb): { label: string; pct: number } {
-  const extra = messages.reduce((n, message) => {
-    const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
-    return n + message.subject.length + message.body.length + files;
-  }, 0);
-  const bytes = 2.41e9 + extra;
+export type QuotaWarning = "near" | "over" | null;
+
+/**
+ * Storage shown in the sidebar. With `usedBytes` from the server it is the real count; without it
+ * (sample data, profiles built outside the database) it is the old estimate. Never enforced here:
+ * `warning` is a soft notice at 90% and above.
+ */
+export function quota(
+  messages: MailMessage[],
+  quotaGb: number = ME.quotaGb,
+  usedBytes?: number,
+): { label: string; pct: number; warning: QuotaWarning; measured: boolean } {
+  const measured = typeof usedBytes === "number" && Number.isFinite(usedBytes) && usedBytes >= 0;
+  const bytes = measured
+    ? usedBytes
+    : 2.41e9 +
+      messages.reduce((n, message) => {
+        const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
+        return n + message.subject.length + message.body.length + files;
+      }, 0);
   const gb = bytes / 1e9;
-  const pct = Math.min(100, (gb / quotaGb) * 100);
-  return { label: `${gb.toFixed(2)} GB of ${quotaGb} GB`, pct };
+  const ratio = quotaGb > 0 ? gb / quotaGb : 1;
+  const pct = Math.min(100, ratio * 100);
+  const warning: QuotaWarning = ratio >= 1 ? "over" : ratio >= 0.9 ? "near" : null;
+  const shown = gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2);
+  return { label: `${shown} GB of ${quotaGb} GB`, pct, warning, measured };
 }
 
 export function parsePeople(value: string): Person[] {

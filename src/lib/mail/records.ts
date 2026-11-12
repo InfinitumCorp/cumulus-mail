@@ -110,6 +110,27 @@ export async function loadAttachmentMap(db: MailQuery, tenantId: string): Promis
   return map;
 }
 
+/**
+ * Bytes this mailbox stores, summed in the database (docs/plans.md step 3): attachment sizes plus the
+ * stored (sealed) message text. Raw .eml copies in blob storage are not in the database and are not
+ * counted. Shown, not enforced.
+ */
+export async function storageUsedBytes(db: MailQuery, tenantId: string): Promise<number> {
+  assertTenantId(tenantId);
+  const rows = await db.query<{ files: string | number | null; text: string | number | null }>(
+    `select
+       (select coalesce(sum(size), 0) from cumulus_mail.attachments where tenant_id = $1) as files,
+       (select coalesce(sum(
+          octet_length(subject) + octet_length(body) + octet_length(to_json) + octet_length(cc_json)
+          + coalesce(octet_length(headers_enc), 0) + coalesce(octet_length(extras_enc), 0)
+          + coalesce(octet_length(snippet_enc), 0)
+        ), 0) from cumulus_mail.messages where tenant_id = $1) as text`,
+    [tenantId],
+  );
+  const row = rows[0];
+  return Number(row?.files ?? 0) + Number(row?.text ?? 0);
+}
+
 export async function readSnapshot(db: MailQuery, tenantId: string): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   const boxes = await db.query<{
@@ -167,6 +188,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       plan: box.plan,
       quotaGb: Number(box.quota_gb),
       limits: limitsFor(box.plan_id, box.plan_status),
+      usedBytes: await storageUsedBytes(db, tenantId),
     },
     messages: messages.map((row) =>
       rowToMessage(

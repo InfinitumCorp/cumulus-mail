@@ -1045,7 +1045,7 @@ export function MailApp() {
         <AccountPanel
           me={me}
           aliases={aliases}
-          quotaLabel={quota(messages, me.quotaGb).label}
+          quotaLabel={quota(messages, me.quotaGb, me.usedBytes).label}
           signature={signature}
           rules={rules}
           onClose={() => setAccountOpen(false)}
