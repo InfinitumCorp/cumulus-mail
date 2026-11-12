@@ -19,6 +19,8 @@
 export const DEFAULT_CID_ISSUER = "https://id.cumuluscloud.app";
 /** The client id nexus registers for mail.cumuluscloud.app and ru.mail.cumuluscloud.app. */
 export const DEFAULT_CID_CLIENT_ID = "cumulus-mail";
+/** Cumulus ID mirror for the Russia copy (ru.* hosts): loads in Russia without a VPN. */
+export const DEFAULT_CID_ISSUER_RU = "https://ru.id.cumuluscloud.app";
 
 export const CUMULUS_ID_PROVIDER_ID = "cumulus-id";
 /** Same client and issuer; asks Cumulus ID to open on "Create a Cumulus ID". */
@@ -38,7 +40,7 @@ export const SIGN_IN_PROVIDERS: readonly SignInProvider[] = [
   { providerId: CUMULUS_ID_CREATE_PROVIDER_ID, label: "Create a Cumulus ID", create: true },
 ];
 
-type CidEnv = { CID_ISSUER?: string; CID_CLIENT_ID?: string };
+type CidEnv = { CID_ISSUER?: string; CID_ISSUER_RU?: string; CID_CLIENT_ID?: string };
 
 export type CidConfig = { issuer: string; clientId: string };
 
@@ -46,6 +48,18 @@ export function cidConfig(env: CidEnv = process.env): CidConfig {
   const issuer = (env.CID_ISSUER?.trim() || DEFAULT_CID_ISSUER).replace(/\/+$/, "");
   const clientId = env.CID_CLIENT_ID?.trim() || DEFAULT_CID_CLIENT_ID;
   return { issuer, clientId };
+}
+
+/**
+ * Cumulus ID for a region: the Russia copy (ru.* hosts, or MAIL_REGION=ru) signs in through the mirror,
+ * `CID_ISSUER_RU` or https://ru.id.cumuluscloud.app; everyone else through `CID_ISSUER` or
+ * https://id.cumuluscloud.app. The client id is the same for both.
+ */
+export function cidConfigForRegion(region: "us" | "ru", env: CidEnv = process.env): CidConfig {
+  const base = cidConfig(env);
+  if (region !== "ru") return base;
+  const issuer = (env.CID_ISSUER_RU?.trim() || DEFAULT_CID_ISSUER_RU).replace(/\/+$/, "");
+  return { issuer, clientId: base.clientId };
 }
 
 export const cidAuthorizeUrl = (issuer: string) => `${issuer}/api/id/authorize`;
