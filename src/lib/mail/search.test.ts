@@ -111,3 +111,27 @@ test("ranked, paged, all-words search over the encrypted word index", async () =
   assert.deepEqual((await searchMessages(db, "srch-ada", "lunch")).hits, []);
   assert.deepEqual((await searchMessages(db, "srch-ada", "tacos")).hits.map((h) => h.id), ["s-other"]);
 });
+
+test("reindexing fills in messages that have no word row, and only those", async () => {
+  const { reindexMissingWords } = await import("./search.ts");
+  const { readMessages } = await import("./records.ts");
+  const db = harness.db;
+  const box = await openMailbox(db, "srch-old", profile("srch-old", "srch.old@cumuluscloud.app", "Old"));
+  await writeSnapshot(db, harness.storageFor, "srch-old", {
+    ...box,
+    messages: [...box.messages, msg("o-1", "2026-11-01T10:00:00Z", { subject: "Quarterly zeppelin report", to: [] })],
+  });
+  // Simulate mail stored before migration 0011: drop its word rows.
+  await db.query(`delete from cumulus_mail.message_words where tenant_id = 'srch-old'`);
+  assert.deepEqual((await searchMessages(db, "srch-old", "zeppelin")).hits, []);
+
+  const counted = await reindexMissingWords(db, readMessages, { tenantId: "srch-old" });
+  assert.ok(counted.messages >= 1);
+  assert.equal(counted.tenants, 1);
+  assert.deepEqual((await searchMessages(db, "srch-old", "zeppelin")).hits, [], "count-only writes nothing");
+
+  const applied = await reindexMissingWords(db, readMessages, { tenantId: "srch-old", apply: true });
+  assert.equal(applied.messages, counted.messages);
+  assert.deepEqual((await searchMessages(db, "srch-old", "zeppelin")).hits.map((h) => h.id), ["o-1"]);
+  assert.deepEqual(await reindexMissingWords(db, readMessages, { tenantId: "srch-old" }), { tenants: 0, messages: 0 });
+});

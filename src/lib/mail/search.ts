@@ -130,3 +130,46 @@ export async function searchMessages(
   const more = rows.length > limit && offset + limit <= MAX_OFFSET;
   return { hits, nextCursor: more ? encodeCursor(offset + limit, terms) : null, terms: terms.length };
 }
+
+export type ReindexReport = { tenants: number; messages: number };
+
+/**
+ * Index messages that have no word row yet (mail stored before migration 0011, or delivered to a mailbox
+ * nobody has opened since). Idempotent: messages already indexed are skipped. Decrypts with the tenant
+ * keys, so it needs MAIL_BLOB_KEY like the app. `apply: false` only counts.
+ */
+export async function reindexMissingWords(
+  db: MailQuery,
+  readMessages: (db: MailQuery, tenantId: string) => Promise<MailMessage[]>,
+  options: { apply?: boolean; tenantId?: string } = {},
+): Promise<ReindexReport> {
+  const params: unknown[] = [];
+  let tenantFilter = "";
+  if (options.tenantId) {
+    assertTenantId(options.tenantId);
+    params.push(options.tenantId);
+    tenantFilter = "and m.tenant_id = $1";
+  }
+  const missing = await db.query<{ tenant_id: string; id: string }>(
+    `select m.tenant_id, m.id from cumulus_mail.messages m
+       left join cumulus_mail.message_words w on w.tenant_id = m.tenant_id and w.message_id = m.id
+      where w.message_id is null ${tenantFilter}
+      order by m.tenant_id`,
+    params,
+  );
+  const byTenant = new Map<string, Set<string>>();
+  for (const row of missing) {
+    const ids = byTenant.get(row.tenant_id) ?? new Set<string>();
+    ids.add(row.id);
+    byTenant.set(row.tenant_id, ids);
+  }
+  if (options.apply) {
+    for (const [tenantId, ids] of byTenant) {
+      assertTenantId(tenantId);
+      for (const message of await readMessages(db, tenantId)) {
+        if (ids.has(message.id)) await indexMessageWords(db, tenantId, message);
+      }
+    }
+  }
+  return { tenants: byTenant.size, messages: missing.length };
+}
