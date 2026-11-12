@@ -403,3 +403,21 @@ test("billing status for the dialog: renewal date while active, a payment warnin
   assert.equal(billingNotice(late)?.urgent, true);
   assert.match(billingNotice(late)!.text, /Payment failed/);
 });
+
+test("on Workers the Stripe keys come from the bindings, even before the database is opened", () => {
+  const g = globalThis as { __env__?: unknown };
+  const keep = { k: process.env.STRIPE_SECRET_KEY, w: process.env.STRIPE_WEBHOOK_SECRET };
+  delete process.env.STRIPE_SECRET_KEY;
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  try {
+    assert.equal(stripeConfig(), null);
+    g.__env__ = { STRIPE_SECRET_KEY: "sk_test_worker", STRIPE_WEBHOOK_SECRET: "whsec_worker" };
+    assert.deepEqual(stripeConfig(), { secretKey: "sk_test_worker", webhookSecret: "whsec_worker" });
+  } finally {
+    delete g.__env__;
+    if (keep.k === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = keep.k;
+    if (keep.w === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+    else process.env.STRIPE_WEBHOOK_SECRET = keep.w;
+  }
+});

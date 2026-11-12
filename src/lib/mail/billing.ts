@@ -9,6 +9,7 @@
  * in the Stripe dashboard without a deploy.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { applyWorkerBindings } from "../cloudflare-env.ts";
 import { openText } from "./field-crypto.ts";
 import type { MailQuery } from "./query.ts";
 import { isPlanId, limitsFor, type PlanId, type PlanStatus } from "./plans.ts";
@@ -21,7 +22,13 @@ export type StripeConfig = { secretKey: string; webhookSecret: string | null };
 
 type BillingEnv = { STRIPE_SECRET_KEY?: string; STRIPE_WEBHOOK_SECRET?: string };
 
-export function stripeConfig(env: BillingEnv = process.env): StripeConfig | null {
+export function stripeConfig(env?: BillingEnv): StripeConfig | null {
+  // On Workers the keys are bindings; copy them into process.env before the first read, which can
+  // come before anything has opened the database (the webhook checks this first).
+  if (!env) {
+    applyWorkerBindings();
+    env = process.env;
+  }
   const secretKey = env.STRIPE_SECRET_KEY?.trim();
   if (!secretKey) return null;
   return { secretKey, webhookSecret: env.STRIPE_WEBHOOK_SECRET?.trim() || null };
