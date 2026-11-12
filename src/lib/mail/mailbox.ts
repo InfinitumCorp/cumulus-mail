@@ -5,12 +5,13 @@ import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
 import { addressOwnedByOther } from "./directory.ts";
+import { MAX_DOMAINS, requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { mailDomain } from "./domain.ts";
 import { validEmail } from "./logic.ts";
 import { MAX_ALIASES, type Attachment, type MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { releaseDue } from "./schedule.ts";
 import { reconcileFolders } from "./folders.ts";
-import { sanitizeSettings } from "./settings.ts";
 import {
   loadAttachmentMap,
   previousRawKeys,
@@ -116,6 +117,11 @@ export async function writeSnapshot(
       attachments: clean.length ? clean : undefined,
     });
     keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
+  }
+
+  // Refuse rather than silently keep the first few.
+  if (requestedDomainCount(snapshot.settings, mailDomain()) > MAX_DOMAINS) {
+    throw new Error(`You can add up to ${MAX_DOMAINS} custom domains.`);
   }
 
   const aliases: string[] = [];

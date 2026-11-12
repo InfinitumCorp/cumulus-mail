@@ -4,7 +4,7 @@ import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
-import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
+import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
@@ -374,8 +374,22 @@ export function AccountPanel({
                     <button type="button" className="ml-3 text-accent" onClick={() => onCheckDomain(domain.domain)}>
                       Check DNS
                     </button>
+                    <button
+                      type="button"
+                      className="ml-3 text-muted hover:text-ink"
+                      aria-label={`Remove ${domain.domain}`}
+                      onClick={() => {
+                        if (!window.confirm(`Remove ${domain.domain}? Mail to it will no longer arrive here.`)) return;
+                        onSettings({ ...settings, domains: settings.domains.filter((item) => item.domain !== domain.domain) });
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
+                {settings.domains.length >= MAX_DOMAINS ? (
+                  <p className="text-sm text-muted">You can add up to {MAX_DOMAINS} custom domains. Remove one to add another.</p>
+                ) : (
                 <form
                   className="flex gap-2"
                   onSubmit={(event) => {
@@ -396,6 +410,7 @@ export function AccountPanel({
                     Add domain
                   </button>
                 </form>
+                )}
                 {domainNote ? <p className="text-sm text-muted">{domainNote}</p> : null}
               </dd>
             </div>
