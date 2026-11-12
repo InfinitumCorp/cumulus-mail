@@ -8,6 +8,7 @@ import type {
 } from "./model.ts";
 import type { MailSettings } from "./settings.ts";
 import { TenantAccessError } from "../storage/adapter.ts";
+import { isCustomFolderId } from "./folders.ts";
 
 export type MailProfile = {
   name: string;
@@ -48,6 +49,7 @@ export function rejectCallerTenant(input: unknown): void {
 
 export function asFolder(value: unknown): FolderId {
   if (typeof value === "string" && FOLDERS.has(value as FolderId)) return value as FolderId;
+  if (isCustomFolderId(value)) return value;
   throw new Error("Invalid folder");
 }
 
