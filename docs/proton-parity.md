@@ -31,7 +31,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Custom domains | added | Up to 3. Verification is a TXT record `_cumulus-mail.<domain>` = `cumulus-mail-verify=cumuluscloud.app`. |
 | Catch-all | added | Published only after that TXT check succeeds. |
 | Live DNS and registrar changes | deferred | The default resolver is empty unless `MAIL_AUTH_DNS=live`. This change does not edit DNS. |
-| Paid plan billing | deferred | No payment provider. Caps mirror a paid mailbox (3 domains, 15 addresses) without charging. |
+| Paid plan billing | deferred (scoped) | No payment provider. Caps mirror a paid mailbox (3 domains, 15 addresses) without charging. Tiers, Stripe objects, where each limit is enforced, and the order of work are in `docs/plans.md`. |
 | Labels | existing | Shown on the message. |
 | System folders (inbox, sent, drafts, archive, trash, quarantine, snoozed, starred, outbox) | existing | |
 | Custom folders in the sidebar | added | Up to 50 folders, listed under the system folders in the same row style. Create, rename and delete in the sidebar; "Move to" in the reader moves a conversation (Sent and Drafts copies stay put); Archive works from a folder. Deleting a folder moves its mail back to the Inbox, and a save from an older tab does the same for mail in a folder that no longer exists. Folder names are stored in the encrypted settings. The layout rule was waived for this row only. |
@@ -72,6 +72,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |
 | Dark mode for the mail shell | deferred | The shell is light. Adding a theme would restyle it, which the layout rule forbids. Sign-in and error pages already ship `dark:` classes; those pages were not restyled. |
+| Phone layout (under 768px) | added | One column: list, then message, with back; folders in a full-screen drawer; Compose as a full-screen sheet; Compose moves into the title row; touch targets at least 44px. The layout rule was waived for small screens only, and the desktop layout is pixel-identical (checked at 1280px and 800px). Screenshots: `docs/screenshots/mobile-390/`. |
 | Keyboard shortcuts | existing | `c r e # j k x u z`. |
 | Shortcut help | added | `?` |
 | Installable PWA | existing | `/__grok/manifest.webmanifest` and the install page. |
