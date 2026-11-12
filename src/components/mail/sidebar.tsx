@@ -1,11 +1,16 @@
+import { useState, type FormEvent } from "react";
 import { FirmSuite } from "@/lib/firm/FirmSuite";
 import {
   Archive,
+  Check,
   ArrowUpRight,
   CalendarDays,
   Clock,
   FileText,
+  Folder,
+  FolderPlus,
   Inbox,
+  Pencil,
   ListTodo,
   Send,
   ShieldAlert,
@@ -14,7 +19,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { ME, BOXES, type BoxId, type ViewId } from "@/lib/mail/model";
+import { ME, BOXES, type BoxId, type CustomFolder, type CustomFolderId, type SystemFolderId, type ViewId } from "@/lib/mail/model";
 import { draftCount, quota, unreadInBox } from "@/lib/mail/logic";
 import type { MailMessage } from "@/lib/mail/model";
 import type { MailProfile } from "@/lib/mail/snapshot";
@@ -42,10 +47,83 @@ type Props = {
   onView: (view: ViewId) => void;
   onBox: (box: BoxId) => void;
   onAccount: () => void;
+  folders?: CustomFolder[];
+  /** Each returns an error message, or null on success. */
+  onCreateFolder?: (name: string) => string | null;
+  onRenameFolder?: (id: CustomFolderId, name: string) => string | null;
+  onDeleteFolder?: (id: CustomFolderId) => void;
 };
 
-export function Sidebar({ open, view, box, messages, me = ME, openTasks, onClose, onView, onBox, onAccount }: Props) {
+type Editing = { mode: "new" } | { mode: "rename"; id: CustomFolderId } | null;
+
+export function Sidebar({
+  open,
+  view,
+  box,
+  messages,
+  me = ME,
+  openTasks,
+  onClose,
+  onView,
+  onBox,
+  onAccount,
+  folders = [],
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+}: Props) {
   const used = quota(messages, me.quotaGb);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [draftName, setDraftName] = useState("");
+  const [folderError, setFolderError] = useState("");
+
+  function startEdit(next: Editing, name = "") {
+    setEditing(next);
+    setDraftName(name);
+    setFolderError("");
+  }
+
+  function submitFolder(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    const error =
+      editing.mode === "new" ? onCreateFolder?.(draftName) ?? null : onRenameFolder?.(editing.id, draftName) ?? null;
+    if (error) {
+      setFolderError(error);
+      return;
+    }
+    startEdit(null);
+  }
+
+  const folderForm = (label: string) => (
+    <form onSubmit={submitFolder} className="flex flex-col border-l-2 border-accent px-4 py-2">
+      <div className="flex items-center gap-2">
+        <input
+          autoFocus
+          value={draftName}
+          maxLength={60}
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") startEdit(null);
+          }}
+          aria-label={label}
+          placeholder="Folder name"
+          className="h-11 min-w-0 flex-1 border border-line bg-transparent px-2 text-sm md:h-9"
+        />
+        <button type="submit" className="grid size-11 place-items-center md:size-9 hover:text-accent" aria-label={`${label}: save`}>
+          <Check className="size-4" />
+        </button>
+        <button type="button" className="grid size-11 place-items-center md:size-9 hover:text-accent" onClick={() => startEdit(null)} aria-label={`${label}: cancel`}>
+          <X className="size-4" />
+        </button>
+      </div>
+      {folderError ? (
+        <p role="alert" className="mt-1 text-xs text-muted">
+          {folderError}
+        </p>
+      ) : null}
+    </form>
+  );
   const views: { id: ViewId; label: string; count?: number }[] = [
     { id: "mail", label: "Mail" },
     { id: "calendar", label: "Calendar" },
@@ -82,7 +160,7 @@ export function Sidebar({ open, view, box, messages, me = ME, openTasks, onClose
       {view === "mail" ? (
         <nav className="flex flex-col" aria-label="Folders">
           {BOXES.map((item) => {
-            const Icon = ICONS[item.id];
+            const Icon = ICONS[item.id as SystemFolderId | "starred" | "outbox" | "snoozed"];
             const count = item.id === "drafts" ? draftCount(messages) : unreadInBox(messages, item.id);
             const selected = box === item.id;
             return (
@@ -99,6 +177,64 @@ export function Sidebar({ open, view, box, messages, me = ME, openTasks, onClose
               </button>
             );
           })}
+          {folders.map((folder) => {
+            if (editing?.mode === "rename" && editing.id === folder.id) {
+              return <div key={folder.id}>{folderForm(`Rename ${folder.name}`)}</div>;
+            }
+            const count = unreadInBox(messages, folder.id);
+            const selected = box === folder.id;
+            return (
+              <div
+                key={folder.id}
+                className={`group flex h-12 items-center border-l-2 ${selected ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onBox(folder.id)}
+                  aria-current={selected ? "page" : undefined}
+                  className="flex h-12 min-w-0 flex-1 items-center gap-3 px-4 text-left text-sm"
+                >
+                  <Folder className="size-4 shrink-0" />
+                  <span className="flex-1 truncate">{folder.name}</span>
+                  {count > 0 ? <span className="pr-1 font-mono text-xs text-ink">{count}</span> : null}
+                </button>
+                {onRenameFolder ? (
+                  <button
+                    type="button"
+                    className={`grid size-11 place-items-center md:size-9 hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
+                    onClick={() => startEdit({ mode: "rename", id: folder.id }, folder.name)}
+                    aria-label={`Rename ${folder.name}`}
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                ) : null}
+                {onDeleteFolder ? (
+                  <button
+                    type="button"
+                    className={`mr-2 grid size-11 place-items-center md:size-9 hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
+                    onClick={() => onDeleteFolder(folder.id)}
+                    aria-label={`Delete ${folder.name}`}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          {onCreateFolder ? (
+            editing?.mode === "new" ? (
+              folderForm("New folder")
+            ) : (
+              <button
+                type="button"
+                onClick={() => startEdit({ mode: "new" })}
+                className="flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-left text-sm text-muted hover:text-ink"
+              >
+                <FolderPlus className="size-4" />
+                <span className="flex-1">New folder</span>
+              </button>
+            )
+          ) : null}
         </nav>
       ) : (
         <p className="px-4 py-6 text-sm leading-normal text-muted">
