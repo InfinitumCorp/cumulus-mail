@@ -9,6 +9,7 @@ import { cleanDomain } from "@/lib/mail/routing";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
 import type { MailProfile } from "@/lib/mail/snapshot";
+import { billingHubUrl, STORAGE_PLANS } from "@/lib/billing/hub";
 
 function sieveProblem(source: string, folders: CustomFolder[]): string {
   if (!source.trim()) return "";
@@ -219,7 +220,17 @@ export function AccountPanel({
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Plan</dt>
-              <dd>{me.plan} · {quotaLabel}</dd>
+              <dd>
+                {me.plan} · {quotaLabel}
+                <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                  {STORAGE_PLANS.map((plan) => (
+                    <a key={plan.id} className="underline hover:text-ink" href={billingHubUrl("subscribe", { plan: plan.id })}>
+                      {plan.name} · {plan.price}
+                    </a>
+                  ))}
+                  <a className="underline hover:text-ink" href={billingHubUrl("manage")}>Manage subscription</a>
+                </span>
+              </dd>
             </div>
             <div className="border-b border-line py-4">
               <dt className="text-muted">Aliases</dt>
