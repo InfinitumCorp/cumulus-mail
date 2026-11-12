@@ -109,11 +109,21 @@ export function MessageList({
               Empty
             </button>
           ) : null}
+          {showTabs && !picked.length ? (
+            <button
+              type="button"
+              onClick={() => onTab?.(tab === "subscriptions" ? "all" : "subscriptions")}
+              className={`h-11 px-2 text-sm md:h-9 ${tab === "subscriptions" ? "text-accent" : "text-muted hover:text-ink"}`}
+              aria-pressed={tab === "subscriptions"}
+            >
+              Subscriptions
+            </button>
+          ) : null}
           {!picked.length ? (
             <button
               type="button"
               onClick={() => onUnreadOnly(!unreadOnly)}
-              className={`h-9 px-2 text-sm ${unreadOnly ? "text-accent" : "text-muted hover:text-ink"}`}
+              className={`h-11 px-2 text-sm md:h-9 ${unreadOnly ? "text-accent" : "text-muted hover:text-ink"}`}
               aria-pressed={unreadOnly}
             >
               Unread
@@ -132,14 +142,14 @@ export function MessageList({
       </div>
       {showTabs ? (
         <div className="flex items-center gap-1 overflow-x-auto border-b border-line px-2" role="tablist" aria-label="Inbox categories">
-          {([{ id: "all", label: "All" }, ...CATEGORIES, { id: "subscriptions", label: "Subscriptions" }] as { id: InboxTab; label: string }[]).map((item) => (
+          {([{ id: "all", label: "All" }, ...CATEGORIES] as { id: InboxTab; label: string }[]).map((item) => (
             <button
               key={item.id}
               type="button"
               role="tab"
               aria-selected={tab === item.id}
               onClick={() => onTab?.(item.id)}
-              className={`h-10 shrink-0 border-b-2 px-2 text-sm ${tab === item.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+              className={`h-11 shrink-0 border-b-2 px-2 text-sm md:h-10 ${tab === item.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
             >
               {item.label}
             </button>
