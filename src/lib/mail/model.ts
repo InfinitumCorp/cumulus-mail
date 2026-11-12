@@ -122,6 +122,14 @@ export type CalEvent = {
   where: string;
   with: string;
   sort: string;
+  /** RFC 5545 RRULE value, when the event repeats. */
+  rrule?: string;
+  /** The invite's UID, needed to answer it. */
+  uid?: string;
+  /** Organizer address, needed to answer it. */
+  organizer?: string;
+  /** This mailbox's answer. */
+  rsvp?: "accepted" | "tentative" | "declined";
 };
 
 export type ViewId = "mail" | "calendar" | "contacts" | "tasks";

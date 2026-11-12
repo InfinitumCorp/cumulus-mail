@@ -85,6 +85,10 @@ function asEvent(value: unknown): CalEvent | null {
     where: text(row.where, 200),
     with: text(row.with, 200),
     sort: text(row.sort, 40),
+    ...(typeof row.rrule === "string" && row.rrule ? { rrule: row.rrule.slice(0, 300) } : {}),
+    ...(typeof row.uid === "string" && row.uid ? { uid: row.uid.slice(0, 300) } : {}),
+    ...(typeof row.organizer === "string" && validEmail(row.organizer) ? { organizer: row.organizer.toLowerCase().slice(0, 320) } : {}),
+    ...(row.rsvp === "accepted" || row.rsvp === "tentative" || row.rsvp === "declined" ? { rsvp: row.rsvp } : {}),
   };
 }
 

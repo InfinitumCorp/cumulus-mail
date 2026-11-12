@@ -27,7 +27,8 @@ import {
   markThreadUnread,
 } from "@/lib/mail/logic";
 import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
-import { parseInvite } from "@/lib/mail/invite";
+import { buildReply, parseInvite } from "@/lib/mail/invite";
+import { expandEvents, withRsvp } from "@/lib/mail/calendar";
 import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
 import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } from "@/lib/mail/protect";
 import { releaseDue } from "@/lib/mail/schedule";
@@ -546,6 +547,42 @@ export function MailApp() {
     setPicked([]);
   }
 
+  async function answerInvite(answer: "accepted" | "tentative" | "declined") {
+    if (!reading || !settings) return;
+    const invite = parseInvite(reading.body);
+    if (!invite) return;
+    setSettings(recordAudit({ ...settings, events: withRsvp(settings.events, invite, answer) }, `invite.${answer}`, invite.title));
+    const word = answer === "accepted" ? "Accepted" : answer === "tentative" ? "Tentative" : "Declined";
+    if (!invite.organizer || !invite.uid || invite.organizer === me.email.toLowerCase()) {
+      setNotice(`${word}. Saved in your calendar.`);
+      return;
+    }
+    const partstat = answer === "accepted" ? "ACCEPTED" : answer === "tentative" ? "TENTATIVE" : "DECLINED";
+    const id = `m-rsvp-${Date.now().toString(36)}`;
+    const organizer = { name: invite.organizer, email: invite.organizer };
+    saveMessage({
+      id,
+      threadId: reading.threadId,
+      folder: "sent",
+      from: { name: me.name, email: me.email },
+      to: [organizer],
+      cc: [],
+      subject: `${word}: ${invite.title}`,
+      body: `${me.name} ${answer === "tentative" ? "might attend" : answer} “${invite.title}”.\n\n${buildReply(invite, { name: me.name, email: me.email }, partstat)}`,
+      at: new Date().toISOString(),
+      unread: false,
+      starred: false,
+      labels: [],
+      delivery: planDelivery([organizer], { password: false }),
+    });
+    try {
+      await useMail.getState().flush();
+      setNotice(`${word}. Your answer went to ${invite.organizer}${isCumulus(invite.organizer) ? "." : " and waits in the Outbox until outbound SMTP is on."}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not send the answer.");
+    }
+  }
+
   function actOnPicked(kind: "archive" | "trash" | "unread") {
     if (!picked.length) return;
     const count = picked.length;
@@ -761,6 +798,11 @@ export function MailApp() {
                 if (!invite || settings.events.some((event) => event.id === invite.id)) return;
                 setSettings(recordAudit({ ...settings, events: [...settings.events, invite] }, "invite", invite.title));
               }}
+              inviteRsvp={(() => {
+                const invite = reading ? parseInvite(reading.body) : null;
+                return invite ? settings?.events.find((event) => event.id === invite.id)?.rsvp : undefined;
+              })()}
+              onRsvp={(answer) => void answerInvite(answer)}
               onReceipt={(accept) => {
                 if (!reading) return;
                 saveMessage({ ...reading, extra: { ...reading.extra, readReceipt: accept ? "accepted" : "declined" } });
@@ -793,7 +835,7 @@ export function MailApp() {
         ) : null}
         {view === "calendar" ? (
           <CalendarPanel
-            events={[...EVENTS, ...(settings?.events ?? [])].filter(
+            events={expandEvents([...EVENTS, ...(settings?.events ?? [])]).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
           />

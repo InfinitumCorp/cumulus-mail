@@ -46,7 +46,8 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Encrypted contact fields (phone, postal address, OpenPGP key) | added | Sealed with the tenant key. The ciphertext does not contain the phone number. |
 | Calendar list | existing | |
 | Calendar invite view | added | A `VCALENDAR` body can be added to this mailbox’s calendar. |
-| Full calendar (recurrence, RSVP, sharing) | deferred | The calendar page stays a list. Proton Calendar is a separate app. |
+| Calendar recurrence and RSVP | added | Invites with an RRULE (DAILY, WEEKLY, MONTHLY; INTERVAL, COUNT, UNTIL, BYDAY including ordinals like `2TU` or `-1FR`) show the rule, and the calendar list shows the next occurrences up to 60 days ahead. Accept, Maybe and Decline save the answer and send an RFC 5546 iTIP REPLY to the organizer through the normal send path. Internal organizers get it right away; outside ones wait in the Outbox like other outside mail. A REPLY is not shown as a new invite. |
+| Calendar sharing, YEARLY rules, EXDATE | deferred | The calendar page stays a list. Proton Calendar is a separate app. |
 | Search over decrypted mail | existing | Runs in the client after the mailbox is opened. |
 | Server blind index (subject, from, to, snippet equality) | existing | HMAC under the tenant key. |
 | `label:`, `in:`, `is:encrypted` | added | |

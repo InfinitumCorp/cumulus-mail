@@ -45,6 +45,9 @@ type Props = {
   onOpenLink?: (href: string) => void;
   invite?: CalEvent | null;
   onAcceptInvite?: () => void;
+  /** Answer the invite (adds it to the calendar and sends an iTIP REPLY when it has an organizer). */
+  onRsvp?: (answer: "accepted" | "tentative" | "declined") => void;
+  inviteRsvp?: "accepted" | "tentative" | "declined";
   onReceipt?: (accept: boolean) => void;
   onReport?: () => void;
 };
@@ -110,6 +113,8 @@ function Opened({
   onOpenLink,
   invite,
   onAcceptInvite,
+  onRsvp,
+  inviteRsvp,
   onReceipt,
   onReport,
 }: Props & { message: MailMessage }) {
@@ -220,9 +225,26 @@ function Opened({
               <p className="font-mono text-xs uppercase tracking-wide text-accent">Invite</p>
               <p className="mt-2 text-lg tracking-tight">{invite.title}</p>
               <p className="mt-1 text-sm text-muted">{invite.whenLabel}</p>
-              <button type="button" className="mt-3 inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onAcceptInvite}>
-                Add to calendar
-              </button>
+              {onRsvp ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Answer this invite">
+                  {(["accepted", "tentative", "declined"] as const).map((answer) => (
+                    <button
+                      key={answer}
+                      type="button"
+                      aria-pressed={inviteRsvp === answer}
+                      className={`inline-flex h-11 items-center border px-3 text-sm ${inviteRsvp === answer ? "border-accent text-accent" : "border-line hover:border-ink"}`}
+                      onClick={() => onRsvp(answer)}
+                    >
+                      {answer === "accepted" ? "Accept" : answer === "tentative" ? "Maybe" : "Decline"}
+                    </button>
+                  ))}
+                  {!invite.organizer ? <span className="text-xs text-muted">No organizer to answer. It is saved here only.</span> : null}
+                </div>
+              ) : (
+                <button type="button" className="mt-3 inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onAcceptInvite}>
+                  Add to calendar
+                </button>
+              )}
             </div>
           ) : null}
           {message.delivery?.length ? (
