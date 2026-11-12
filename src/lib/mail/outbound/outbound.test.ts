@@ -254,19 +254,37 @@ test("a transient failure retries with backoff, then bounces; a permanent one bo
   assert.deepEqual(bounces.map((row) => [row.message_id, row.status]), [["r-1", "4.4.1"], ["r-2", "5.1.1"]]);
 });
 
-test("mail with attachments is held while SMTP cannot send attachments", async () => {
+test("attachments go out as multipart/mixed and parse back byte for byte", async () => {
   const { db, storageFor } = harness;
   const transport = createMemoryTransport();
   configureOutbound({ transport, dkim: null });
   const ada = profile("ob-att", "att.ob@cumuluscloud.app", "Ada");
   await openMailbox(db, "ob-att", ada);
+  const pdf = new Uint8Array(70_000).map((_, index) => index % 251);
   await writeSnapshot(db, storageFor, "ob-att", snapshot(ada, [
     sent("att-1", ada.email, "bea@example.org", {
-      attachments: [{ name: "a.txt", size: 3, contentType: "text/plain", dataBase64: Buffer.from("abc").toString("base64") }],
+      body: "Two files ✓",
+      attachments: [
+        { name: "report.pdf", size: pdf.byteLength, contentType: "application/pdf", dataBase64: Buffer.from(pdf).toString("base64") },
+        { name: "Résumé \"final\".txt", size: 3, contentType: "text/plain\r\nX-Evil: 1", dataBase64: Buffer.from("abc").toString("base64") },
+      ],
     }),
   ]));
-  assert.equal(transport.sent.length, 0);
-  assert.match((await hopFor("ob-att", "att-1")) ?? "", /attachments/);
+  assert.equal(transport.sent.length, 1);
+  const raw = transport.sent[0]!.raw;
+  assert.match(raw, /\r\nContent-Type: multipart\/mixed; boundary="=_cumulus_/);
+  assert.equal(/\r\nX-Evil:/i.test(raw), false);
+  assert.ok(raw.split("\r\n").every((line) => line.length <= 998));
+  const { parseMime } = await import("../mime.ts");
+  const parsed = parseMime(raw);
+  assert.equal(parsed.text, "Two files ✓");
+  assert.deepEqual(parsed.attachments.map((file) => [file.name, file.contentType, file.bytes.byteLength]), [
+    ["report.pdf", "application/pdf", 70_000],
+    ["R_sum_ _final_.txt", "application/octet-stream", 3],
+  ]);
+  assert.deepEqual([...parsed.attachments[0]!.bytes.slice(0, 5)], [0, 1, 2, 3, 4]);
+  assert.match(raw, /filename\*=UTF-8''R%C3%A9sum%C3%A9%20_final_.txt/);
+  assert.match((await hopFor("ob-att", "att-1")) ?? "", /^Sent by SMTP\./);
 });
 
 test("two runs at the same time send a queued row once; a row stuck mid-send is picked up later", async () => {
