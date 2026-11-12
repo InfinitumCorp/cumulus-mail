@@ -227,9 +227,9 @@ export async function insertMessage(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
        sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-       snippet_enc, headers_enc, extras_enc
+       snippet_enc, headers_enc, extras_enc, due_at
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -250,7 +250,8 @@ export async function insertMessage(
        auth_json = excluded.auth_json,
        snippet_enc = excluded.snippet_enc,
        headers_enc = excluded.headers_enc,
-       extras_enc = excluded.extras_enc`,
+       extras_enc = excluded.extras_enc,
+       due_at = excluded.due_at`,
     [
       tenantId,
       message.id,
@@ -273,6 +274,7 @@ export async function insertMessage(
       sealText(tenantId, snippet),
       headerJson ? sealText(tenantId, headerJson) : null,
       sealExtra(tenantId, message.extra),
+      dueHour(message),
     ],
   );
   await db.query(`delete from cumulus_mail.message_blind where tenant_id = $1 and message_id = $2`, [
@@ -461,6 +463,17 @@ function parseSettings(tenantId: string, stored: string | null): MailSettings {
   } catch {
     return defaultSettings();
   }
+}
+
+/**
+ * The coarse due column (migration 0009): for a draft, its schedule rounded down to the hour, or
+ * 'infinity' when it has none; NULL for every other folder. Only the hour is stored in the clear.
+ */
+export function dueHour(message: Pick<MailMessage, "folder" | "extra">): string | null {
+  if (message.folder !== "drafts") return null;
+  const at = message.extra?.scheduleAt ? Date.parse(message.extra.scheduleAt) : Number.NaN;
+  if (!Number.isFinite(at)) return "infinity";
+  return new Date(Math.floor(at / 3_600_000) * 3_600_000).toISOString();
 }
 
 function sealExtra(tenantId: string, extra: MessageExtra | undefined): string | null {

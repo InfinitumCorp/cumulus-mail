@@ -105,3 +105,62 @@ test("an edit saved after the cron read wins over the release", async () => {
   assert.equal(message?.folder, "drafts");
   assert.equal(message?.extra?.scheduleAt, "2099-01-01T00:00:00.000Z");
 });
+
+test("the scan finds drafts by the coarse due hour: future and unscheduled drafts are not touched", async () => {
+  const { db, storageFor } = harness;
+  const { dueHour } = await import("./records.ts");
+  assert.equal(dueHour({ folder: "drafts", extra: { scheduleAt: "2026-11-12T10:42:07.000Z" } }), "2026-11-12T10:00:00.000Z");
+  assert.equal(dueHour({ folder: "drafts", extra: { pgp: true } }), "infinity");
+  assert.equal(dueHour({ folder: "inbox", extra: { scheduleAt: "2026-11-12T10:42:07.000Z" } }), null);
+
+  const dee = profile("rel-due", "dee.rel@cumuluscloud.app", "Dee");
+  await openMailbox(db, "rel-due", dee);
+  const later = new Date(Date.now() + 5 * 3_600_000).toISOString();
+  await insertMessage(db, "rel-due", draft("due-later", "x@cumuluscloud.app", later), null);
+  await insertMessage(db, "rel-due", { ...draft("due-none", "x@cumuluscloud.app", later), extra: { pgp: true } }, null);
+  const stored = await db.query<{ id: string; due_at: string | Date | null }>(
+    `select id, due_at from cumulus_mail.messages where tenant_id = $1 order by id`,
+    ["rel-due"],
+  );
+  // Drivers return 'infinity' differently (PGLite: an invalid Date; pg: the string or Infinity).
+  const asText = (value: string | Date | null) =>
+    value === null ? null : value instanceof Date ? (Number.isNaN(value.getTime()) ? "infinity" : value.toISOString()) : String(value);
+  const due = Object.fromEntries(stored.map((row) => [row.id, asText(row.due_at)]));
+  assert.equal(due["due-none"], "infinity");
+  assert.equal(new Date(due["due-later"]!).getMinutes(), 0);
+  // Nothing in this mailbox is due, so the job does not even list it.
+  const quiet = await releaseScheduledMail(db, storageFor, Date.now());
+  assert.equal(quiet.released, 0);
+  const listed = await db.query(
+    `select 1 from cumulus_mail.messages where tenant_id = $1 and folder = 'drafts' and due_at <= $2`,
+    ["rel-due", new Date().toISOString()],
+  );
+  assert.equal(listed.length, 0);
+
+  // Inside the due hour it is found and released at the exact time, not before.
+  const exact = Date.parse(later);
+  const folderOf = async () =>
+    (await db.query<{ folder: string }>(`select folder from cumulus_mail.messages where tenant_id = $1 and id = 'due-later'`, ["rel-due"]))[0]?.folder;
+  await releaseScheduledMail(db, storageFor, exact - 60_000);
+  assert.equal(await folderOf(), "drafts");
+  await releaseScheduledMail(db, storageFor, exact + 60_000);
+  assert.equal(await folderOf(), "sent");
+  const after = await db.query<{ folder: string; due_at: unknown }>(
+    `select folder, due_at from cumulus_mail.messages where tenant_id = $1 and id = 'due-later'`,
+    ["rel-due"],
+  );
+  assert.equal(after[0]?.folder, "sent");
+  assert.equal(after[0]?.due_at, null);
+});
+
+test("drafts saved before the due column existed are backfilled once", async () => {
+  const { db, storageFor } = harness;
+  const old = profile("rel-old", "old.rel@cumuluscloud.app", "Old");
+  await openMailbox(db, "rel-old", old);
+  const later = new Date(Date.now() + 3 * 3_600_000).toISOString();
+  await insertMessage(db, "rel-old", draft("old-1", "x@cumuluscloud.app", later), null);
+  await db.query(`update cumulus_mail.messages set due_at = null where tenant_id = $1`, ["rel-old"]);
+  await releaseScheduledMail(db, storageFor, Date.now());
+  const rows = await db.query<{ due_at: unknown }>(`select due_at from cumulus_mail.messages where tenant_id = $1 and id = 'old-1'`, ["rel-old"]);
+  assert.notEqual(rows[0]?.due_at, null);
+});
