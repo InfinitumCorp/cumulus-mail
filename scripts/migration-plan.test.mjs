@@ -68,6 +68,7 @@ test("the auth schema source stays outside the globbed directory", () => {
     { name: "0005_profile_and_routes.sql", path: "0005_profile_and_routes.sql" },
     { name: "0006_parity_settings.sql", path: "0006_parity_settings.sql" },
     { name: "0007_mail_rls.sql", path: "0007_mail_rls.sql" },
+    { name: "0010_plans.sql", path: "0010_plans.sql" },
   ]);
   assert.equal(readdirSync(migrationsDir).includes("0001_auth.sql"), signInOn);
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
