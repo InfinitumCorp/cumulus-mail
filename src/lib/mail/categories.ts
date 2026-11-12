@@ -185,13 +185,85 @@ export function safeUnsubscribeUrl(value: string): URL | null {
 }
 
 /** RFC 8058: POST `List-Unsubscribe=One-Click` as a form body, no cookies, no redirects. */
+/** Resolves a host name to its IP addresses. */
+export type Resolver = (host: string) => Promise<string[]>;
+
+function ipv4Parts(ip: string): number[] | null {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  const nums = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : Number.NaN));
+  return nums.every((n) => n >= 0 && n <= 255) ? nums : null;
+}
+
+function publicIpv4([a, b, c]: number[]): boolean {
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return false; // this-network, private, loopback, multicast/reserved
+  if (a === 100 && b! >= 64 && b! <= 127) return false; // carrier-grade NAT
+  if (a === 169 && b === 254) return false; // link-local, including cloud metadata (169.254.169.254)
+  if (a === 172 && b! >= 16 && b! <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return false; // IETF protocol assignments, TEST-NET-1
+  if (a === 198 && (b === 18 || b === 19)) return false; // benchmarking
+  if (a === 198 && b === 51 && c === 100) return false; // TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return false; // TEST-NET-3
+  return true;
+}
+
+/** True only for globally routable unicast addresses. Anything unparsable counts as not public. */
+export function isPublicAddress(ip: string): boolean {
+  const v4 = ipv4Parts(ip);
+  if (v4) return publicIpv4(v4);
+  const lower = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!lower.includes(":")) return false;
+  // IPv4-mapped / NAT64 forms carry an IPv4 address at the end: judge that address.
+  const tail = /(?:^::ffff:|^64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
+  if (tail) return publicIpv4(ipv4Parts(tail[1]!) ?? [0]);
+  if (lower === "::" || lower === "::1") return false;
+  const first = Number.parseInt(lower.split(":")[0] || "0", 16);
+  if ((first & 0xfe00) === 0xfc00) return false; // unique local fc00::/7
+  if ((first & 0xffc0) === 0xfe80) return false; // link-local fe80::/10
+  if ((first & 0xff00) === 0xff00) return false; // multicast
+  if (lower.startsWith("2001:db8:") || lower.startsWith("2001:0db8:")) return false; // documentation
+  return true;
+}
+
+/** node:dns lookup, or null where the runtime has no DNS module (Workers block private targets themselves). */
+async function systemResolver(host: string): Promise<string[] | null> {
+  let dns: typeof import("node:dns/promises");
+  try {
+    dns = await import("node:dns/promises");
+  } catch {
+    return null;
+  }
+  const answers = await dns.lookup(host, { all: true, verbatim: true });
+  return answers.map((answer) => answer.address);
+}
+
+/**
+ * Refuse a host whose name resolves to a private, loopback, link-local or otherwise non-public
+ * address. The name checks in `safeUnsubscribeUrl` cannot see this: anyone can point a public-looking
+ * name at 169.254.169.254 or 10.0.0.1, and the URL comes from an email anyone can send.
+ */
+export async function assertPublicHost(host: string, resolve: Resolver | null = null): Promise<void> {
+  let addresses: string[] | null;
+  try {
+    addresses = resolve ? await resolve(host) : await systemResolver(host);
+  } catch {
+    throw new Error("That unsubscribe address does not resolve.");
+  }
+  if (addresses === null) return;
+  if (addresses.length === 0) throw new Error("That unsubscribe address does not resolve.");
+  if (!addresses.every(isPublicAddress)) throw new Error("That unsubscribe address points to a private network.");
+}
+
 export async function oneClickUnsubscribe(
   url: string,
   fetcher: typeof fetch = fetch,
   timeoutMs = 10_000,
+  resolve: Resolver | null = null,
 ): Promise<{ ok: boolean; status: number }> {
   const safe = safeUnsubscribeUrl(url);
   if (!safe) throw new Error("That unsubscribe address is not allowed.");
+  await assertPublicHost(safe.hostname, resolve);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

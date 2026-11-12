@@ -131,12 +131,13 @@ test("one-click unsubscribe only POSTs to public https hosts, as RFC 8058 says",
     calls.push({ url, init });
     return new Response(null, { status: 202 });
   }) as unknown as typeof fetch;
-  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u?id=1", fakeFetch), { ok: true, status: 202 });
+  const publicDns = async () => ["93.184.216.34"];
+  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u?id=1", fakeFetch, 10_000, publicDns), { ok: true, status: 202 });
   assert.equal(calls[0]?.init.method, "POST");
   assert.equal(calls[0]?.init.body, "List-Unsubscribe=One-Click");
   assert.equal(calls[0]?.init.redirect, "manual");
   assert.equal(calls[0]?.init.credentials, "omit");
-  await assert.rejects(() => oneClickUnsubscribe("https://127.0.0.1/u", fakeFetch), /not allowed/);
+  await assert.rejects(() => oneClickUnsubscribe("https://127.0.0.1/u", fakeFetch, 10_000, publicDns), /not allowed/);
   assert.equal(calls.length, 1);
 });
 
@@ -178,14 +179,42 @@ test("the server unsubscribes with the URL from the stored message, not the call
     return new Response(null, { status: 200 });
   }) as unknown as typeof fetch;
 
-  assert.deepEqual(await unsubscribeMessage(db, "cat-ada", "list-1", fakeFetch), { method: "one-click", ok: true, status: 200 });
+  const publicDns = async () => ["93.184.216.34"];
+  assert.deepEqual(await unsubscribeMessage(db, "cat-ada", "list-1", fakeFetch, publicDns), { method: "one-click", ok: true, status: 200 });
   assert.deepEqual(urls, ["https://paper.example/u/abc"]);
   const settings = await readSettings(db, "cat-ada");
   assert.deepEqual(settings.unsubscribed.map((item) => [item.key, item.method]), [["daily.paper.example", "one-click"]]);
 
-  const mailto = await unsubscribeMessage(db, "cat-ada", "list-2", fakeFetch);
+  const mailto = await unsubscribeMessage(db, "cat-ada", "list-2", fakeFetch, publicDns);
   assert.equal(mailto.method, "mailto");
-  assert.deepEqual(await unsubscribeMessage(db, "cat-ada", "plain-1", fakeFetch), { method: "none" });
-  await assert.rejects(() => unsubscribeMessage(db, "cat-ada", "missing", fakeFetch), /gone/);
+  assert.deepEqual(await unsubscribeMessage(db, "cat-ada", "plain-1", fakeFetch, publicDns), { method: "none" });
+  await assert.rejects(() => unsubscribeMessage(db, "cat-ada", "missing", fakeFetch, publicDns), /gone/);
   assert.equal(urls.length, 1);
+});
+
+test("a public-looking name that resolves to a private or metadata address is refused before any request", async () => {
+  const { assertPublicHost, isPublicAddress } = await import("./categories.ts");
+  for (const ip of ["10.1.2.3", "127.0.0.1", "169.254.169.254", "172.16.0.1", "172.31.255.255", "192.168.1.1", "100.64.0.1", "0.0.0.0", "224.0.0.1", "198.18.0.1", "192.0.2.5", "::1", "::", "fe80::1", "fd00::1", "fc00::1", "ff02::1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "64:ff9b::10.0.0.1", "2001:db8::1", "not-an-ip"]) {
+    assert.equal(isPublicAddress(ip), false, ip);
+  }
+  for (const ip of ["93.184.216.34", "1.1.1.1", "172.32.0.1", "100.128.0.1", "2606:4700::1111", "::ffff:8.8.8.8"]) {
+    assert.equal(isPublicAddress(ip), true, ip);
+  }
+  const calls: string[] = [];
+  const fetcher = (async (url: string) => {
+    calls.push(url);
+    return new Response(null, { status: 200 });
+  }) as unknown as typeof fetch;
+  const rebind = async () => ["93.184.216.34", "169.254.169.254"];
+  await assert.rejects(() => oneClickUnsubscribe("https://unsub.attacker.example/u", fetcher, 10_000, rebind), /private network/);
+  await assert.rejects(() => oneClickUnsubscribe("https://unsub.attacker.example/u", fetcher, 10_000, async () => []), /does not resolve/);
+  await assert.rejects(
+    () =>
+      oneClickUnsubscribe("https://unsub.attacker.example/u", fetcher, 10_000, async () => {
+        throw new Error("ENOTFOUND");
+      }),
+    /does not resolve/,
+  );
+  assert.deepEqual(calls, []);
+  await assertPublicHost("ok.example", async () => ["1.1.1.1"]);
 });
