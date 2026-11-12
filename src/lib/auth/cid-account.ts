@@ -14,7 +14,7 @@
  * `{ status: "signed-out" }`, and the UI links to the account page instead.
  */
 
-/** Passkeys, the authenticator app, recovery codes and every session live here. */
+/** The password, PIN, authenticator app, recovery codes and every session live here. */
 export const CUMULUS_ID_ACCOUNT_URL = "https://id.cumuluscloud.app/account";
 
 export type CidSession = {

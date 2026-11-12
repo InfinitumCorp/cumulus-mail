@@ -3,7 +3,7 @@
  *
  * - `account.created`: the person's mailbox exists (and its address receives mail) the moment the
  *   Cumulus://ID is created, before they ever open Mail.
- * - Security events (a new sign-in, a passkey added or removed, the authenticator app turned on or
+ * - Security events (a new sign-in, a password or PIN changed, the authenticator app turned on or
  *   off, a linked account, a mail key published, everyone signed out): a short notice lands in the
  *   person's inbox from Cumulus://ID, so a change they didn't make is noticed.
  *
