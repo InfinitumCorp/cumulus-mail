@@ -5,6 +5,7 @@
  * Output:
  *   dist/inbound/index.js       main module (ESM)
  *   dist/inbound/metadata.json  multipart `metadata` for the Workers API
+ *   dist/inbound/schedules.json body for `PUT .../workers/scripts/cumulus-mail-inbound/schedules`
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -49,6 +50,16 @@ export function inboundScriptMetadata(wrangler) {
   };
 }
 
+/**
+ * Cron triggers from `triggers.crons`. They are not part of the script upload;
+ * the Workers API sets them with a separate schedules call.
+ * @param {Record<string, any>} wrangler
+ */
+export function inboundSchedules(wrangler) {
+  const crons = wrangler.triggers?.crons ?? [];
+  return crons.filter((cron) => typeof cron === "string" && cron.trim()).map((cron) => ({ cron }));
+}
+
 export async function buildInbound(root = projectRoot()) {
   const wrangler = readWorkerConfig("workers/email/wrangler.jsonc");
   const metadata = inboundScriptMetadata(wrangler);
@@ -83,13 +94,15 @@ export async function buildInbound(root = projectRoot()) {
     await bundle.close();
   }
   await writeFile(join(outDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
-  return { outDir, metadata };
+  const schedules = inboundSchedules(wrangler);
+  await writeFile(join(outDir, "schedules.json"), `${JSON.stringify(schedules, null, 2)}\n`);
+  return { outDir, metadata, schedules };
 }
 
 const invoked = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invoked === fileURLToPath(import.meta.url)) {
-  const { outDir, metadata } = await buildInbound();
+  const { outDir, metadata, schedules } = await buildInbound();
   console.log(
-    `[inbound] ${metadata.main_module} compatibility_date=${metadata.compatibility_date} flags=${metadata.compatibility_flags.join(",")} bindings=${metadata.bindings.length} -> ${outDir}`,
+    `[inbound] ${metadata.main_module} compatibility_date=${metadata.compatibility_date} flags=${metadata.compatibility_flags.join(",")} bindings=${metadata.bindings.length} crons=${schedules.length} -> ${outDir}`,
   );
 }
