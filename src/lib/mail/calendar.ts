@@ -21,8 +21,10 @@ export function expandEvents(events: CalEvent[], now = new Date(), horizonDays =
       rows.push(event);
       continue;
     }
+    // EXDATE is applied after COUNT, as RFC 5545 says: an excluded date still uses up a count.
+    const skipped = new Set((event.exdates ?? []).map((iso) => Date.parse(iso)));
     const upcoming = occurrences(event.sort, rule, { before })
-      .filter((iso) => Date.parse(iso) >= from)
+      .filter((iso) => Date.parse(iso) >= from && !skipped.has(Date.parse(iso)))
       .slice(0, perEvent);
     const repeat = describeRule(rule);
     for (const iso of upcoming) {

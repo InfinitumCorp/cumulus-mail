@@ -131,6 +131,8 @@ export type CalEvent = {
   sort: string;
   /** RFC 5545 RRULE value, when the event repeats. */
   rrule?: string;
+  /** Occurrences removed from the series (EXDATE), as ISO instants. */
+  exdates?: string[];
   /** The invite's UID, needed to answer it. */
   uid?: string;
   /** Organizer address, needed to answer it. */
