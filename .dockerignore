@@ -1,0 +1,11 @@
+node_modules
+.output
+.vercel
+dist
+.data
+.git
+e2e/screenshots
+**/*.log
+.env
+.env.*
+ru.env

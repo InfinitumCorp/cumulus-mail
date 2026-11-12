@@ -195,6 +195,12 @@ export default defineConfig(({ command, isPreview }) => ({
             ...(nitroPreset() === "cloudflare-module"
               ? { cloudflare: workersApiCloudflareOptions() }
               : {}),
+            // Node server (Russia copy): keep PGLite out of the bundle so its
+            // wasm/data files load from node_modules (the local-mode fallback
+            // when DATABASE_URL is unset; production uses Postgres).
+            ...(nitroPreset() === "node-server"
+              ? { rollupConfig: { external: [/^@electric-sql\/pglite/] } }
+              : {}),
           }),
         ]
       : []),

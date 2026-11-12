@@ -15,6 +15,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
+    "build:node": "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build",
     "build:dev": "node scripts/with-app-env.mjs vite build --mode development",
     "preview": "node scripts/with-app-env.mjs vite preview",
     "preview:restart": "node scripts/preview.mjs restart",
