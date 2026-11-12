@@ -10,6 +10,9 @@ import { signMessage } from "./dkim.ts";
 
 export const QUEUED = "Queued for delivery by SMTP.";
 
+/** A row left in 'sending' this long (the sender crashed) is picked up again. */
+export const STALE_SENDING_MS = 10 * 60_000;
+
 export type QueuePolicy = {
   /** Attempts before a transient failure becomes a bounce. */
   maxAttempts: number;
@@ -86,12 +89,22 @@ export async function processOutboundQueue(
   const now = options.now ?? new Date();
   const params: unknown[] = [now.toISOString(), policy.limit];
   if (options.tenantId) params.push(options.tenantId);
+  // Claim rows atomically (status -> 'sending') so a save and the scheduled job running at the same
+  // time cannot both send the same row. A row stuck in 'sending' (a crash mid-send) is reclaimed after
+  // STALE_SENDING_MS; that can resend once, which beats losing the message.
   const rows = await db.query<Row>(
-    `select tenant_id, id, message_id, recipient, mail_from, raw, attempts
-     from cumulus_mail.outbound_queue
-     where status = 'queued' and next_attempt_at <= $1 ${options.tenantId ? "and tenant_id = $3" : ""}
-     order by next_attempt_at
-     limit $2`,
+    `update cumulus_mail.outbound_queue q
+     set status = 'sending', updated_at = $1
+     where (q.tenant_id, q.id) in (
+       select tenant_id, id from cumulus_mail.outbound_queue
+       where ((status = 'queued' and next_attempt_at <= $1)
+              or (status = 'sending' and updated_at <= $1::timestamptz - interval '${STALE_SENDING_MS / 1000} seconds'))
+         ${options.tenantId ? "and tenant_id = $3" : ""}
+       order by next_attempt_at
+       limit $2
+       for update skip locked
+     )
+     returning q.tenant_id, q.id, q.message_id, q.recipient, q.mail_from, q.raw, q.attempts`,
     params,
   );
   const report: QueueReport = { sent: 0, retried: 0, bounced: 0 };
@@ -127,7 +140,7 @@ export async function processOutboundQueue(
     const next = new Date(now.getTime() + backoffMs(attempts, policy));
     await db.query(
       `update cumulus_mail.outbound_queue
-       set attempts = $3, next_attempt_at = $4, last_error = $5, updated_at = now()
+       set status = 'queued', attempts = $3, next_attempt_at = $4, last_error = $5, updated_at = now()
        where tenant_id = $1 and id = $2`,
       [tenantId, row.id, attempts, next.toISOString(), failure.detail.slice(0, 500)],
     );
