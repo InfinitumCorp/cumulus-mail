@@ -68,9 +68,15 @@ test("the instance is rebuilt only when a setting it depends on changes", () => 
 test("server.ts builds Better Auth lazily: no secret, database or provider is read at module load", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile(new URL("./server.ts", import.meta.url), "utf8");
-  const moduleLevel = source.slice(0, source.indexOf("function buildAuth()"));
+  const moduleLevel = source.slice(0, source.indexOf("function buildAuth("));
   assert.equal(/betterAuth\(\{/.test(moduleLevel), false, "betterAuth({...}) must be inside buildAuth()");
   assert.equal(/BETTER_AUTH_SECRET|DATABASE_URL|cidConfig\(\)/.test(moduleLevel.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "")), false);
-  assert.match(source, /export function getAuth\(\)[\s\S]*applyWorkerBindings\(\)/);
+  assert.match(source, /export function getAuth\([^)]*\)[^{]*\{[\s\S]*?applyWorkerBindings\(\)/);
   assert.match(source, /secret: resolveAuthSecret\(process\.env, previewAuthSecret\)/);
+});
+
+test("the RU issuer and region settings rebuild the instance when they change", () => {
+  const base = authSettingsKey({ BETTER_AUTH_SECRET: "s" });
+  assert.notEqual(authSettingsKey({ BETTER_AUTH_SECRET: "s", CID_ISSUER_RU: "https://ru.id.example" }), base);
+  assert.notEqual(authSettingsKey({ BETTER_AUTH_SECRET: "s", MAIL_REGION: "ru" }), base);
 });

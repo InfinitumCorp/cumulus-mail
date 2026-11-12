@@ -31,7 +31,8 @@ import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
-import { cidConfig, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl } from "./cumulus-id.ts";
+import { cidConfig, cidConfigForRegion, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl } from "./cumulus-id.ts";
+import { regionFor, type Region } from "../region.ts";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
 import { SIGN_IN_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
@@ -70,13 +71,13 @@ export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
  * module load: on Cloudflare Workers the settings are bindings that only reach `process.env` once a
  * request has started, so reading them at load could miss `BETTER_AUTH_SECRET` and `DATABASE_URL`.
  */
-function buildAuth() {
+function buildAuth(region: Region) {
   // Explicit off-switch. The deployer sets `VITE_AUTH_ENABLED=true` when it
   // provisions auth; set it to "false" to force auth off everywhere (dev user).
   const authDisabled = env("VITE_AUTH_ENABLED") === "false";
 
   // Cumulus ID: issuer and public client id. Neither is a secret.
-  const cid = cidConfig();
+  const cid = cidConfigForRegion(region);
 
   /** True when Cumulus ID sign-in is active (real auth is enforced). */
   const authConfigured = !authDisabled && Boolean(cid.clientId);
@@ -236,24 +237,36 @@ function buildAuth() {
 }
 
 type AuthInstance = ReturnType<typeof buildAuth>;
-let built: { key: string; auth: AuthInstance } | undefined;
+const built = new Map<string, AuthInstance>();
 
 /**
- * The Better Auth instance for the current settings: Worker bindings are copied into `process.env`
- * first, then one instance is kept per settings value (normally one per process or isolate). On Node
- * (Vercel, local dev) there are no bindings, so this builds once on first use with the same settings
- * as before.
+ * The Better Auth instance for the current settings and a region: Worker bindings are copied into
+ * `process.env` first, then one instance is kept per settings value and region (normally at most two
+ * per process or isolate). The region decides the Cumulus ID issuer: ru.* hosts sign in through the
+ * Russia mirror. Sessions live in the shared database, so either instance verifies any session.
  */
-export function getAuth(): AuthInstance {
+export function getAuth(region: Region = regionFor(null)): AuthInstance {
   applyWorkerBindings();
-  const key = authSettingsKey(process.env);
-  if (!built || built.key !== key) built = { key, auth: buildAuth() };
-  return built.auth;
+  const key = `${region}|${authSettingsKey(process.env)}`;
+  let instance = built.get(key);
+  if (!instance) {
+    if (built.size >= 8) built.clear();
+    instance = buildAuth(region);
+    built.set(key, instance);
+  }
+  return instance;
+}
+
+/** The instance for the host a request came to (sign-in, callbacks, the popup). */
+export function authForRequest(request: Request): AuthInstance {
+  applyWorkerBindings();
+  return getAuth(regionFor(request.headers.get("host")));
 }
 
 /**
  * `auth.handler(...)`, `auth.api.getSession(...)` and the rest, resolved on first use rather than at
- * import, so existing call sites keep working.
+ * import, so existing call sites keep working. It uses this deployment's default region
+ * (`MAIL_REGION`, else us); request handlers that start a sign-in use `authForRequest` instead.
  */
 export const auth: AuthInstance = new Proxy({} as AuthInstance, {
   get: (_target, property) => Reflect.get(getAuth() as object, property),
