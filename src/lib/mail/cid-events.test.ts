@@ -76,7 +76,7 @@ test("security events land once in the inbox; none without a mailbox", async () 
 });
 
 test("every forwarded security event has a notice", () => {
-  for (const type of ["session.created", "session.revoked_all", "password.changed", "pin.set", "pin.changed", "passkey.added", "passkey.removed", "mfa.enabled", "mfa.disabled", "identity.linked", "identity.unlinked", "mail_key.published", "mail_key.revoked"]) {
+  for (const type of ["session.created", "session.revoked_all", "password.changed", "pin.set", "pin.changed", "signin.paused", "passkey.added", "passkey.removed", "mfa.enabled", "mfa.disabled", "identity.linked", "identity.unlinked", "mail_key.published", "mail_key.revoked"]) {
     assert.ok(noticeFor({ cid: CID, type, detail: {}, at }), type);
   }
 });
@@ -88,4 +88,10 @@ test("account.deleted stops routing the address; stored mail stays", async () =>
   assert.equal(await handleCidEvent(harness.db, { cid: CID, type: "account.deleted", detail: { username: "robin" }, at }, "cumuluscloud.app"), "unrouted");
   assert.equal(await findTenantByAddress(harness.db, "robin@cumuluscloud.app"), null);
   assert.equal((await readSnapshot(harness.db, tenant)).messages.length, before);
+});
+
+test("a paused PIN sign-in tells the owner their password is known", () => {
+  const n = noticeFor({ cid: "cid_x", type: "signin.paused", detail: { path: "pin", failures: 10 }, at: "2026-11-12T00:00:00.000Z" })!;
+  assert.match(n.body, /10 wrong PINs/);
+  assert.match(n.body, /change it now/);
 });

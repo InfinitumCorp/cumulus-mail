@@ -85,6 +85,13 @@ export function noticeFor(e: CidEvent): { subject: string; body: string } | null
       return { subject: "Your Cumulus://ID password was changed", body: `Your password was changed at ${when}.\n\n${notYou}` };
     case "pin.set":
       return { subject: "A PIN was set on your Cumulus://ID", body: `A 4-digit PIN was set at ${when}. Every sign-in now asks for it after your password.\n\n${notYou}` };
+    case "signin.paused": {
+      const what = d.path === "pin" ? "wrong PINs" : d.path === "password" ? "wrong passwords" : d.path === "recovery" ? "wrong recovery codes" : "wrong codes";
+      return {
+        subject: "Sign-in to your Cumulus://ID was paused",
+        body: `Someone entered ${s(d.failures) || "too many"} ${what} for your Cumulus://ID, so that way of signing in is paused for 15 minutes (since ${when}).${d.path === "pin" ? " They had your password: change it now." : ""}\n\n${notYou}`,
+      };
+    }
     case "pin.changed":
       return { subject: "Your Cumulus://ID PIN was changed", body: `Your 4-digit PIN was changed at ${when}.\n\n${notYou}` };
     case "passkey.added":
