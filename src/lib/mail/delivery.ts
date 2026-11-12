@@ -15,6 +15,7 @@ import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
 import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
+import { limitsFromEnv, sendDecision } from "./outbound/limits.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
 
@@ -175,8 +176,17 @@ export async function deliverMessage(
           });
           continue;
         }
-        await enqueueOutbound(db, senderTenant, { messageId: message.id, from: from.email, recipient: person.email, raw });
-        hops.push({ email: person.email, status: "outbound", detail: QUEUED });
+        const decision = await sendDecision(db, senderTenant, limitsFromEnv());
+        if (decision.action === "hold") {
+          hops.push({ email: person.email, status: "outbound", detail: decision.reason });
+          continue;
+        }
+        await enqueueOutbound(db, senderTenant, { messageId: message.id, from: from.email, recipient: person.email, raw }, decision.at);
+        hops.push({
+          email: person.email,
+          status: "outbound",
+          detail: decision.action === "later" ? `${QUEUED} Hourly sending limit reached; it goes out after ${decision.at.toISOString()}.` : QUEUED,
+        });
       } else {
         hops.push({ email: person.email, status: "outbound", detail: HELD });
       }

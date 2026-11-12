@@ -20,6 +20,8 @@ runs the app (and, for retries, on the worker that runs the scheduled job).
 | `MAIL_DKIM_SELECTOR` | no | Turns on DKIM signing. `d=` is the sender's domain. |
 | `MAIL_DKIM_KEY_PATH` | with selector (Node) | Path to the PEM private key. |
 | `MAIL_DKIM_PRIVATE_KEY` | with selector (Workers) | **Secret.** PEM text, for hosts without a file system. `\n` escapes are accepted. |
+| `MAIL_OUTBOUND_HOURLY_LIMIT` | no | Outside recipients per mailbox per hour, default 100. Over it, mail is still queued but goes out when the hour frees up. |
+| `MAIL_OUTBOUND_DAILY_LIMIT` | no | Outside recipients per mailbox per 24 hours, default 500. Over it, mail is held (not queued) and its delivery line says so. |
 | `MAIL_OUTBOUND_DEV` | no | `memory`: accept every message in memory and never send. For local development only. |
 
 ## DKIM
