@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { INBOUND_MAIN_MODULE, buildInbound, inboundScriptMetadata } from "./build-inbound.mjs";
+import { INBOUND_MAIN_MODULE, buildInbound, inboundSchedules, inboundScriptMetadata } from "./build-inbound.mjs";
 import { projectRoot, readWorkerConfig } from "./nitro-preset.mjs";
 
 test("inbound upload metadata matches the worker config and carries no secrets", () => {
@@ -35,14 +35,22 @@ test("inbound upload metadata matches the worker config and carries no secrets",
   assert.equal(encoded.includes("routes"), false);
 });
 
+test("the inbound worker runs the scheduled-send cron every minute", () => {
+  const wrangler = readWorkerConfig("workers/email/wrangler.jsonc");
+  assert.deepEqual(inboundSchedules(wrangler), [{ cron: "* * * * *" }]);
+  assert.deepEqual(inboundSchedules({}), []);
+});
+
 test("build:inbound writes one ESM module and the upload metadata", async () => {
-  const { outDir, metadata } = await buildInbound();
+  const { outDir, metadata, schedules } = await buildInbound();
   const source = await readFile(join(outDir, INBOUND_MAIN_MODULE), "utf8");
   const written = JSON.parse(await readFile(join(outDir, "metadata.json"), "utf8"));
   assert.deepEqual(written, metadata);
-  assert.deepEqual((await readdir(outDir)).sort(), ["index.js", "metadata.json"]);
+  assert.deepEqual((await readdir(outDir)).sort(), ["index.js", "metadata.json", "schedules.json"]);
+  assert.deepEqual(JSON.parse(await readFile(join(outDir, "schedules.json"), "utf8")), schedules);
   assert.match(source, /export\s*\{[^}]*\bas default\b/);
   assert.match(source, /\bemail\b/);
+  assert.match(source, /\bscheduled\b/);
   assert.equal(source.includes("send_email"), false);
   assert.equal(join(projectRoot(), "dist/inbound"), outDir);
 });

@@ -17,6 +17,9 @@
   "compatibility_date": "2026-11-10",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  // Server-side scheduled send: release due drafts and undo holds every minute,
+  // even when no tab is open. See src/lib/mail/release.ts.
+  "triggers": { "crons": ["* * * * *"] },
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },
