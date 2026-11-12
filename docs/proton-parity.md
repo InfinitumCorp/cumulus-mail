@@ -79,5 +79,5 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Installable PWA | existing | `/__grok/manifest.webmanifest` and the install page. |
 | Offline mailbox | deferred | No service worker caches messages. Offline mail needs a client-held key. |
 | Inbox categories and subscription manager | deferred | Those are separate inbox layouts. |
-| External SMTP to the public internet | deferred | Outbound mail stays in the outbox. Password-protected links are the external path. |
+| External SMTP to the public internet | added (off by default) | A provider-neutral transport, an env-configured SMTP client (STARTTLS or TLS, AUTH PLAIN), DKIM `rsa-sha256` relaxed/relaxed, and a queue with backoff whose bounces go through the DSN code and suppression list. With no `MAIL_SMTP_HOST`, mail stays held in the outbox as before. Attachments and password-protected mail are still held. Setup: `docs/deploy/outbound-smtp.md`. Nothing is deployed or configured by this repo. |
 | Native desktop and mobile apps | deferred | This repo is the web client. |

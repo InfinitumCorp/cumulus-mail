@@ -6,6 +6,7 @@ const TABLES = [
   "mailboxes",
   "aliases",
   "messages",
+  "outbound_queue",
   "attachments",
   "contacts",
   "tasks",
