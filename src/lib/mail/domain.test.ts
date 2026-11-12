@@ -35,3 +35,9 @@ test("MAIL_DOMAIN and MAIL_APP_HOST override the defaults", () => {
   assert.equal(isCumulus("a@example.test"), true);
   assert.equal(isCumulus("a@cumuluscloud.app"), false);
 });
+
+test("newAlias builds word.word.NNNN on the given domain", async () => {
+  const { newAlias } = await import("./alias.ts");
+  assert.equal(newAlias(() => 0, "example.test"), "north.north.1000@example.test");
+  assert.match(newAlias(Math.random, "cumuluscloud.app"), /^[a-z]+\.[a-z]+\.\d{4}@cumuluscloud\.app$/);
+});

@@ -1,5 +1,6 @@
 import { Check, Plus, X } from "lucide-react";
 import { mailDomain } from "@/lib/mail/domain";
+import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
 import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
@@ -145,15 +146,6 @@ export function TasksPanel({ tasks, onToggle }: { tasks: ArchitectTask[]; onTogg
       </div>
     </div>
   );
-}
-
-const ALIAS_WORDS = ["north", "quiet", "glass", "harbor", "lumen", "cedar", "field", "orbit", "paper", "signal"];
-
-export function newAlias(): string {
-  const a = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "north";
-  const b = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "quiet";
-  const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}.${b}.${n}@${mailDomain()}`;
 }
 
 export function AccountPanel({
