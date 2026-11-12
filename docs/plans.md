@@ -123,12 +123,29 @@ Server functions (in `src/lib/mail/api.ts`, same `authMiddleware` pattern as the
    SMTP limits are defined but not enforced yet.)*
 3. Real storage accounting (running total, backfill script). Display it; don't enforce yet.
 4. Stripe in **test mode**: products and prices (made by a script from the §2 table), Checkout, Portal, and the
-   webhook with signature verification, idempotency and tests using Stripe's fixture events.
+   webhook with signature verification, idempotency and tests using Stripe's fixture events. *(Code done:
+   `src/lib/mail/billing.ts`, `src/routes/api/billing/webhook.ts`, `startCheckout` / `openBillingPortal` in
+   `api.ts`. No SDK; plain REST and an HMAC check. Products and prices are made by the owner in the Stripe
+   dashboard with the lookup keys `plus_monthly`, `plus_yearly`, `pro_monthly`, `pro_yearly`,
+   `business_monthly`, `business_yearly`, since prices are not set yet.)*
 5. Account panel: plan name, usage against limits, Upgrade (Checkout) and Manage billing (Portal) buttons.
-   This is new UI in the account dialog; the shell is unchanged.
+   This is new UI in the account dialog; the shell is unchanged. *(Upgrade and Manage billing done; they
+   appear only when `STRIPE_SECRET_KEY` is set. Usage display waits on step 3.)*
 6. Decide grandfathering: existing mailboxes either stay on Plus limits for free (`plan_id = 'plus'`,
    no subscription) or are told N days ahead and moved to Free. **Owner decision.**
 7. Switch new sign-ups to Free, turn on enforcement (§4), then go live in Stripe.
+
+### Turning billing on (owner)
+
+1. In Stripe (test mode first), create the Plus, Pro and Business products and a monthly and yearly price for
+   each, with the lookup keys above. Turn on the Customer Portal.
+2. Add a webhook endpoint `<app origin>/api/billing/webhook` for `checkout.session.completed`,
+   `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted` and
+   `invoice.payment_failed`.
+3. Put `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the platform secret store. Optional:
+   `BILLING_RETURN_URL` (defaults to `BETTER_AUTH_URL`, then `https://<MAIL_APP_HOST>/`).
+
+Without `STRIPE_SECRET_KEY` the billing buttons stay hidden and the webhook answers 503.
 
 ## 7. Open questions for the owner
 

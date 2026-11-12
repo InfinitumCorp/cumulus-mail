@@ -190,3 +190,32 @@ export const burnProtectedLink = createServerFn({ method: "POST" })
     const { burnProtectedForToken } = await import("./mailbox.server");
     return burnProtectedForToken(data.token);
   });
+
+/** Stripe Checkout for a paid plan, by price lookup key (`plus_monthly`, ...). Returns the URL to open. */
+export const startCheckout = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const lookupKey = (input as { lookupKey?: unknown } | null)?.lookupKey;
+    if (typeof lookupKey !== "string") throw new Error("Choose a plan");
+    return { lookupKey };
+  })
+  .handler(async ({ context, data }) => {
+    const { startCheckoutForSession } = await import("./mailbox.server");
+    return startCheckoutForSession(context.userId, data.lookupKey, context.bearerToken);
+  });
+
+/** Stripe Customer Portal for this mailbox (change plan, card, cancel, invoices). */
+export const openBillingPortal = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { openBillingPortalForSession } = await import("./mailbox.server");
+    return openBillingPortalForSession(context.userId, context.bearerToken);
+  });
+
+/** Whether Stripe is configured, so the account dialog shows billing controls only when they work. */
+export const getBillingStatus = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const { stripeConfig } = await import("./billing.ts");
+    return { enabled: stripeConfig() !== null };
+  });
