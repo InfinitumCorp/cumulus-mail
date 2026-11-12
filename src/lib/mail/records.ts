@@ -10,7 +10,7 @@ import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } fr
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
-import { limitsFor } from "./plans.ts";
+import { limitsFor, planLabel } from "./plans.ts";
 
 type MessageRow = {
   id: string;
@@ -185,8 +185,8 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       name: openText(tenantId, box.display_name),
       email: openText(tenantId, box.address),
       cid: box.cid,
-      plan: box.plan,
-      quotaGb: Number(box.quota_gb),
+      plan: planLabel(box.plan_id, box.plan_status),
+      quotaGb: limitsFor(box.plan_id, box.plan_status).quotaGb,
       limits: limitsFor(box.plan_id, box.plan_status),
       usedBytes: await storageUsedBytes(db, tenantId),
     },
@@ -477,8 +477,8 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
     name: openText(tenantId, row.display_name),
     email: openText(tenantId, row.address),
     cid: row.cid,
-    plan: row.plan,
-    quotaGb: Number(row.quota_gb),
+    plan: planLabel(row.plan_id, row.plan_status),
+    quotaGb: limitsFor(row.plan_id, row.plan_status).quotaGb,
     limits: limitsFor(row.plan_id, row.plan_status),
   };
 }

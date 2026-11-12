@@ -1046,6 +1046,7 @@ export function MailApp() {
           me={me}
           aliases={aliases}
           quotaLabel={quota(messages, me.quotaGb, me.usedBytes).label}
+          usage={{ folders: (settings?.folders ?? []).length, messages: messages.length }}
           signature={signature}
           rules={rules}
           onClose={() => setAccountOpen(false)}
