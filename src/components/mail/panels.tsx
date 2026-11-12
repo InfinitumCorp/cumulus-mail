@@ -387,8 +387,8 @@ export function AccountPanel({
                     </button>
                   </div>
                 ))}
-                {settings.domains.length >= MAX_DOMAINS ? (
-                  <p className="text-sm text-muted">You can add up to {MAX_DOMAINS} custom domains. Remove one to add another.</p>
+                {settings.domains.length >= (me.limits?.domains ?? MAX_DOMAINS) ? (
+                  <p className="text-sm text-muted">You can add up to {me.limits?.domains ?? MAX_DOMAINS} custom domains. Remove one to add another.</p>
                 ) : (
                 <form
                   className="flex gap-2"
