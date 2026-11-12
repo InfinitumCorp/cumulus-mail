@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList } from "@/lib/mail/api";
+import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
@@ -34,10 +35,10 @@ import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } 
 import { releaseDue } from "@/lib/mail/schedule";
 import { assessPhishing, classifyLink, extractLinks, stripRemoteImages } from "@/lib/mail/safety";
 import type { MailboxBackup } from "@/lib/mail/backup";
-import { defaultSettings, recordAudit } from "@/lib/mail/settings";
+import { defaultSettings, noteUnsubscribed, recordAudit } from "@/lib/mail/settings";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
-import { MessageList } from "./message-list";
+import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
@@ -114,6 +115,9 @@ export function MailApp() {
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
   const [keyError, setKeyError] = useState("");
   const [domainNote, setDomainNote] = useState("");
+  const [inboxTab, setInboxTab] = useState<InboxTab>("all");
+  const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
+  const [subscriptionNote, setSubscriptionNote] = useState("");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -205,7 +209,12 @@ export function MailApp() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const rows = listThreads(messages, box, query, unreadOnly);
+  const allRows = listThreads(messages, box, query, unreadOnly);
+  const rows =
+    box === "inbox" && inboxTab !== "all" && inboxTab !== "subscriptions"
+      ? allRows.filter((row) => categorize(row) === inboxTab)
+      : allRows;
+  const subscriptionRows = box === "inbox" && inboxTab === "subscriptions" ? listSubscriptions(messages, me.email) : [];
   const selected = messages.find((message) => message.id === selectedId) ?? null;
   const reading = selected && selected.folder !== "drafts" ? selected : null;
   const thread = visibleThread(messages, reading);
@@ -596,6 +605,60 @@ export function MailApp() {
     setNotice(`Folder “${folder.name}” deleted.`);
   }
 
+  async function unsubscribe(item: Subscription) {
+    if (!item.option) return;
+    setUnsubscribing(item.key);
+    setSubscriptionNote("");
+    const done = (method: "one-click" | "mailto" | "link", note: string) => {
+      const current = useMail.getState().settings ?? defaultSettings();
+      setSettings(recordAudit(noteUnsubscribed(current, item.key, method), "unsubscribe", item.email));
+      setSubscriptionNote(note);
+    };
+    try {
+      if (item.option.kind === "one-click") {
+        const result = await unsubscribeList({ data: { messageId: item.messageId } });
+        if (result.method === "one-click" && result.ok) {
+          done("one-click", `Unsubscribed from ${item.name}.`);
+        } else {
+          setSubscriptionNote(
+            result.method === "one-click"
+              ? `${item.name} answered ${result.status}. Try again later or use the link in one of their emails.`
+              : `${item.name} has no one-click unsubscribe.`,
+          );
+        }
+      } else if (item.option.kind === "mailto") {
+        const option = item.option;
+        const id = `m-unsub-${Date.now().toString(36)}`;
+        saveMessage({
+          id,
+          threadId: id,
+          folder: "sent",
+          from: { name: me.name, email: me.email },
+          to: [{ name: option.address, email: option.address }],
+          cc: [],
+          subject: option.subject,
+          body: option.body || "unsubscribe",
+          at: new Date().toISOString(),
+          unread: false,
+          starred: false,
+          labels: [],
+          delivery: planDelivery([{ name: option.address, email: option.address }], { password: false }),
+        });
+        await useMail.getState().flush();
+        done("mailto", `Unsubscribe request to ${option.address} is in Sent. Mail to outside addresses waits in the Outbox until outbound SMTP is turned on.`);
+      } else {
+        const url = item.option.url;
+        if (!window.confirm(`Open ${new URL(url).hostname} to unsubscribe from ${item.name}?`)) return;
+        window.open(url, "_blank", "noopener,noreferrer");
+        done("link", `Opened ${new URL(url).hostname}. Finish there.`);
+      }
+    } catch (error) {
+      setSubscriptionNote(error instanceof Error ? error.message : "Could not unsubscribe.");
+    } finally {
+      setUnsubscribing(null);
+    }
+  }
+
   function actOnPicked(kind: "archive" | "trash" | "unread") {
     if (!picked.length) return;
     const count = picked.length;
@@ -722,6 +785,17 @@ export function MailApp() {
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
               folders={settings?.folders ?? []}
+              tab={inboxTab}
+              onTab={(next) => {
+                setInboxTab(next);
+                setPicked([]);
+                setSubscriptionNote("");
+              }}
+              subscriptions={subscriptionRows}
+              unsubscribedKeys={(settings?.unsubscribed ?? []).map((item) => item.key)}
+              unsubscribing={unsubscribing}
+              onUnsubscribe={(item) => void unsubscribe(item)}
+              subscriptionNote={subscriptionNote}
               onEmptyTrash={() => {
                 if (!messages.some((message) => message.folder === "trash")) return;
                 if (!window.confirm("Delete everything in Trash? This can be undone.")) return;

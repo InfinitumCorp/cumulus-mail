@@ -12,7 +12,7 @@ Checked against the public Proton Mail product on 10 Nov 2026:
 
 Statuses: **existing** (already in this repo), **added** (this change), **deferred** (not shipped, with the reason).
 
-The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged, except for the custom-folder rows at the end of the sidebar's folder list. New controls sit in the composer toolbar, the account dialog, the contacts list, the reader column, and the `/p/$token` unlock route.
+The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged, except for the custom-folder rows at the end of the sidebar's folder list and the Inbox category tab row. New controls sit in the composer toolbar, the account dialog, the contacts list, the reader column, and the `/p/$token` unlock route.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
@@ -76,6 +76,6 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Shortcut help | added | `?` |
 | Installable PWA | existing | `/__grok/manifest.webmanifest` and the install page. |
 | Offline mailbox | deferred | No service worker caches messages. Offline mail needs a client-held key. |
-| Inbox categories and subscription manager | deferred | Those are separate inbox layouts. |
 | External SMTP to the public internet | added (off by default) | A provider-neutral transport, an env-configured SMTP client (STARTTLS or TLS, AUTH PLAIN), DKIM `rsa-sha256` relaxed/relaxed, and a queue with backoff whose bounces go through the DSN code and suppression list. With no `MAIL_SMTP_HOST`, mail stays held in the outbox as before. Attachments and password-protected mail are still held. Setup: `docs/deploy/outbound-smtp.md`. Nothing is deployed or configured by this repo. |
+| Inbox categories and subscription manager | added | A tab row in the Inbox only (All, Primary, Updates, Promotions, Social, Subscriptions). Categories come from List-Id, List-Unsubscribe, Precedence, Auto-Submitted, bulk-mail headers, social sender domains and no-reply senders. Mail with none of these stays Primary. Subscriptions group list mail by List-Id or sender. Unsubscribe uses RFC 8058 one-click when offered: the server POSTs to the URL from the stored message, public https hosts only, no redirects. Otherwise it sends the mailto request, which waits in the Outbox like other outside mail, or opens the page after a confirm. |
 | Native desktop and mobile apps | deferred | This repo is the web client. |

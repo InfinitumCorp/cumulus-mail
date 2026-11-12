@@ -142,6 +142,18 @@ export async function importMailboxForSession(
   return importMailbox(db, storageFor, tenantId, backup);
 }
 
+export async function unsubscribeForSession(
+  contextUserId: string,
+  messageId: string,
+  bearerToken?: string,
+): Promise<import("./unsubscribe.ts").UnsubscribeResult> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const { unsubscribeMessage } = await import("./unsubscribe.ts");
+  return unsubscribeMessage(db, tenantId, messageId);
+}
+
 export async function submitAbuseForSession(
   contextUserId: string,
   report: { reporter: string; subjectAddress: string; detail: string },
