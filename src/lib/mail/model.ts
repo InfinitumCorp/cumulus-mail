@@ -8,6 +8,9 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
+/** Addresses (aliases) per mailbox. The client checks this for a quick message; the server enforces it. */
+export const MAX_ALIASES = 15;
+
 export type SystemFolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
 
 /** A user folder. The id is `folder-` plus lowercase letters and digits; the name lives in settings. */
