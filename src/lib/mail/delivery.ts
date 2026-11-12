@@ -13,7 +13,7 @@ import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
 import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
-import { buildRawMessage } from "./outbound/message.ts";
+import { buildRawMessage, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
@@ -103,6 +103,17 @@ function uniquePeople(people: Person[]): Person[] {
   return result;
 }
 
+/** Read every attachment's bytes, or null if any is missing. */
+async function loadOutgoingFiles(storage: TenantBlobs, files: StoredAttachment[]): Promise<OutgoingFile[] | null> {
+  const out: OutgoingFile[] = [];
+  for (const file of files) {
+    const stored = await storage.get(file.objectKey);
+    if (!stored) return null;
+    out.push({ name: file.name, contentType: file.contentType ?? "application/octet-stream", bytes: stored.body });
+  }
+  return out;
+}
+
 export async function deliverMessage(
   db: MailQuery,
   storageFor: TenantStorage,
@@ -111,6 +122,8 @@ export async function deliverMessage(
 ): Promise<DeliveryHop[]> {
   const suppressions = createSuppressionList(db, senderTenant);
   const files = (await loadAttachmentMap(db, senderTenant)).get(message.id) ?? [];
+  // Attachment bytes for SMTP, loaded once per message and only when outbound is on.
+  let outgoing: OutgoingFile[] | null | undefined;
   const hops: DeliveryHop[] = [];
   for (const person of uniquePeople([...message.to, ...message.cc])) {
     if (await suppressions.has(person.email)) {
@@ -132,19 +145,22 @@ export async function deliverMessage(
           status: "outbound",
           detail: `Password-protected. ${link.href} External SMTP is not configured.`,
         });
-      } else if (currentOutbound() && files.length === 0) {
+      } else if (currentOutbound()) {
         const sender = await readProfile(db, senderTenant);
         const from = { name: sender?.name ?? message.from.name, email: sender?.email ?? message.from.email };
         const domain = from.email.split("@")[1] || mailDomain();
-        await enqueueOutbound(db, senderTenant, {
-          messageId: message.id,
-          from: from.email,
-          recipient: person.email,
-          raw: buildRawMessage({ ...message, from }, from, domain),
-        });
+        outgoing ??= await loadOutgoingFiles(storageFor(senderTenant), files);
+        const raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing) : null;
+        if (!raw || raw.length > MAX_RAW_BYTES) {
+          hops.push({
+            email: person.email,
+            status: "outbound",
+            detail: !raw ? "Held in the outbox. An attachment could not be read." : "Held in the outbox. Too large to send by SMTP (24 MB limit).",
+          });
+          continue;
+        }
+        await enqueueOutbound(db, senderTenant, { messageId: message.id, from: from.email, recipient: person.email, raw });
         hops.push({ email: person.email, status: "outbound", detail: QUEUED });
-      } else if (currentOutbound()) {
-        hops.push({ email: person.email, status: "outbound", detail: "Held in the outbox. SMTP does not send attachments yet." });
       } else {
         hops.push({ email: person.email, status: "outbound", detail: HELD });
       }
