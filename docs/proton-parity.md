@@ -63,7 +63,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
 | Provider-scale spam and phishing reputation | deferred | No external reputation feed. |
 | 2FA, passkeys, security keys | deferred | Set up on the Google account used to sign in. Mail does not store a second factor. The account dialog says so. |
-| Session list from the sign-in provider | deferred | Google does not expose another app's session list; Mail could list its own Better Auth sessions instead. |
+| Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Google does not expose another app's sessions. Hidden when sign-in is off. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
 | Import / export in the account dialog | added | |
