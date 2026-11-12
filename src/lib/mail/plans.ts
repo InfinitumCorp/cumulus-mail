@@ -52,3 +52,44 @@ export function limitsFor(planId: unknown, status: unknown = "active"): Limits {
   if (status === "canceled") return PLANS.free;
   return PLANS[isPlanId(planId) ? planId : DEFAULT_PLAN];
 }
+
+export type UsageRow = { key: "storage" | "aliases" | "domains" | "folders" | "messages"; label: string; used: number; limit: number; text: string; full: boolean };
+
+const count = (n: number) => n.toLocaleString("en-US");
+
+/**
+ * What a mailbox uses against its plan, for the account dialog (docs/plans.md step 5). Storage appears
+ * only when the server measured it. `full` marks a limit that is reached (storage: at or over the quota).
+ */
+export function planUsage(
+  limits: Limits,
+  used: { aliases: number; domains: number; folders: number; messages: number; usedBytes?: number },
+): UsageRow[] {
+  const rows: UsageRow[] = [];
+  if (typeof used.usedBytes === "number" && Number.isFinite(used.usedBytes)) {
+    const gb = used.usedBytes / 1e9;
+    rows.push({
+      key: "storage",
+      label: "Storage",
+      used: used.usedBytes,
+      limit: limits.quotaGb * 1e9,
+      text: `${gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2)} of ${limits.quotaGb} GB`,
+      full: gb >= limits.quotaGb,
+    });
+  }
+  const add = (key: UsageRow["key"], label: string, n: number, limit: number) =>
+    rows.push({ key, label, used: n, limit, text: `${count(n)} of ${count(limit)}`, full: n >= limit });
+  add("aliases", "Addresses", used.aliases, limits.aliases);
+  add("domains", "Custom domains", used.domains, limits.domains);
+  add("folders", "Folders", used.folders, limits.folders);
+  add("messages", "Messages", used.messages, limits.messages);
+  return rows;
+}
+
+const LABELS: Record<PlanId, string> = { free: "Free", plus: "Plus", pro: "Pro", business: "Business" };
+
+/** The plan name to show, from the same inputs as `limitsFor`, so the name and the limits always agree. */
+export function planLabel(planId: unknown, status: unknown = "active"): string {
+  if (status === "canceled") return LABELS.free;
+  return LABELS[isPlanId(planId) ? planId : DEFAULT_PLAN];
+}
