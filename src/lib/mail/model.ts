@@ -1,3 +1,5 @@
+import { DEFAULT_PLAN, PLANS } from "./plans.ts";
+
 export const ME = {
   name: "Alex Reid",
   email: "alex@cumuluscloud.app",
@@ -8,8 +10,8 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-/** Addresses (aliases) per mailbox. The client checks this for a quick message; the server enforces it. */
-export const MAX_ALIASES = 15;
+/** Addresses (aliases) on the default plan. The server checks the mailbox's own plan (plans.ts). */
+export const MAX_ALIASES = PLANS[DEFAULT_PLAN].aliases;
 
 export type SystemFolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
 

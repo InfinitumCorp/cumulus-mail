@@ -116,9 +116,11 @@ Server functions (in `src/lib/mail/api.ts`, same `authMiddleware` pattern as the
 ## 6. Order of work
 
 1. **Close the alias gap now**, independent of billing: add the server-side 15-address check to `writeSnapshot`
-   with a test. A client can currently store any number of addresses. Small PR.
+   with a test. A client can currently store any number of addresses. Small PR. *(Done: #52.)*
 2. Migration (§3) plus `plans.ts` (§4), with every mailbox set to `plus`. **No behaviour change**: the limits
-   equal today's. Tests for `limitsFor` and each converted check.
+   equal today's. Tests for `limitsFor` and each converted check. *(Done: `migrations/0010_plans.sql`,
+   `src/lib/mail/plans.ts`. Addresses, domains, folders, messages and catch-all read the plan. Storage and
+   SMTP limits are defined but not enforced yet.)*
 3. Real storage accounting (running total, backfill script). Display it; don't enforce yet.
 4. Stripe in **test mode**: products and prices (made by a script from the §2 table), Checkout, Portal, and the
    webhook with signature verification, idempotency and tests using Stripe's fixture events.

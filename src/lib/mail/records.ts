@@ -10,6 +10,7 @@ import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } fr
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
+import { limitsFor } from "./plans.ts";
 
 type MessageRow = {
   id: string;
@@ -119,8 +120,10 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
     quota_gb: number;
     signature: string;
     settings_enc: string | null;
+    plan_id: string;
+    plan_status: string;
   }>(
-    `select address, display_name, cid, plan, quota_gb, signature, settings_enc
+    `select address, display_name, cid, plan, quota_gb, signature, settings_enc, plan_id, plan_status
      from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
@@ -163,6 +166,7 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
       cid: box.cid,
       plan: box.plan,
       quotaGb: Number(box.quota_gb),
+      limits: limitsFor(box.plan_id, box.plan_status),
     },
     messages: messages.map((row) =>
       rowToMessage(
@@ -439,8 +443,10 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
     cid: string;
     plan: string;
     quota_gb: number;
+    plan_id: string;
+    plan_status: string;
   }>(
-    `select address, display_name, cid, plan, quota_gb from cumulus_mail.mailboxes where tenant_id = $1`,
+    `select address, display_name, cid, plan, quota_gb, plan_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
     [tenantId],
   );
   const row = rows[0];
@@ -451,6 +457,7 @@ export async function readProfile(db: MailQuery, tenantId: string): Promise<Mail
     cid: row.cid,
     plan: row.plan,
     quotaGb: Number(row.quota_gb),
+    limits: limitsFor(row.plan_id, row.plan_status),
   };
 }
 
@@ -506,8 +513,9 @@ function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "ph
 
 function routedAddresses(snapshot: MailboxSnapshot): string[] {
   const addresses = [snapshot.me.email, ...snapshot.aliases];
+  const catchAllAllowed = snapshot.me.limits?.catchAll ?? true;
   for (const domain of snapshot.settings?.domains ?? []) {
-    if (domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
+    if (catchAllAllowed && domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
   }
   return addresses;
 }

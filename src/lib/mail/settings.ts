@@ -1,5 +1,6 @@
 import type { CalEvent, CustomFolder } from "./model.ts";
 import { sanitizeFolders } from "./folders.ts";
+import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 
@@ -50,8 +51,8 @@ export type MailSettings = {
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
 
-/** Custom domains per mailbox. The account panel stops at this; the server refuses more. */
-export const MAX_DOMAINS = 3;
+/** Custom domains on the default plan. The server checks the mailbox's own plan (plans.ts). */
+export const MAX_DOMAINS = PLANS[DEFAULT_PLAN].domains;
 
 /** Distinct valid custom domains in a settings payload, before any cap is applied. */
 export function requestedDomainCount(value: unknown, platformDomain = "cumuluscloud.app"): number {
@@ -127,7 +128,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
   const undo = Number(row.undoSendSeconds);
   const auto = row.autoReply;
   const domains = Array.isArray(row.domains)
-    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, MAX_DOMAINS)
+    ? row.domains.map((domain) => asDomain(domain, platformDomain)).filter((domain): domain is CustomDomain => Boolean(domain)).slice(0, maxLimit("domains"))
     : [];
   const seen = new Set<string>();
   return {

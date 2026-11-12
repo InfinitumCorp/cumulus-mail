@@ -5,10 +5,11 @@ import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
 import { addressOwnedByOther } from "./directory.ts";
-import { MAX_DOMAINS, requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
 import { mailDomain } from "./domain.ts";
 import { validEmail } from "./logic.ts";
-import { MAX_ALIASES, type Attachment, type MailMessage } from "./model.ts";
+import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { releaseDue } from "./schedule.ts";
 import { reconcileFolders } from "./folders.ts";
@@ -26,7 +27,6 @@ import type { MailProfile } from "./snapshot.ts";
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
 const MAX_FILES = 8;
-const MAX_MESSAGES = 5000;
 const MAX_BODY = 1_000_000;
 
 
@@ -54,7 +54,8 @@ export async function writeSnapshot(
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   const current = await readSnapshot(db, tenantId);
-  if (snapshot.messages.length > MAX_MESSAGES) throw new Error("Mailbox is too large");
+  const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
+  if (snapshot.messages.length > limits.messages) throw new Error("Mailbox is too large");
   const existing = await loadAttachmentMap(db, tenantId);
   const byId = new Map<string, { messageId: string; file: StoredAttachment }>();
   for (const [messageId, files] of existing) {
@@ -120,8 +121,11 @@ export async function writeSnapshot(
   }
 
   // Refuse rather than silently keep the first few.
-  if (requestedDomainCount(snapshot.settings, mailDomain()) > MAX_DOMAINS) {
-    throw new Error(`You can add up to ${MAX_DOMAINS} custom domains.`);
+  if (requestedDomainCount(snapshot.settings, mailDomain()) > limits.domains) {
+    throw new Error(`You can add up to ${limits.domains} custom domains.`);
+  }
+  if (sanitizeSettings(snapshot.settings).folders.length > limits.folders) {
+    throw new Error(`You can have up to ${limits.folders} folders.`);
   }
 
   const aliases: string[] = [];
@@ -134,9 +138,9 @@ export async function writeSnapshot(
     aliases.push(email);
   }
   // A mailbox that already holds more (saved before this check existed) keeps them, but cannot add more.
-  const allowed = Math.max(MAX_ALIASES, current.aliases.length);
+  const allowed = Math.max(limits.aliases, current.aliases.length);
   if (aliases.length > allowed) {
-    throw new Error(`You can have up to ${MAX_ALIASES} addresses.`);
+    throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
 
   const next: MailboxSnapshot = {
