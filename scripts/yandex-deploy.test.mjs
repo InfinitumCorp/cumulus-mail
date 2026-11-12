@@ -15,6 +15,7 @@ const SECRETS = [
   "STRIPE_WEBHOOK_SECRET",
   "MAIL_SMTP_PASSWORD",
   "MAIL_DKIM_PRIVATE_KEY",
+  "CRON_SECRET",
 ];
 
 test("the Russia image builds the Node server and bakes no secret into the image", () => {

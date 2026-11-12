@@ -8,7 +8,7 @@ set -euo pipefail
 
 : "${REGISTRY_ID:?Container Registry id (yc container registry list)}"
 : "${SA_ID:?service account id that can pull images and read the Lockbox secret}"
-: "${LOCKBOX_ID:?Lockbox secret id holding BETTER_AUTH_SECRET, DATABASE_URL, MAIL_BLOB_KEY, MAIL_S3_*}"
+: "${LOCKBOX_ID:?Lockbox secret id holding BETTER_AUTH_SECRET, DATABASE_URL, MAIL_BLOB_KEY, MAIL_S3_*, CRON_SECRET}"
 CONTAINER_NAME="${CONTAINER_NAME:-cumulus-mail-ru}"
 TAG="${TAG:-$(git rev-parse --short HEAD)}"
 IMAGE="cr.yandex/${REGISTRY_ID}/cumulus-mail-ru:${TAG}"
@@ -35,7 +35,7 @@ while IFS= read -r line; do
 done < "${ENV_FILE}"
 
 secret_args=()
-for key in BETTER_AUTH_SECRET DATABASE_URL MAIL_BLOB_KEY MAIL_S3_ACCESS_KEY_ID MAIL_S3_SECRET_ACCESS_KEY; do
+for key in BETTER_AUTH_SECRET DATABASE_URL MAIL_BLOB_KEY MAIL_S3_ACCESS_KEY_ID MAIL_S3_SECRET_ACCESS_KEY CRON_SECRET; do
   secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}")
 done
 
