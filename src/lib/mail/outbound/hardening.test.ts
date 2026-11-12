@@ -132,3 +132,36 @@ test("one row that throws does not stop the run, leak the error text, or strand 
   const all = await db.query(`select * from cumulus_mail.outbound_queue where tenant_id = $1`, ["hard-q"]);
   assert.equal(JSON.stringify(all).includes("NOTAKEY"), false);
 });
+
+test("DKIM signs only mail from the key's domain (or a subdomain); other senders go out unsigned", async () => {
+  const { dkimDomainFor } = await import("./queue.ts");
+  const { outboundFromEnv } = await import("./config.ts");
+  const { generateKeyPairSync } = await import("node:crypto");
+  assert.equal(dkimDomainFor("ada@cumuluscloud.app", "cumuluscloud.app"), "cumuluscloud.app");
+  assert.equal(dkimDomainFor("ada@eu.cumuluscloud.app", "cumuluscloud.app"), "cumuluscloud.app");
+  assert.equal(dkimDomainFor("ada@customer.example", "cumuluscloud.app"), null);
+  assert.equal(dkimDomainFor("ada@evilcumuluscloud.app", "cumuluscloud.app"), null);
+  assert.equal(dkimDomainFor("ada@customer.example", undefined), "customer.example");
+  assert.equal(dkimDomainFor("no-at-sign", "cumuluscloud.app"), null);
+
+  const pem = generateKeyPairSync("rsa", { modulusLength: 1024 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const config = outboundFromEnv({ MAIL_OUTBOUND_DEV: "memory", MAIL_DKIM_SELECTOR: "s1", MAIL_DKIM_PRIVATE_KEY: pem, MAIL_DKIM_DOMAIN: "CumulusCloud.app" });
+  assert.equal(config?.dkim?.domain, "cumuluscloud.app");
+  const sent: string[] = [];
+  const transport: OutboundTransport = {
+    name: "capture",
+    async send(envelope) {
+      sent.push(envelope.raw);
+      return envelope.to.map((recipient) => ({ recipient, ok: true as const, detail: "250 ok" }));
+    },
+  };
+  const { db } = harness;
+  const ada = profile("hard-dkim", "dkim.hard@cumuluscloud.app", "Ada");
+  await openMailbox(db, "hard-dkim", ada);
+  await enqueueOutbound(db, "hard-dkim", { messageId: "m-platform", from: ada.email, recipient: "x@example.org", raw: "From: a\r\nSubject: x\r\n\r\ny\r\n" });
+  await enqueueOutbound(db, "hard-dkim", { messageId: "m-custom", from: "ada@customer.example", recipient: "y@example.org", raw: "From: a\r\nSubject: x\r\n\r\ny\r\n" });
+  await processOutboundQueue(db, { transport, dkim: config!.dkim }, { tenantId: "hard-dkim" });
+  assert.equal(sent.length, 2);
+  assert.equal(sent.filter((raw) => raw.startsWith("DKIM-Signature: ") && raw.includes("; d=cumuluscloud.app;")).length, 1);
+  assert.equal(sent.filter((raw) => !raw.startsWith("DKIM-Signature")).length, 1);
+});

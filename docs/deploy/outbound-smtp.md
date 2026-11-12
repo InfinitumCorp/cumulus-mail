@@ -17,7 +17,8 @@ runs the app (and, for retries, on the worker that runs the scheduled job).
 | `MAIL_SMTP_USER` | no | Turns on `AUTH PLAIN`. |
 | `MAIL_SMTP_PASSWORD` | with user | **Secret.** Set it with the platform's secret store (`wrangler secret put`, Vercel encrypted env). Never commit it. |
 | `MAIL_SMTP_HELO` | no | Name sent in `EHLO`. Defaults to `MAIL_DOMAIN`. |
-| `MAIL_DKIM_SELECTOR` | no | Turns on DKIM signing. `d=` is the sender's domain. |
+| `MAIL_DKIM_SELECTOR` | no | Turns on DKIM signing. |
+| `MAIL_DKIM_DOMAIN` | no | The domain the key is published for (`d=`), default `MAIL_DOMAIN`. Mail from that domain or its subdomains is signed. Mail from other domains (customers' custom domains) is sent **unsigned**, because a signature with no matching DNS key fails, and receivers treat that worse than none. |
 | `MAIL_DKIM_KEY_PATH` | with selector (Node) | Path to the PEM private key. |
 | `MAIL_DKIM_PRIVATE_KEY` | with selector (Workers) | **Secret.** PEM text, for hosts without a file system. `\n` escapes are accepted. |
 | `MAIL_OUTBOUND_HOURLY_LIMIT` | no | Outside recipients per mailbox per hour, default 100. Over it, mail is still queued but goes out when the hour frees up. |
