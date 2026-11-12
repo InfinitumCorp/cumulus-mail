@@ -40,8 +40,11 @@ Publishing the DNS record is a manual step. This repository does not change DNS.
   `cumulus_mail.outbound_queue` (migration `0008`). The recipient, envelope sender and raw message are
   sealed with the tenant key. The Sent copy's delivery line reads "Queued for delivery by SMTP."
 - Due rows for the sender are tried at the end of the save that queued them. The rest, including
-  retries, are sent by whoever calls `processOutboundQueue(db, currentOutbound())`. The inbound
-  worker's scheduled job (PR #37) is the intended caller: add that call after `releaseScheduledMail`.
+  retries, are sent every minute by the inbound worker's scheduled job (`handleScheduled` in
+  `workers/email/src/index.ts`), after it releases scheduled drafts. The worker reads the
+  `MAIL_SMTP_*` / `MAIL_DKIM_*` settings from its own bindings: set the plain ones as `vars`, and
+  `MAIL_SMTP_PASSWORD` / `MAIL_DKIM_PRIVATE_KEY` with `wrangler secret put`. With none set, the job
+  skips the queue.
 - **2xx** marks the row sent. **5xx** records a bounce through the same code that stores incoming DSNs
   (`recordBounce` in `src/lib/mail/dsn.ts`) and puts the address on the suppression list. **4xx** and
   connection errors retry with exponential backoff (1 min, doubling, capped at 6 h) up to 8 attempts.
