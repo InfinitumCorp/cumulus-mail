@@ -204,7 +204,7 @@ export function AccountPanel({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <p className="font-mono text-xs uppercase tracking-wide text-muted">Cumulus://ID</p>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">Account</p>
           <button type="button" className="grid size-11 place-items-center" onClick={onClose} aria-label="Close account">
             <X className="size-4" />
           </button>

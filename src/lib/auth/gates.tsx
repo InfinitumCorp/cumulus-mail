@@ -63,10 +63,7 @@ export function SignInGate({
   return <>{fallback ?? <SignInButtons />}</>;
 }
 
-/**
- * "Sign in with Cumulus ID", then "Create a Cumulus ID" for people without one.
- * Both run the same Cumulus ID flow and land back here signed in.
- */
+/** "Sign in with Google": the only way in. A new Google account gets a fresh mailbox. */
 export function SignInButtons() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,11 +82,7 @@ export function SignInButtons() {
               setError(e instanceof Error ? e.message : "Sign-in failed. Please try again.");
             });
           }}
-          className={
-            p.create
-              ? "w-full cursor-pointer rounded-none border border-neutral-300 px-4 py-2 hover:bg-neutral-100 disabled:cursor-wait dark:border-neutral-700 dark:hover:bg-neutral-900"
-              : "w-full cursor-pointer rounded-none border border-black bg-black px-4 py-2 text-white hover:opacity-90 disabled:cursor-wait dark:border-white dark:bg-white dark:text-black"
-          }
+          className="w-full cursor-pointer rounded-none border border-black bg-black px-4 py-2 text-white hover:opacity-90 disabled:cursor-wait dark:border-white dark:bg-white dark:text-black"
         >
           {p.label}
         </button>
@@ -103,7 +96,7 @@ export function SignInButtons() {
   );
 }
 
-/** Full-page sign-in for signed-out visitors: Cumulus ID only. */
+/** Full-page sign-in for signed-out visitors: Google only. */
 export function SignInScreen({ title }: { title: string }) {
   return (
     <main className="grid min-h-dvh place-items-center bg-white px-4 text-black dark:bg-black dark:text-white">

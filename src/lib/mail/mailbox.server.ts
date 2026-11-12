@@ -43,9 +43,7 @@ async function database(): Promise<MailQuery> {
   };
 }
 
-async function tenantFromCumulusToken(token: string): Promise<string> {
-  const issuer = cumulusIssuer();
-  if (unverifiedIssuer(token) !== issuer) return "";
+async function tenantFromCumulusToken(token: string, issuer: string): Promise<string> {
   let jwks;
   try {
     jwks = await fetchCumulusJwks(issuer);
@@ -61,8 +59,9 @@ async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
 ): Promise<{ tenantId: string; profile: MailProfile }> {
-  if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
-    const tenantId = await tenantFromCumulusToken(bearerToken);
+  const issuer = cumulusIssuer();
+  if (bearerToken && issuer && unverifiedIssuer(bearerToken) === issuer) {
+    const tenantId = await tenantFromCumulusToken(bearerToken, issuer);
     assertTenantId(tenantId);
     return {
       tenantId,

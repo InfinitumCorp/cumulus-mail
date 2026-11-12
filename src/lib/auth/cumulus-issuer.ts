@@ -2,84 +2,35 @@ import { createLocalJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
 
 /**
- * Cumulus://ID signs in through an Amazon Cognito user pool. The issuer of a
- * Cognito pool is `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`,
- * and both discovery and JWKS hang off that host — not off the hosted-UI domain
- * (`<prefix>.auth.<region>.amazoncognito.com`), which only serves the browser
- * endpoints (`/oauth2/authorize`, `/oauth2/token`, `/logout`).
- *
- * The pool and the region are account configuration, not secrets, so they are
- * defaults here and overridable by environment. Nothing in this file holds a
- * client secret; Mail only verifies tokens, it never exchanges a code.
+ * Optional cross-app bearer tokens. People sign in to Mail with Google (see
+ * `server.ts`); this file only matters when another first-party app hands Mail
+ * an OIDC access token. That path is OFF unless `CUMULUS_OIDC_ISSUER` names the
+ * issuer to trust, and the tenant then comes from the verified `tenant_id`
+ * claim. There is no built-in default issuer.
  */
-export const DEFAULT_CUMULUS_COGNITO_REGION = "us-east-1";
-export const DEFAULT_CUMULUS_COGNITO_USER_POOL_ID = "us-east-1_fRlMO7dna";
-/** Hosted UI origin for the pool. Mail does not call it; it is here for links and docs. */
-export const DEFAULT_CUMULUS_COGNITO_DOMAIN = "cumulus-id.auth.us-east-1.amazoncognito.com";
-
-/** `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`. */
-export function cognitoIssuer(region: string, userPoolId: string): string {
-  return `https://cognito-idp.${region.trim().toLowerCase()}.amazonaws.com/${userPoolId.trim()}`;
-}
-
-/** The Cognito user pool Cumulus://ID uses, unless the environment names another. */
-export const DEFAULT_CUMULUS_ISSUER = cognitoIssuer(
-  DEFAULT_CUMULUS_COGNITO_REGION,
-  DEFAULT_CUMULUS_COGNITO_USER_POOL_ID,
-);
-
-/** The Keycloak realm Cumulus://ID used before Cognito. `id.cumuluscloud.app` answers 404. */
-export const RETIRED_KEYCLOAK_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
-
-const COGNITO_ISSUER = /^https:\/\/cognito-idp\.([a-z0-9-]+)\.amazonaws\.com\/([a-z0-9-]+_[A-Za-z0-9]+)$/;
-
-/** A user-pool issuer, and the region plus pool id in it. */
-export function cognitoPoolFromIssuer(issuer: string): { region: string; userPoolId: string } | null {
-  const match = COGNITO_ISSUER.exec(issuer.replace(/\/+$/, ""));
-  if (!match) return null;
-  const [, region, userPoolId] = match;
-  // A pool id always starts with its own region, so a mismatched pair is not a pool.
-  return userPoolId.startsWith(`${region}_`) ? { region, userPoolId } : null;
-}
-
 type IssuerEnv = {
   CUMULUS_OIDC_ISSUER?: string;
   CUMULUS_OIDC_JWKS_URL?: string;
-  CUMULUS_COGNITO_REGION?: string;
-  CUMULUS_COGNITO_USER_POOL_ID?: string;
 };
 
-/**
- * The issuer Mail verifies bearer tokens against:
- *   1. `CUMULUS_OIDC_ISSUER`, used verbatim (any OIDC issuer, Keycloak included).
- *   2. `CUMULUS_COGNITO_USER_POOL_ID` (+ optional `CUMULUS_COGNITO_REGION`,
- *      which defaults to the region the pool id starts with).
- *   3. The Cognito pool above.
- */
-export function cumulusIssuer(env: IssuerEnv = process.env): string {
+/** The issuer Mail verifies cross-app bearer tokens against, or null when none is configured. */
+export function cumulusIssuer(env: IssuerEnv = process.env): string | null {
   applyWorkerBindings();
   const configured = env.CUMULUS_OIDC_ISSUER?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  const userPoolId = env.CUMULUS_COGNITO_USER_POOL_ID?.trim();
-  if (userPoolId) {
-    const region = env.CUMULUS_COGNITO_REGION?.trim() || userPoolId.split("_")[0];
-    return cognitoIssuer(region, userPoolId);
-  }
-  return DEFAULT_CUMULUS_ISSUER;
+  return configured ? configured.replace(/\/+$/, "") : null;
 }
 
-/** OpenID discovery for an issuer. Cognito and Keycloak both answer here. */
-export function cumulusDiscoveryUrl(issuer = cumulusIssuer()): string {
+/** OpenID discovery for an issuer. */
+export function cumulusDiscoveryUrl(issuer: string): string {
   return `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
 }
 
 /**
  * Where the signing keys are, without a network round trip:
  * `CUMULUS_OIDC_JWKS_URL` when set, the Keycloak path for a `/realms/<name>`
- * issuer, and otherwise the standard `/.well-known/jwks.json` that Cognito
- * publishes. `fetchCumulusJwks` prefers discovery and falls back to this.
+ * issuer, and otherwise the conventional `/.well-known/jwks.json`. `fetchCumulusJwks` prefers discovery and falls back to this.
  */
-export function cumulusJwksUrl(issuer = cumulusIssuer(), env: IssuerEnv = process.env): string {
+export function cumulusJwksUrl(issuer: string, env: IssuerEnv = process.env): string {
   applyWorkerBindings();
   const configured = env.CUMULUS_OIDC_JWKS_URL?.trim();
   if (configured) return configured;
@@ -97,7 +48,7 @@ export type JwkSet = { keys: unknown[] };
  * redirected or swapped document cannot hand over keys for another realm.
  */
 export async function fetchCumulusJwks(
-  issuer = cumulusIssuer(),
+  issuer: string,
   options: { fetch?: typeof fetch; env?: IssuerEnv } = {},
 ): Promise<JwkSet> {
   const get = options.fetch ?? fetch;
@@ -136,21 +87,18 @@ export type VerifiedMailToken = {
  * Verify an access token and read the tenant from a verified claim. The caller
  * cannot supply the tenant separately.
  *
- * `tenant_id` is the claim Cumulus://ID mints. A Cognito user pool has no such
- * claim unless a pre-token-generation trigger adds one, so for a user-pool
- * issuer the verified `sub` is the tenant. Both come out of the signature-checked
- * payload; neither is read from the request.
+ * `tenant_id` comes out of the signature-checked payload; it is never read
+ * from the request. A token without it is refused.
  */
 export async function verifyCumulusToken(
   token: string,
-  options: { issuer?: string; keys: JWTVerifyGetKey },
+  options: { issuer: string; keys: JWTVerifyGetKey },
 ): Promise<VerifiedMailToken> {
-  const issuer = (options.issuer ?? cumulusIssuer()).replace(/\/+$/, "");
+  const issuer = options.issuer.replace(/\/+$/, "");
   const { payload } = await jwtVerify(token, options.keys, { issuer });
   if (typeof payload.sub !== "string" || !payload.sub) throw new Error("Verified token has no subject");
-  const claimed = payload.tenant_id ?? payload["custom:tenant_id"];
-  const tenantId =
-    typeof claimed === "string" && claimed ? claimed : cognitoPoolFromIssuer(issuer) ? payload.sub : "";
+  const claimed = payload.tenant_id;
+  const tenantId = typeof claimed === "string" ? claimed : "";
   if (!tenantId) throw new Error("Verified token has no tenant_id");
   return { tenantId, subject: payload.sub, issuer };
 }

@@ -63,8 +63,8 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Phishing heuristics | added | Lookalike Cumulus domains, punycode, quarantine auth, urgent off-site links. Report uses the existing abuse intake. |
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
 | Provider-scale spam and phishing reputation | deferred | No external reputation feed. |
-| 2FA, passkeys, security keys | deferred | Enrolled on Cumulus://ID (`https://id.cumuluscloud.app`). Mail does not store a second factor. The account dialog says so. |
-| Session list from Cumulus://ID | deferred | This repo has no session API for that issuer. |
+| 2FA, passkeys, security keys | deferred | Set up on the Google account used to sign in. Mail does not store a second factor. The account dialog says so. |
+| Session list from the sign-in provider | deferred | Google does not expose another app's session list; Mail could list its own Better Auth sessions instead. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
 | Import / export in the account dialog | added | |
