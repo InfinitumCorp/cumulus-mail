@@ -15,10 +15,13 @@ IMAGE="cr.yandex/${REGISTRY_ID}/cumulus-mail-ru:${TAG}"
 ENV_FILE="$(dirname "$0")/ru.env.example"
 
 echo "Folder: $(yc config get folder-id)  Image: ${IMAGE}"
-read -r -p "Deploy this image to ${CONTAINER_NAME} in that folder? [y/N] " ok
-[ "${ok}" = "y" ] || { echo "Stopped."; exit 1; }
+# CI (the manual deploy workflow) sets YES=1 after its own confirmation and review; people are asked.
+if [ "${YES:-}" != "1" ]; then
+  read -r -p "Deploy this image to ${CONTAINER_NAME} in that folder? [y/N] " ok
+  [ "${ok}" = "y" ] || { echo "Stopped."; exit 1; }
+fi
 
-docker build -t "${IMAGE}" .
+docker build --build-arg "APP_COMMIT=$(git rev-parse --short=12 HEAD)" -t "${IMAGE}" .
 yc container registry configure-docker >/dev/null
 docker push "${IMAGE}"
 
@@ -42,6 +45,7 @@ yc serverless container revision deploy \
   --service-account-id "${SA_ID}" \
   --cores 1 --memory 1GB --core-fraction 100 \
   --concurrency 16 --execution-timeout 60s \
+  --environment "MAIL_REGION=ru" \
   "${env_args[@]}" "${secret_args[@]}"
 
 echo "Deployed ${IMAGE}. Health: GET /api/auth/get-session must answer 200."
