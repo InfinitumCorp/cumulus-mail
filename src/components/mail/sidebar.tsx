@@ -108,12 +108,12 @@ export function Sidebar({
           }}
           aria-label={label}
           placeholder="Folder name"
-          className="h-9 min-w-0 flex-1 border border-line bg-transparent px-2 text-sm"
+          className="h-11 min-w-0 flex-1 border border-line bg-transparent px-2 text-sm md:h-9"
         />
-        <button type="submit" className="grid size-9 place-items-center hover:text-accent" aria-label={`${label}: save`}>
+        <button type="submit" className="grid size-11 place-items-center md:size-9 hover:text-accent" aria-label={`${label}: save`}>
           <Check className="size-4" />
         </button>
-        <button type="button" className="grid size-9 place-items-center hover:text-accent" onClick={() => startEdit(null)} aria-label={`${label}: cancel`}>
+        <button type="button" className="grid size-11 place-items-center md:size-9 hover:text-accent" onClick={() => startEdit(null)} aria-label={`${label}: cancel`}>
           <X className="size-4" />
         </button>
       </div>
@@ -201,7 +201,7 @@ export function Sidebar({
                 {onRenameFolder ? (
                   <button
                     type="button"
-                    className={`grid size-9 place-items-center hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
+                    className={`grid size-11 place-items-center md:size-9 hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
                     onClick={() => startEdit({ mode: "rename", id: folder.id }, folder.name)}
                     aria-label={`Rename ${folder.name}`}
                   >
@@ -211,7 +211,7 @@ export function Sidebar({
                 {onDeleteFolder ? (
                   <button
                     type="button"
-                    className={`mr-2 grid size-9 place-items-center hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
+                    className={`mr-2 grid size-11 place-items-center md:size-9 hover:text-accent ${selected ? "" : "md:hidden md:group-hover:grid md:group-focus-within:grid"}`}
                     onClick={() => onDeleteFolder(folder.id)}
                     aria-label={`Delete ${folder.name}`}
                   >

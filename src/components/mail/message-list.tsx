@@ -64,20 +64,20 @@ export function MessageList({
       <div className="flex h-14 items-center justify-between gap-2 border-b border-line px-4">
         {picked.length ? (
           <div className="flex min-w-0 flex-1 items-center gap-1">
-            <button type="button" className="h-9 px-2 text-sm text-muted" onClick={onClearPick}>
+            <button type="button" className="h-11 px-2 text-sm md:h-9 text-muted" onClick={onClearPick}>
               {picked.length} selected
             </button>
             {box === "inbox" ? (
-              <button type="button" className="h-9 px-2 text-sm hover:text-accent" onClick={onArchivePicked}>
+              <button type="button" className="h-11 px-2 text-sm md:h-9 hover:text-accent" onClick={onArchivePicked}>
                 Archive
               </button>
             ) : null}
             {box !== "trash" ? (
-              <button type="button" className="h-9 px-2 text-sm hover:text-accent" onClick={onTrashPicked}>
+              <button type="button" className="h-11 px-2 text-sm md:h-9 hover:text-accent" onClick={onTrashPicked}>
                 Trash
               </button>
             ) : null}
-            <button type="button" className="h-9 px-2 text-sm hover:text-accent" onClick={onUnreadPicked}>
+            <button type="button" className="h-11 px-2 text-sm md:h-9 hover:text-accent" onClick={onUnreadPicked}>
               Unread
             </button>
           </div>
@@ -86,7 +86,7 @@ export function MessageList({
         )}
         <div className="flex items-center gap-1">
           {box === "trash" && !picked.length ? (
-            <button type="button" className="h-9 px-2 text-sm text-muted hover:text-ink" onClick={onEmptyTrash}>
+            <button type="button" className="h-11 px-2 text-sm md:h-9 text-muted hover:text-ink" onClick={onEmptyTrash}>
               Empty
             </button>
           ) : null}
@@ -102,7 +102,7 @@ export function MessageList({
           ) : (
             <button
               type="button"
-              className="h-9 px-2 text-sm text-muted hover:text-ink"
+              className="h-11 px-2 text-sm md:h-9 text-muted hover:text-ink"
               aria-pressed={allPicked}
               onClick={() => onPickAll(visible, !allPicked)}
             >
@@ -129,7 +129,7 @@ export function MessageList({
                 key={message.id}
                 className={`flex border-b border-line border-l-2 ${selected ? "border-l-accent bg-accent/10" : "border-l-transparent"}`}
               >
-                <label className="grid w-10 shrink-0 place-items-center">
+                <label className="grid w-11 shrink-0 place-items-center md:w-10">
                   <input
                     type="checkbox"
                     className="size-4 accent-accent"

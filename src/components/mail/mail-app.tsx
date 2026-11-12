@@ -651,6 +651,15 @@ export function MailApp() {
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
+          {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
+          <button
+            type="button"
+            onClick={() => writeNew()}
+            className="ml-auto grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
+            aria-label="Compose"
+          >
+            <SquarePen className="size-5" />
+          </button>
         </div>
         <label className="flex h-11 min-w-0 flex-1 items-center gap-2 border border-line px-3 md:max-w-xl">
           <Search className="size-4 shrink-0 text-muted" />
@@ -666,7 +675,7 @@ export function MailApp() {
         <button
           type="button"
           onClick={() => writeNew()}
-          className="inline-flex h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent"
+          className="hidden h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent md:inline-flex"
         >
           <SquarePen className="size-4" />
           Compose
@@ -862,7 +871,7 @@ export function MailApp() {
       </div>
       {modal ? (
         <div className="scrim fixed inset-0 z-40 flex items-end md:items-center md:justify-center md:p-6" role="presentation">
-          <div className="flex max-h-dvh w-full flex-col bg-paper md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
+          <div className="flex h-dvh max-h-dvh w-full flex-col bg-paper md:h-auto md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
             <Composer
               form={modal}
               error={composeError}
