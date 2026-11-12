@@ -121,7 +121,10 @@ Server functions (in `src/lib/mail/api.ts`, same `authMiddleware` pattern as the
    equal today's. Tests for `limitsFor` and each converted check. *(Done: `migrations/0010_plans.sql`,
    `src/lib/mail/plans.ts`. Addresses, domains, folders, messages and catch-all read the plan. Storage and
    SMTP limits are defined but not enforced yet.)*
-3. Real storage accounting (running total, backfill script). Display it; don't enforce yet.
+3. Real storage accounting (running total, backfill script). Display it; don't enforce yet. *(Done as a query
+   on read, so no running total or backfill is needed yet: `storageUsedBytes` sums attachment sizes and the
+   stored message text; raw .eml copies in blob storage are not counted. The sidebar shows it, with a soft
+   notice at 90% and over 100%. Nothing is blocked.)*
 4. Stripe in **test mode**: products and prices (made by a script from the §2 table), Checkout, Portal, and the
    webhook with signature verification, idempotency and tests using Stripe's fixture events.
 5. Account panel: plan name, usage against limits, Upgrade (Checkout) and Manage billing (Portal) buttons.

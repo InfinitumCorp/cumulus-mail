@@ -19,6 +19,8 @@ export type MailProfile = {
   quotaGb: number;
   /** Limits of the mailbox's plan (see plans.ts). Absent on profiles built outside the database. */
   limits?: Limits;
+  /** Bytes stored, counted on the server. Absent on profiles built outside the database. */
+  usedBytes?: number;
 };
 
 export type MailboxSnapshot = {
