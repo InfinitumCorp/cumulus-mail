@@ -298,3 +298,62 @@ test("a failure while applying releases the event id so Stripe's retry is proces
   const rows = await harness.db.query(`select id from cumulus_mail.billing_events where id = 'evt_r1'`);
   assert.equal(rows.length, 0);
 });
+
+test("with a Stripe client, out-of-order events apply Stripe's current state, not the stale payload", async () => {
+  const db = harness.db;
+  await openMailbox(db, "bill-eve", profile("bill-eve", "bill.eve@cumuluscloud.app", "Eve"));
+  let current: Record<string, unknown> = subscription("sub_eve", "cus_eve", "pro_monthly", "active", {
+    metadata: { tenant_id: "bill-eve" },
+  });
+  const fetched: string[] = [];
+  const stripe: StripeClient = async (method, path) => {
+    fetched.push(`${method} ${path}`);
+    if (path === "/v1/subscriptions/sub_eve") return current;
+    throw new Error(`unexpected ${path}`);
+  };
+
+  assert.equal(await handleStripeEvent(db, event("evt_o1", "customer.subscription.created", current), stripe), "applied");
+  assert.equal((await row("bill-eve")).plan_id, "pro");
+
+  // A late "past_due" update arrives after the card was fixed: Stripe now says active.
+  const late = event("evt_o2", "customer.subscription.updated", subscription("sub_eve", "cus_eve", "plus_monthly", "past_due"));
+  assert.equal(await handleStripeEvent(db, late, stripe), "applied");
+  let eve = await row("bill-eve");
+  assert.equal(eve.plan_status, "active");
+  assert.equal(eve.plan_id, "pro");
+
+  // A late payment failure for a subscription that is active again changes nothing.
+  const failed = event("evt_o3", "invoice.payment_failed", {
+    customer: "cus_eve",
+    parent: { subscription_details: { subscription: "sub_eve" } },
+  });
+  assert.equal(await handleStripeEvent(db, failed, stripe), "ignored");
+  assert.equal((await row("bill-eve")).plan_status, "active");
+
+  // When Stripe says it is past due, the failure is applied.
+  current = { ...current, status: "past_due" };
+  assert.equal(await handleStripeEvent(db, event("evt_o4", "invoice.payment_failed", { customer: "cus_eve", subscription: "sub_eve" }), stripe), "applied");
+  assert.equal((await row("bill-eve")).plan_status, "past_due");
+
+  // An "updated" payload that still says active, for a subscription Stripe has since canceled, cancels.
+  current = { ...current, status: "canceled" };
+  assert.equal(await handleStripeEvent(db, event("evt_o5", "customer.subscription.updated", subscription("sub_eve", "cus_eve", "pro_monthly")), stripe), "applied");
+  eve = await row("bill-eve");
+  assert.equal(eve.plan_status, "canceled");
+  assert.equal(eve.stripe_subscription_id, null);
+
+  assert.ok(fetched.every((call) => call === "GET /v1/subscriptions/sub_eve"));
+
+  // A subscription id that is not Stripe-shaped is never put into a request path.
+  await handleStripeEvent(db, event("evt_o6", "customer.subscription.updated", subscription("../v1/customers", "cus_eve", "pro_monthly")), stripe);
+  assert.equal(fetched.some((call) => call.includes("..")), false);
+});
+
+test("if Stripe cannot be reached the event is released so it is retried", async () => {
+  const down: StripeClient = async () => {
+    throw new Error("Stripe GET /v1/subscriptions/sub_eve failed: HTTP 503");
+  };
+  const retry = event("evt_o7", "customer.subscription.updated", subscription("sub_eve", "cus_eve", "pro_monthly"));
+  await assert.rejects(() => handleStripeEvent(harness.db, retry, down), /503/);
+  assert.equal((await harness.db.query(`select id from cumulus_mail.billing_events where id = 'evt_o7'`)).length, 0);
+});
