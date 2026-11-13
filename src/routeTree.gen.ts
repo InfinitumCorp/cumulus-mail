@@ -10,6 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as ApiCidEventsRouteImport } from './routes/api/cid-events'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -18,6 +21,21 @@ import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webh
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCidEventsRoute = ApiCidEventsRouteImport.update({
+  id: '/api/cid-events',
+  path: '/api/cid-events',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -43,6 +61,9 @@ const ApiBillingWebhookRoute = ApiBillingWebhookRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/api/health': typeof ApiHealthRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -50,6 +71,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/api/health': typeof ApiHealthRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -58,6 +82,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
+  '/api/cid-events': typeof ApiCidEventsRoute
   '/api/health': typeof ApiHealthRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -66,12 +93,30 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/api/health' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
+    | '/'
+    | '/login'
+    | '/logout'
+    | '/api/cid-events'
+    | '/api/health'
+    | '/p/$token'
+    | '/api/auth/$'
+    | '/api/billing/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
+  to:
+    | '/'
+    | '/login'
+    | '/logout'
+    | '/api/cid-events'
+    | '/api/health'
+    | '/p/$token'
+    | '/api/auth/$'
+    | '/api/billing/webhook'
   id:
     | '__root__'
     | '/'
+    | '/login'
+    | '/logout'
+    | '/api/cid-events'
     | '/api/health'
     | '/p/$token'
     | '/api/auth/$'
@@ -80,6 +125,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
+  LogoutRoute: typeof LogoutRoute
+  ApiCidEventsRoute: typeof ApiCidEventsRoute
   ApiHealthRoute: typeof ApiHealthRoute
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -93,6 +141,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cid-events': {
+      id: '/api/cid-events'
+      path: '/api/cid-events'
+      fullPath: '/api/cid-events'
+      preLoaderRoute: typeof ApiCidEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -128,6 +197,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
+  LogoutRoute: LogoutRoute,
+  ApiCidEventsRoute: ApiCidEventsRoute,
   ApiHealthRoute: ApiHealthRoute,
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

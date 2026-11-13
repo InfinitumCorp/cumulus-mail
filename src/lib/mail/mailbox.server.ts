@@ -7,6 +7,7 @@ import {
   unverifiedIssuer,
   verifyCumulusToken,
 } from "@/lib/auth/cumulus-issuer";
+import { cidConfig } from "@/lib/auth/cumulus-id";
 import { createStorageDriver, openTenantStorage, TenantAccessError, type StorageDriver } from "@/lib/storage";
 import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
@@ -15,7 +16,9 @@ import { createBounceHandler } from "./dsn.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
-import { mailAppHost, mailboxAddress } from "./domain.ts";
+import { mailAppHost, mailboxAddress, mailDomain } from "./domain.ts";
+import { handleCidEvent, parseCidEvent, verifyCidEventSignature } from "./cid-events.ts";
+import { applyWorkerBindings } from "@/lib/cloudflare-env";
 import {
   BILLING_OFF,
   billingStatus,
@@ -65,7 +68,8 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
     throw new UnauthorizedError();
   }
   const keys = createLocalJWKSet(jwks as { keys: [] });
-  const verified = await verifyCumulusToken(token, { issuer, keys });
+  // A Cumulus://ID access token must be minted for this client (`aud`).
+  const verified = await verifyCumulusToken(token, { issuer, keys, audience: cidConfig().clientId });
   return verified.tenantId;
 }
 
@@ -76,11 +80,18 @@ async function sessionMailbox(
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
     const tenantId = await tenantFromCumulusToken(bearerToken);
     assertTenantId(tenantId);
+    // The access token carries the cid, not the address: ask Cumulus://ID who this is (which also
+    // confirms the session is still live). Using the cid as the local part would publish a
+    // `cid_…@` address for the mailbox.
+    const { cidProfileFromTokens } = await import("@/lib/auth/cumulus-id");
+    const person = await cidProfileFromTokens(cidConfig(), { accessToken: bearerToken });
+    const email = (person?.email ?? "").trim().toLowerCase();
+    if (!person || person.cid !== tenantId || !email.includes("@")) throw new UnauthorizedError();
     return {
       tenantId,
       profile: {
-        name: tenantId,
-        email: mailboxAddress(tenantId),
+        name: person.name || person.username || email.split("@")[0]!,
+        email,
         cid: `cid:${tenantId}`,
         plan: "Free",
         quotaGb: 15,
@@ -272,6 +283,25 @@ export async function readProtectedForToken(token: string): Promise<{
 export async function burnProtectedForToken(token: string): Promise<{ burned: true }> {
   await burnProtectedLink(await database(), token);
   return { burned: true };
+}
+
+/**
+ * POST /api/cid-events: an account event from Cumulus://ID (see cid-events.ts). Answers 401 for a
+ * missing or wrong signature, 400 for a malformed or stale event, and 200 otherwise.
+ */
+export async function receiveCidEvent(body: string, signature: string | null): Promise<{ status: number; result?: string }> {
+  applyWorkerBindings();
+  const secret = process.env.CID_EVENTS_SECRET?.trim() ?? "";
+  if (!secret) return { status: 404 };
+  if (body.length > 16_384 || !(await verifyCidEventSignature(secret, body, signature))) return { status: 401 };
+  const event = parseCidEvent(body);
+  // Signed events older than a day are refused, so a captured request can't be replayed later.
+  if (!event || Math.abs(Date.now() - Date.parse(event.at)) > 24 * 60 * 60 * 1000) return { status: 400 };
+  const result = await handleCidEvent(await database(), event, mailDomain());
+  // A notice that arrives before its account.created (events can be delivered out of order): ask the
+  // sender to try again shortly (Cumulus://ID retries from its queue), unless the event is old.
+  if (result === "no-mailbox" && Date.now() - Date.parse(event.at) < 60 * 60 * 1000) return { status: 409, result };
+  return { status: 200, result };
 }
 
 /** Where Stripe sends people back: `BILLING_RETURN_URL`, else this app's own origin. */

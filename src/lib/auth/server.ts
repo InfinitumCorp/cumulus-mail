@@ -31,7 +31,7 @@ import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
-import { cidConfig, cidConfigForRegion, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl } from "./cumulus-id.ts";
+import { cidConfig, cidConfigForRegion, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl, cidTokenUrl } from "./cumulus-id.ts";
 import { regionFor, type Region } from "../region.ts";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
 import { SIGN_IN_PROVIDERS } from "./providers";
@@ -146,7 +146,12 @@ function buildAuth(region: Region) {
           clientId: cid.clientId,
           authorizationUrl: cidAuthorizeUrl(cid.issuer),
           pkce: true,
-          scopes: ["openid", "profile", "email"],
+          // offline_access: a rotating refresh token, so the session list and key
+          // directory keep working after the one-hour access token expires.
+          scopes: ["openid", "profile", "email", "offline_access"],
+          // Used only for refresh (the code exchange is getToken below). Public
+          // client: Better Auth sends client_id and no secret.
+          tokenUrl: cidTokenUrl(cid.issuer),
           ...(create ? { authorizationUrlParams: { prompt: "create" } } : {}),
           // Cumulus ID's token endpoint takes JSON and returns the profile with
           // the token, so redeem and read the person ourselves.

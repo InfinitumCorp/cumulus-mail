@@ -3,6 +3,8 @@ import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList } from "@/lib/mail/api";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
+import { lookupRecipientKeys, withdrawMailKey } from "@/lib/auth/cid-api";
+import { recipientKeys } from "@/lib/auth/cid-account";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
@@ -44,6 +46,7 @@ import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { CumulusBar } from "@/components/cumulus-bar";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -117,6 +120,7 @@ export function MailApp() {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
   const [keyError, setKeyError] = useState("");
+  const [publishedKey, setPublishedKey] = useState<{ id: string; fingerprint: string } | null>(null);
   const [domainNote, setDomainNote] = useState("");
   const [inboxTab, setInboxTab] = useState<InboxTab>("all");
   const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
@@ -371,10 +375,17 @@ export function MailApp() {
     let body = withSignature(composer.body, signature);
     let extra: MessageExtra | undefined = composer.cloudLinks?.length ? { cloudLinks: composer.cloudLinks } : undefined;
     const recipients = [...to, ...cc];
-    const keys = recipients
-      .map((person) => contacts.find((contact) => contact.email.toLowerCase() === person.email.toLowerCase())?.publicKey)
-      .filter((key): key is string => Boolean(key));
-    if (keys.length === recipients.length) {
+    // Published keys on the Cumulus://ID directory first, then the key saved on
+    // the contact. A directory that can't be reached just means no directory keys.
+    const directory = await lookupRecipientKeys({ data: { addresses: recipients.map((person) => person.email) } }).catch(
+      () => ({}) as Record<string, string[]>,
+    );
+    const keys = recipientKeys(
+      recipients.map((person) => person.email),
+      directory,
+      (address) => contacts.find((contact) => contact.email.toLowerCase() === address)?.publicKey || undefined,
+    );
+    if (keys) {
       try {
         body = await encryptFor(body, keys);
         extra = { ...extra, pgp: true };
@@ -771,8 +782,8 @@ export function MailApp() {
 
   return (
     <div className="mail-shell">
-      <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
-        <div className="flex items-center gap-2">
+      <header className="relative flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
+        <div className="flex items-center gap-2 pr-12 md:pr-0">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">
             <Menu className="size-5" />
           </button>
@@ -820,6 +831,8 @@ export function MailApp() {
           <SquarePen className="size-4" />
           Compose
         </button>
+        {/* Cumulus://ID account bar: top right of the first row on phones, the header's right end on desktop. */}
+        <CumulusBar client="cumulus-mail" className="absolute right-3 top-[16px] flex md:static md:ml-auto" />
       </header>
       {syncError ? <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p> : null}
       <div className="mail-body">
@@ -1059,6 +1072,21 @@ export function MailApp() {
           domainNote={domainNote}
           pgpPublic={pgp?.publicKey ?? ""}
           keyError={keyError}
+          publishedKey={publishedKey}
+          // No onPublishKey: the session key lives only in this tab, so publishing it
+          // would let others send mail that becomes unreadable when the tab closes.
+          // Publishing returns once Mail keeps a durable key (publishMailKey in cid-api).
+          onWithdrawKey={() => {
+            if (!publishedKey) return;
+            setKeyError("");
+            void withdrawMailKey({ data: { id: publishedKey.id } })
+              .then((result) => {
+                if (result.status === "ok") setPublishedKey(null);
+                else if (result.status === "signed-out") setKeyError("Mail's Cumulus://ID sign-in has expired. Withdraw the key at id.cumuluscloud.app/account.");
+                else setKeyError(result.message);
+              })
+              .catch(() => setKeyError("Could not withdraw the key."));
+          }}
           onCheckDomain={(domain) => {
             void checkCustomDomain({ data: { domain } })
               .then((result) => {
@@ -1078,7 +1106,10 @@ export function MailApp() {
             }
             setKeyError("");
             void generateMailKey(me.name, me.email, passphrase)
-              .then((generated) => setPgp({ ...generated, passphrase }))
+              .then((generated) => {
+                setPgp({ ...generated, passphrase });
+                setPublishedKey(null);
+              })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not create a key."));
           }}
           onExport={() => {

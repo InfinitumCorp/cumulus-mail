@@ -12,6 +12,7 @@ import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder,
 import { parseSieve } from "@/lib/mail/sieve";
 import { planUsage } from "@/lib/mail/plans";
 import type { MailProfile } from "@/lib/mail/snapshot";
+import { IdSessions } from "./id-sessions";
 
 function sieveProblem(source: string, folders: CustomFolder[]): string {
   if (!source.trim()) return "";
@@ -172,6 +173,9 @@ export function AccountPanel({
   pgpPublic = "",
   onCreateKey,
   keyError = "",
+  publishedKey = null,
+  onPublishKey,
+  onWithdrawKey,
   usage,
 }: {
   usage?: { folders: number; messages: number };
@@ -194,6 +198,10 @@ export function AccountPanel({
   pgpPublic?: string;
   onCreateKey: (passphrase: string) => void;
   keyError?: string;
+  /** The session key as published on the Cumulus://ID key directory, if it is. */
+  publishedKey?: { id: string; fingerprint: string } | null;
+  onPublishKey?: () => void;
+  onWithdrawKey?: () => void;
 }) {
   const posture = identityPosture();
   const bridge = bridgeDesign();
@@ -461,9 +469,15 @@ export function AccountPanel({
               <dt className="text-muted">Sign-in</dt>
               <dd className="mt-2 text-sm text-muted">
                 {posture.note} Factors: {posture.methods.join(", ")}.{" "}
-                <a className="text-accent" href={posture.issuer}>
-                  {posture.issuer}
+                <a className="text-accent" href={posture.accountUrl} target="_blank" rel="noopener noreferrer">
+                  {posture.accountUrl.replace(/^https:\/\//, "")}
                 </a>
+              </dd>
+            </div>
+            <div className="border-b border-line py-4">
+              <dt className="text-muted">Sessions</dt>
+              <dd className="mt-3">
+                <IdSessions />
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -484,9 +498,32 @@ export function AccountPanel({
                 </form>
                 {keyError ? <p className="text-sm">{keyError}</p> : null}
                 {pgpPublic ? (
-                  <textarea readOnly aria-label="Session public key" value={pgpPublic} className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+                  <>
+                    <textarea readOnly aria-label="Session public key" value={pgpPublic} className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+                    {publishedKey ? (
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <span className="text-muted">
+                          Published on the Cumulus://ID key directory · <span className="font-mono text-xs">{publishedKey.fingerprint}</span>
+                        </span>
+                        {onWithdrawKey ? (
+                          <button type="button" className="text-accent" onClick={onWithdrawKey}>
+                            Withdraw
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : onPublishKey ? (
+                      <div className="flex flex-col gap-2">
+                        <button type="button" className="inline-flex h-11 items-center self-start border border-line px-3 text-sm hover:border-ink" onClick={onPublishKey}>
+                          Publish to key directory
+                        </button>
+                        <p className="text-sm text-muted">
+                          Other senders will encrypt to this key. Mail encrypted to it opens only in this tab, so withdraw it before you close the tab.
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
-                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox.</p>
+                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox, and it is not published to the Cumulus://ID key directory, because mail encrypted to it could not be opened after the tab closes.</p>
                 )}
               </dd>
             </div>

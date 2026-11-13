@@ -1,0 +1,66 @@
+import { getRequest } from "@tanstack/react-start/server";
+import { cidConfigForRegion } from "./cumulus-id.ts";
+import { SIGN_IN_PROVIDERS } from "./providers";
+import { regionFor } from "../region.ts";
+import { authForRequest, isAuthConfigured } from "./server";
+
+/**
+ * The Cumulus://ID access token Better Auth stored (encrypted) on the signed-in
+ * person's account row at sign-in. Server-only.
+ *
+ * Mail asks for `offline_access`, so Better Auth's `getAccessToken` refreshes an
+ * expired access token with the stored (rotating) refresh token. Accounts that
+ * signed in before that scope was added have no refresh token: once their access
+ * token expires, `cid-account.ts` reports "signed-out" until they sign in again.
+ */
+const CID_PROVIDERS = new Set(SIGN_IN_PROVIDERS.map((p) => p.providerId));
+
+export type StoredCidToken = { accessToken: string | null; accessTokenExpiresAt: Date | null };
+
+const NONE: StoredCidToken = { accessToken: null, accessTokenExpiresAt: null };
+
+function requestHeaders(bearerToken?: string): Headers | null {
+  const request = getRequest();
+  if (!request) return null;
+  if (!bearerToken) return request.headers;
+  const headers = new Headers(request.headers);
+  headers.set("Authorization", `Bearer ${bearerToken}`);
+  return headers;
+}
+
+export async function storedCidToken(bearerToken?: string): Promise<StoredCidToken> {
+  if (!isAuthConfigured()) return NONE;
+  const request = getRequest();
+  const headers = requestHeaders(bearerToken);
+  if (!request || !headers) return NONE;
+  // The instance for this host's region: a refresh goes to the issuer the person signed in through.
+  const auth = authForRequest(request);
+  let accounts: Array<{ id: string; providerId: string; updatedAt?: Date | string }>;
+  try {
+    accounts = (await auth.api.listUserAccounts({ headers })) as typeof accounts;
+  } catch {
+    return NONE;
+  }
+  const newest = accounts
+    .filter((account) => CID_PROVIDERS.has(account.providerId))
+    .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime());
+  for (const account of newest) {
+    try {
+      const tokens = await auth.api.getAccessToken({ body: { accountId: account.id }, headers });
+      if (tokens?.accessToken) {
+        const expires = tokens.accessTokenExpiresAt ? new Date(tokens.accessTokenExpiresAt) : null;
+        return { accessToken: tokens.accessToken, accessTokenExpiresAt: expires };
+      }
+    } catch {
+      // Try the next linked Cumulus://ID account row.
+    }
+  }
+  return NONE;
+}
+
+/** Issuer plus the stored token, in the shape `cid-account.ts` takes. */
+export async function cidCall(bearerToken?: string) {
+  // ru.* hosts talk to the Russia mirror of Cumulus://ID, like their sign-in.
+  const { issuer } = cidConfigForRegion(regionFor(getRequest()?.headers.get("host") ?? null));
+  return { issuer, ...(await storedCidToken(bearerToken)) };
+}

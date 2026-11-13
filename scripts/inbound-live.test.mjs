@@ -47,6 +47,6 @@ test("the live database URL must be the session pooler with sslmode=require", ()
   );
 });
 
-test("docs and smoke default the OIDC issuer to the Cumulus://ID Cognito pool", () => {
-  assert.equal(DEFAULT_CUMULUS_ISSUER, "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna");
+test("docs and smoke default the OIDC issuer to Cumulus://ID's own realm", () => {
+  assert.equal(DEFAULT_CUMULUS_ISSUER, "https://id.cumuluscloud.app/realms/cumulus");
 });
