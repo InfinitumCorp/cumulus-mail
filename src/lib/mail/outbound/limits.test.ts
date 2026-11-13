@@ -4,7 +4,7 @@ import { openMailbox, writeSnapshot } from "../mailbox.ts";
 import type { MailMessage } from "../model.ts";
 import { readSnapshot } from "../records.ts";
 import type { MailboxSnapshot } from "../snapshot.ts";
-import { createHarness, profile } from "../test-support.ts";
+import { establishedSender, createHarness, profile } from "../test-support.ts";
 import { configureOutbound } from "./config.ts";
 import { DEFAULT_LIMITS, limitsFromEnv, sendDecision } from "./limits.ts";
 import { enqueueOutbound } from "./queue.ts";
@@ -33,6 +33,7 @@ test("over the hourly limit a send is pushed back an hour; over the daily limit 
   const { db } = harness;
   const ada = profile("lim-d", "d.lim@cumuluscloud.app", "Ada");
   await openMailbox(db, "lim-d", ada);
+  await establishedSender(db, "lim-d");
   const limits = { hourly: 2, daily: 4 };
   const now = new Date();
   const queue = async (n: number, at: Date) =>
@@ -67,6 +68,7 @@ test("a save to more outside recipients than allowed sends some now, schedules s
   configureOutbound({ transport, dkim: null });
   const ada = profile("lim-e", "e.lim@cumuluscloud.app", "Ada");
   await openMailbox(db, "lim-e", ada);
+  await establishedSender(db, "lim-e");
   await writeSnapshot(db, storageFor, "lim-e", snapshot(ada, [{
     id: "bulk-1",
     threadId: "bulk-1",

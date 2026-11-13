@@ -6,7 +6,7 @@ import type { MailMessage } from "../model.ts";
 import { readSnapshot } from "../records.ts";
 import type { MailboxSnapshot } from "../snapshot.ts";
 import { createSuppressionList } from "../suppression.ts";
-import { createHarness, profile } from "../test-support.ts";
+import { establishedSender, createHarness, profile } from "../test-support.ts";
 import { configureOutbound, outboundEnabled, outboundFromEnv, type OutboundConfig } from "./config.ts";
 import { buildRawMessage } from "./message.ts";
 import { backoffMs, processOutboundQueue } from "./queue.ts";
@@ -200,6 +200,7 @@ test("with the dev transport, external mail is queued, DKIM-signed and sent once
   configureOutbound({ transport, dkim: { selector: "sel1", privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString() } });
   const ada = profile("ob-dev", "dev.ob@cumuluscloud.app", "Ada");
   await openMailbox(db, "ob-dev", ada);
+  await establishedSender(db, "ob-dev");
   await writeSnapshot(db, storageFor, "ob-dev", snapshot(ada, [sent("dev-1", "spoof@example.org", "bea@example.org")]));
   assert.equal(transport.sent.length, 1);
   const envelope = transport.sent[0]!;
@@ -229,6 +230,7 @@ test("a transient failure retries with backoff, then bounces; a permanent one bo
   configureOutbound(config);
   const ada = profile("ob-retry", "retry.ob@cumuluscloud.app", "Ada");
   await openMailbox(db, "ob-retry", ada);
+  await establishedSender(db, "ob-retry");
   await writeSnapshot(db, storageFor, "ob-retry", snapshot(ada, [sent("r-1", ada.email, "slow@example.org")]));
   assert.equal(calls.length, 1);
   assert.match((await hopFor("ob-retry", "r-1")) ?? "", /^Retrying after 4\.4\.1\./);
@@ -260,6 +262,7 @@ test("attachments go out as multipart/mixed and parse back byte for byte", async
   configureOutbound({ transport, dkim: null });
   const ada = profile("ob-att", "att.ob@cumuluscloud.app", "Ada");
   await openMailbox(db, "ob-att", ada);
+  await establishedSender(db, "ob-att");
   const pdf = new Uint8Array(70_000).map((_, index) => index % 251);
   await writeSnapshot(db, storageFor, "ob-att", snapshot(ada, [
     sent("att-1", ada.email, "bea@example.org", {
@@ -292,6 +295,7 @@ test("two runs at the same time send a queued row once; a row stuck mid-send is 
   const { enqueueOutbound, STALE_SENDING_MS } = await import("./queue.ts");
   const ada = profile("ob-race", "race.ob@cumuluscloud.app", "Ada");
   await openMailbox(db, "ob-race", ada);
+  await establishedSender(db, "ob-race");
   await enqueueOutbound(db, "ob-race", { messageId: "race-1", from: ada.email, recipient: "bea@example.org", raw: "Subject: x\r\n\r\ny\r\n" });
   const sent: string[] = [];
   const slow: OutboundTransport = {
