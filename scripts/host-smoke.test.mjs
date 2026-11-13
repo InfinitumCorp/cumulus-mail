@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { expectedRegion, runHostSmoke } from "./host-smoke.mjs";
+import { expectedRegion, runHostSmoke, schemaNote } from "./host-smoke.mjs";
 
 /** A fake host: routes -> { status, headers, body }. */
 function host(routes) {
@@ -84,4 +84,12 @@ test("a correct RU deployment passes; the wrong issuer, region or callback fails
 
 test("plain http to a public host is refused", async () => {
   await assert.rejects(() => runHostSmoke("http://mail.cumuluscloud.app", { log: quiet }), /https/);
+});
+
+test("schemaNote: current, pending count, unreachable, absent", () => {
+  assert.equal(schemaNote(undefined), "");
+  assert.equal(schemaNote({ ok: true, ms: 3, pending: 0 }), ", schema current");
+  assert.equal(schemaNote({ ok: false, ms: 3, pending: 1 }), ", 1 migration pending");
+  assert.equal(schemaNote({ ok: false, ms: 3, pending: 2 }), ", 2 migrations pending");
+  assert.equal(schemaNote({ ok: false, ms: 3000, error: "timeout" }), ", schema timeout");
 });
