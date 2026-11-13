@@ -137,6 +137,19 @@ export async function readAttachmentForSession(
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
 }
 
+/** Ranked, paged search over the signed-in mailbox (encrypted word index, search.ts). */
+export async function searchMailForSession(
+  contextUserId: string,
+  input: { query: string; cursor?: string | null; folders?: string[] },
+  bearerToken?: string,
+): Promise<import("./search.ts").SearchPage> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const { searchMessages } = await import("./search.ts");
+  return searchMessages(db, tenantId, input.query, { cursor: input.cursor, folders: input.folders, limit: 25 });
+}
+
 /** Calendar subscription feed: status, make or rotate (returns the URL, once), or turn off. */
 export async function calendarFeedForSession(
   contextUserId: string,
