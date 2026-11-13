@@ -59,6 +59,19 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
     return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
+/** Account deletion: "status", "request" (starts a 7-day grace period) or "cancel". */
+export const accountDeletion = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { action: "status" | "request" | "cancel" } => {
+    const action = (input as { action?: unknown } | null)?.action;
+    if (action !== "status" && action !== "request" && action !== "cancel") throw new Error("Unknown action");
+    return { action };
+  })
+  .handler(async ({ context, data }) => {
+    const { accountDeletionForSession } = await import("./mailbox.server");
+    return accountDeletionForSession(context.userId, data.action, context.bearerToken);
+  });
+
 /** "Download my data": a short-lived link to one part (mbox or json), or when it is next available. */
 export const requestDataExport = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
