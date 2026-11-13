@@ -8,6 +8,7 @@ import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/l
 import { cleanDomain } from "@/lib/mail/routing";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
+import { planUsage } from "@/lib/mail/plans";
 import type { MailProfile } from "@/lib/mail/snapshot";
 
 function sieveProblem(source: string, folders: CustomFolder[]): string {
@@ -169,7 +170,9 @@ export function AccountPanel({
   pgpPublic = "",
   onCreateKey,
   keyError = "",
+  usage,
 }: {
+  usage?: { folders: number; messages: number };
   me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
@@ -219,7 +222,28 @@ export function AccountPanel({
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Plan</dt>
-              <dd>{me.plan} · {quotaLabel}</dd>
+              <dd>
+                {me.plan} · {quotaLabel}
+                {me.limits && usage ? (
+                  <ul aria-label="Plan usage" className="mt-3 flex flex-col gap-1 text-xs">
+                    {planUsage(me.limits, {
+                      aliases: aliases.length,
+                      domains: settings.domains.length,
+                      folders: usage.folders,
+                      messages: usage.messages,
+                      usedBytes: me.usedBytes,
+                    }).map((row) => (
+                      <li key={row.key} className="flex justify-between gap-3">
+                        <span className="text-muted">{row.label}</span>
+                        <span className={row.full ? "font-mono text-accent" : "font-mono"}>
+                          {row.text}
+                          {row.full ? " (limit reached)" : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </dd>
             </div>
             <div className="border-b border-line py-4">
               <dt className="text-muted">Aliases</dt>

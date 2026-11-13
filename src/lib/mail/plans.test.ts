@@ -106,3 +106,32 @@ test("a plan without catch-all keeps the domain but does not route its catch-all
     (PLANS.free as { domains: number }).domains = original;
   }
 });
+
+test("planUsage lists what a mailbox uses against its plan and marks reached limits", async () => {
+  const { planUsage, PLANS: plans } = await import("./plans.ts");
+  const rows = planUsage(plans.free, { aliases: 1, domains: 0, folders: 3, messages: 4999, usedBytes: 1_000_000_000 });
+  assert.deepEqual(
+    rows.map((row) => [row.key, row.text, row.full]),
+    [
+      ["storage", "1.00 of 1 GB", true],
+      ["aliases", "1 of 1", true],
+      ["domains", "0 of 0", true],
+      ["folders", "3 of 10", false],
+      ["messages", "4,999 of 5,000", false],
+    ],
+  );
+  // No measured storage: the storage row is left out rather than guessed.
+  const plus = planUsage(plans.plus, { aliases: 2, domains: 1, folders: 0, messages: 10 });
+  assert.equal(plus.some((row) => row.key === "storage"), false);
+  assert.equal(plus.every((row) => !row.full), true);
+  assert.equal(planUsage(plans.plus, { aliases: 0, domains: 0, folders: 0, messages: 0, usedBytes: 5_000_000 })[0]!.text, "<0.01 of 15 GB");
+});
+
+test("the plan name always matches the limits in force", async () => {
+  const { planLabel } = await import("./plans.ts");
+  assert.equal(planLabel("plus"), "Plus");
+  assert.equal(planLabel("pro", "past_due"), "Pro");
+  assert.equal(planLabel("business", "canceled"), "Free");
+  assert.equal(planLabel("legacy"), "Plus");
+  assert.equal(limitsFor("legacy").quotaGb, PLANS.plus.quotaGb);
+});
