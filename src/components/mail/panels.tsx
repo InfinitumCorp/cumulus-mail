@@ -1,6 +1,7 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { BillingControls } from "./billing-controls";
+import { DataExportControls } from "./data-export-controls";
 import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
@@ -246,6 +247,12 @@ export function AccountPanel({
                   </ul>
                 ) : null}
                 <BillingControls />
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Your data</dt>
+              <dd>
+                <DataExportControls />
               </dd>
             </div>
             <div className="border-b border-line py-4">
