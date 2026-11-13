@@ -145,7 +145,8 @@ export async function writeSnapshot(
 
   const next: MailboxSnapshot = {
     ...snapshot,
-    me: current.me,
+    // Only the display name comes from the client (first-run setup); address, plan and quota never do.
+    me: { ...current.me, name: cleanDisplayName(snapshot.me?.name) || current.me.name },
     messages,
     aliases,
     signature: snapshot.signature.slice(0, 4000),
@@ -206,4 +207,9 @@ export async function readAttachment(
     throw new Error("Stored attachment checksum does not match its record");
   }
   return { name: row.name, contentType: row.content_type, bytes: stored.body };
+}
+
+/** A display name as stored: one line, no quotes or angle brackets (they would break a From header). */
+export function cleanDisplayName(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "";
 }
