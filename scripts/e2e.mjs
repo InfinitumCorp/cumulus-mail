@@ -70,6 +70,8 @@ try {
   await fetch(url).catch(() => undefined);
   const files = readdirSync(join(root, "e2e"))
     .filter((name) => name.endsWith(".e2e.mjs"))
+    // E2E_ONLY=billing,a11y runs just the files whose names contain one of those words.
+    .filter((name) => !process.env.E2E_ONLY || process.env.E2E_ONLY.split(",").some((part) => part && name.includes(part.trim())))
     .map((name) => join("e2e", name));
   const run = spawn(process.execPath, ["--test", "--test-concurrency=1", ...files], {
     cwd: root,
