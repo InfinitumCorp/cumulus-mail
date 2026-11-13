@@ -474,10 +474,15 @@ export function AccountPanel({
             <div className="border-b border-line py-4">
               <dt className="text-muted">Sign-in</dt>
               <dd className="mt-2 text-sm text-muted">
-                {posture.note} Factors: {posture.methods.join(", ")}.{" "}
-                <a className="text-accent" href={posture.issuer}>
-                  {posture.issuer}
-                </a>
+                {posture.note} Factors: {posture.methods.join(", ")}.
+                {/* The issuer is a machine endpoint (OIDC discovery), not a page: shown as text, not a link, so a
+                    screen reader does not read a long URL as link text and nobody lands on a JSON document. */}
+                <span className="mt-1 block">
+                  Identity provider:{" "}
+                  <code translate="no" className="break-all font-mono text-xs">
+                    {posture.issuer}
+                  </code>
+                </span>
               </dd>
             </div>
             <div className="border-b border-line py-4">
