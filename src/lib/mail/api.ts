@@ -232,3 +232,18 @@ export const getBillingStatus = createServerFn({ method: "GET" })
     const { billingStatusForSession } = await import("./mailbox.server");
     return billingStatusForSession(context.userId, context.bearerToken);
   });
+
+/** Server-side search: ranked message ids, 25 per page, with a cursor for the next page. */
+export const searchMail = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const data = (input ?? {}) as { query?: unknown; cursor?: unknown; folders?: unknown };
+    if (typeof data.query !== "string" || data.query.length > 500) throw new Error("Enter a search");
+    const cursor = typeof data.cursor === "string" && data.cursor.length <= 400 ? data.cursor : null;
+    const folders = Array.isArray(data.folders) ? data.folders.filter((f): f is string => typeof f === "string").slice(0, 10) : undefined;
+    return { query: data.query, cursor, folders };
+  })
+  .handler(async ({ context, data }) => {
+    const { searchMailForSession } = await import("./mailbox.server");
+    return searchMailForSession(context.userId, data, context.bearerToken);
+  });
