@@ -1,5 +1,6 @@
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
+import { inboundVerdict, type ResolveA } from "./spam.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { createBounceHandler } from "./dsn.ts";
@@ -25,7 +26,7 @@ export async function ingestInboundEmail(
   storageFor: TenantStorage,
   message: InboundEmail,
   resolver: DNSResolver = emptyResolver,
-  options: { enforceStorage?: boolean } = {},
+  options: { enforceStorage?: boolean; spam?: { env?: Record<string, string | undefined>; resolve?: ResolveA } } = {},
 ): Promise<{ stored: string[]; rejected?: "mailbox_full" }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
@@ -78,10 +79,12 @@ export async function ingestInboundEmail(
     { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
     resolver,
   );
+  // Lists, shared reputation, RBL (off unless configured) and the sender's own DMARC policy.
+  const verdict = await inboundVerdict(db, tenantId, from.email, auth, options.spam);
   const draft: MailMessage = {
     id,
     threadId: id,
-    folder: auth.disposition === "quarantine" ? "quarantine" : "inbox",
+    folder: verdict.folder,
     from,
     to: parsed.to.length ? parsed.to : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
     cc: parsed.cc,

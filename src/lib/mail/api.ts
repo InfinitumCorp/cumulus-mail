@@ -59,6 +59,20 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
     return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
+/** "Report spam" / "Not spam": trains this mailbox's lists and votes on the sender domain's reputation. */
+export const reportSpamMessage = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { messageId: string; verdict: "spam" | "ham" } => {
+    const value = (input ?? {}) as { messageId?: unknown; verdict?: unknown };
+    if (typeof value.messageId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,200}$/.test(value.messageId)) throw new Error("Invalid message id");
+    if (value.verdict !== "spam" && value.verdict !== "ham") throw new Error("Unknown verdict");
+    return { messageId: value.messageId, verdict: value.verdict };
+  })
+  .handler(async ({ context, data }) => {
+    const { reportSpamForSession } = await import("./mailbox.server");
+    return reportSpamForSession(context.userId, data.messageId, data.verdict, context.bearerToken);
+  });
+
 export const importMailboxBackup = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(asBackup)
