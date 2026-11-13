@@ -1,4 +1,4 @@
-import { createMiddleware, createStart } from "@tanstack/react-start";
+import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 
 /**
  * One nonce per request, for the Content-Security-Policy (src/lib/csp.ts). The router puts it on its
@@ -23,4 +23,17 @@ const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
   return result;
 });
 
-export const startInstance = createStart(() => ({ requestMiddleware: [cspMiddleware] }));
+/**
+ * Server functions are same-origin RPC. TanStack Start protects them with this middleware by default,
+ * but only while the app has no start instance: once `createStart` exists (for the CSP above), the
+ * default is dropped and it has to be listed here. A browser request from another site is refused
+ * with 403 before any server function runs. Requests with no Sec-Fetch-Site, Origin or Referer (not a
+ * browser, so no ambient cookies) are allowed, as `assertSameSiteRequest` (auth/isolation.server.ts)
+ * already allows them for authenticated calls.
+ */
+export const serverFnCsrfMiddleware = createCsrfMiddleware({
+  filter: (ctx) => ctx.handlerType === "serverFn",
+  allowRequestsWithoutOriginCheck: true,
+});
+
+export const startInstance = createStart(() => ({ requestMiddleware: [serverFnCsrfMiddleware, cspMiddleware] }));
