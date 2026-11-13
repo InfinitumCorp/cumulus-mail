@@ -273,5 +273,9 @@ export async function receiveCidEvent(body: string, signature: string | null): P
   const event = parseCidEvent(body);
   // Signed events older than a day are refused, so a captured request can't be replayed later.
   if (!event || Math.abs(Date.now() - Date.parse(event.at)) > 24 * 60 * 60 * 1000) return { status: 400 };
-  return { status: 200, result: await handleCidEvent(await database(), event, mailDomain()) };
+  const result = await handleCidEvent(await database(), event, mailDomain());
+  // A notice that arrives before its account.created (events can be delivered out of order): ask the
+  // sender to try again shortly (Cumulus://ID retries from its queue), unless the event is old.
+  if (result === "no-mailbox" && Date.now() - Date.parse(event.at) < 60 * 60 * 1000) return { status: 409, result };
+  return { status: 200, result };
 }
