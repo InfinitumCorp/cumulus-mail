@@ -327,5 +327,15 @@
  "{0} has no one-click unsubscribe.": "У {0} нет отписки в один клик.",
  "{0} is verified.": "{0} подтверждён.",
  "· Cumulus://Cloud": "· Cumulus://Cloud",
- "· TXT": "· TXT"
+ "· TXT": "· TXT",
+ "Calendar address (shown once)": "Адрес календаря (показывается один раз)",
+ "Copied.": "Скопировано.",
+ "Copy address": "Копировать адрес",
+ "Could not change the calendar feed.": "Не удалось изменить ленту календаря.",
+ "Create address": "Создать адрес",
+ "Make a new address": "Создать новый адрес",
+ "Select the address and copy it.": "Выделите адрес и скопируйте его.",
+ "Subscribe from another calendar": "Подписка из другого календаря",
+ "Turn off": "Выключить",
+ "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает."
 }
