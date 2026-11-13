@@ -90,6 +90,7 @@ export function MailApp() {
   const setSettings = useMail((s) => s.setSettings);
   const settings = useMail((s) => s.settings);
   const saveContact = useMail((s) => s.saveContact);
+  const replaceContacts = useMail((s) => s.replaceContacts);
   const addRule = useMail((s) => s.addRule);
   const removeRule = useMail((s) => s.removeRule);
   const replaceMessages = useMail((s) => s.replaceMessages);
@@ -1022,7 +1023,7 @@ export function MailApp() {
           />
         ) : null}
         {view === "contacts" ? (
-          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} onSave={saveContact} />
+          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} onSave={saveContact} onReplace={replaceContacts} />
         ) : null}
         {view === "tasks" ? <TasksPanel tasks={tasks} onToggle={toggleTask} /> : null}
       </div>

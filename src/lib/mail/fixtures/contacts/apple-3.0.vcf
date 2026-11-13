@@ -1,0 +1,19 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//iPhone OS 17.0//EN
+N:Okafor;Chidi;;;
+FN:Chidi Okafor
+ORG:Northwind\, Inc.;Research
+item1.EMAIL;type=INTERNET;type=pref:chidi@northwind.example
+item2.EMAIL;type=INTERNET:c.okafor@personal.example
+TEL;type=CELL;type=VOICE;type=pref:+234 803 555 0100
+item3.ADR;type=HOME;type=pref:;;12 Marina Road;Lagos;;101231;Nigeria
+NOTE:Line one\nLine two with a comma\, and a semicolon\; here. This note is long e
+ nough to be folded by the exporter at seventy-five octets.
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:;Grok Team;;;
+FN:Grok Team
+EMAIL;type=INTERNET:team@grok.example
+END:VCARD

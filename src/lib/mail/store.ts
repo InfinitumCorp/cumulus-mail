@@ -31,6 +31,8 @@ type MailStore = MailboxSnapshot & {
   toggleTask: (id: string) => void;
   addContact: (contact: Contact) => void;
   saveContact: (contact: Contact) => void;
+  /** Replace the whole contact list (import). */
+  replaceContacts: (contacts: Contact[]) => void;
   snooze: (id: string, until: string) => void;
   setSignature: (signature: string) => void;
   setSettings: (settings: MailSettings) => void;
@@ -176,6 +178,9 @@ export const useMail = create<MailStore>((set, get) => ({
     const contacts = get().contacts.some((item) => item.id === contact.id)
       ? get().contacts.map((item) => (item.id === contact.id ? contact : item))
       : [...get().contacts, contact];
+    commit(set, get, { contacts });
+  },
+  replaceContacts: (contacts) => {
     commit(set, get, { contacts });
   },
   snooze: (id, until) => {
