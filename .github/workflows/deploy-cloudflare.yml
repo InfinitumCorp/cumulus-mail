@@ -6,7 +6,8 @@
 #   CLOUDFLARE_ACCOUNT_ID
 #   HYPERDRIVE_ID          32-hex id of the production Hyperdrive config
 # Optional, synced to the worker as Cloudflare secrets when set:
-#   MAIL_BLOB_KEY, SUPABASE_S3_ACCESS_KEY_ID, SUPABASE_S3_SECRET_ACCESS_KEY,
+#   MAIL_BLOB_KEY, MAIL_BLOB_KEYS and MAIL_BLIND_KEY (key rotation: docs/ops/key-rotation.md),
+#   SUPABASE_S3_ACCESS_KEY_ID, SUPABASE_S3_SECRET_ACCESS_KEY,
 #   BETTER_AUTH_SECRET (api), BETTER_AUTH_URL (api), STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET (api)
 #
 # Guardrails (docs/deploy/cloudflare-handoff.md) are enforced by scripts/deploy-guard.mjs before any
@@ -76,10 +77,12 @@ jobs:
         working-directory: workers/email
         env:
           MAIL_BLOB_KEY: ${{ secrets.MAIL_BLOB_KEY }}
+          MAIL_BLOB_KEYS: ${{ secrets.MAIL_BLOB_KEYS }}
+          MAIL_BLIND_KEY: ${{ secrets.MAIL_BLIND_KEY }}
           SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
           SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
         run: |
-          for name in MAIL_BLOB_KEY SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY; do
+          for name in MAIL_BLOB_KEY MAIL_BLOB_KEYS MAIL_BLIND_KEY SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY; do
             value="${!name}"
             if [ -n "$value" ]; then printf '%s' "$value" | $WRANGLER secret put "$name" --config wrangler.deploy.json; fi
           done
@@ -100,6 +103,8 @@ jobs:
         working-directory: .output/server
         env:
           MAIL_BLOB_KEY: ${{ secrets.MAIL_BLOB_KEY }}
+          MAIL_BLOB_KEYS: ${{ secrets.MAIL_BLOB_KEYS }}
+          MAIL_BLIND_KEY: ${{ secrets.MAIL_BLIND_KEY }}
           SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
           SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
@@ -108,7 +113,7 @@ jobs:
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
         run: |
           test -n "$BETTER_AUTH_SECRET" || { echo "BETTER_AUTH_SECRET is required for the API worker"; exit 1; }
-          for name in MAIL_BLOB_KEY SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY BETTER_AUTH_SECRET BETTER_AUTH_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET; do
+          for name in MAIL_BLOB_KEY MAIL_BLOB_KEYS MAIL_BLIND_KEY SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY BETTER_AUTH_SECRET BETTER_AUTH_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET; do
             value="${!name}"
             if [ -n "$value" ]; then printf '%s' "$value" | $WRANGLER secret put "$name" --config wrangler.deploy.json; fi
           done

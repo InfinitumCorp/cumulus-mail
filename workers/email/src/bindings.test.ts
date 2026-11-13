@@ -131,3 +131,30 @@ test("sslmode=disable is refused before a connection is opened", async () => {
   );
   assert.equal(connected, false);
 });
+
+test("a rotated key ring reaches the worker: new mail is sealed under the current key", async () => {
+  const saved = Object.fromEntries(["MAIL_BLOB_KEY", "MAIL_BLOB_KEYS", "CUMULUS_ALLOW_SUPABASE"].map((k) => [k, process.env[k]]));
+  const harness = await createHarness();
+  const env = { ...workerEnv(harness, { closed: false }), MAIL_BLOB_KEYS: `1:${"cd".repeat(32)},0:${KEY}` };
+  try {
+    await openMailbox(harness.db, "wire-ring", profile("wire-ring", "wire.ring@cumuluscloud.app", "Ring"));
+    const raw = new TextEncoder().encode(
+      ["From: Leah <leah@cumuluscloud.app>", "To: Ring <wire.ring@cumuluscloud.app>", "Subject: Ring", "Content-Type: text/plain", "", PLAIN].join("\r\n"),
+    );
+    const stored = await handleEmail({ from: "leah@cumuluscloud.app", to: "wire.ring@cumuluscloud.app", raw }, env);
+    const rows = await harness.db.query<{ subject: string; raw_key: string }>(
+      `select subject, raw_key from cumulus_mail.messages where tenant_id = $1 and id = $2`,
+      ["wire-ring", stored.stored[0]],
+    );
+    const field = Buffer.from(rows[0]!.subject.slice(4), "base64url");
+    assert.deepEqual([field[0], field[1]], [2, 1], "field: v2 layout, key 1");
+    const blob = await readFile(blobFile(harness.root, "wire-ring", rows[0]!.raw_key));
+    assert.deepEqual([blob[0], blob[1]], [2, 1], "blob: v2 layout, key 1");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    await harness.close();
+  }
+});

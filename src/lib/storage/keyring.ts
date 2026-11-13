@@ -1,6 +1,8 @@
 /**
- * Key versioning for MAIL_BLOB_KEY (docs/design/blob-key-rotation.md). DRAFT: these functions are not yet
- * wired into seal/openSeal, so nothing reads or writes the new layout in production yet.
+ * Key versioning for MAIL_BLOB_KEY (docs/design/blob-key-rotation.md).
+ *
+ * Wired in: seal/openSeal (src/lib/storage/crypto.ts) take a Keyring, and field-crypto and the blob store
+ * default to keyringFromEnv(). `npm run keys:rekey` moves stored values to the current key.
  *
  * Layout v2: [0x02][key id][iv 12][ciphertext][tag 16]. The key id is bound into the GCM additional data,
  * so a value cannot be relabelled with another key's id. Version-1 values ([0x01][iv]…, everything stored
@@ -14,7 +16,11 @@
  */
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
-export type Keyring = { current: number; keys: Map<number, Uint8Array> };
+/**
+ * `explicit` is true only when MAIL_BLOB_KEYS is set. Until then the app keeps writing today's v1 layout,
+ * so deploying this code changes nothing and a rollback to an older build can still read every value.
+ */
+export type Keyring = { current: number; keys: Map<number, Uint8Array>; explicit: boolean };
 
 function parseKey(raw: string): Uint8Array {
   const value = raw.trim();
@@ -28,7 +34,7 @@ export function keyringFromEnv(env: Record<string, string | undefined> = process
   if (!list) {
     const single = env.MAIL_BLOB_KEY?.trim();
     if (!single) throw new Error("MAIL_BLOB_KEY is not set");
-    return { current: 0, keys: new Map([[0, parseKey(single)]]) };
+    return { current: 0, keys: new Map([[0, parseKey(single)]]), explicit: false };
   }
   const keys = new Map<number, Uint8Array>();
   let current = -1;
@@ -41,7 +47,11 @@ export function keyringFromEnv(env: Record<string, string | undefined> = process
     keys.set(id, parseKey(match[2]!));
     if (current < 0) current = id;
   }
-  return { current, keys };
+  return { current, keys, explicit: true };
+}
+
+export function isKeyring(value: unknown): value is Keyring {
+  return typeof value === "object" && value !== null && "keys" in value && (value as Keyring).keys instanceof Map;
 }
 
 const tenantKey = (master: Uint8Array, tenantId: string, purpose: string) =>
