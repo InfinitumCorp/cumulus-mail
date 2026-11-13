@@ -17,6 +17,8 @@ export type HealthReport = {
   region: Region;
   db: Check & { source?: "postgres" | "pglite" };
   storage: Check & { kind?: "filesystem" | "s3" };
+  /** Only with `?deep=1`. Milliseconds per check; never a host, a query or an error message. */
+  timings?: Timings;
   time: string;
 };
 
@@ -46,6 +48,9 @@ export async function timed(run: () => Promise<boolean>, timeoutMs = 3000): Prom
   }
 }
 
+/** `?deep=1`: what each check cost, so a slow copy can be told from a broken one. */
+export type Timings = { db: number; storage: number; total: number };
+
 export type HealthDeps = {
   db: () => Promise<boolean>;
   dbSource: () => "postgres" | "pglite";
@@ -54,7 +59,8 @@ export type HealthDeps = {
   now?: () => Date;
 };
 
-export async function healthReport(host: string | null, deps: HealthDeps): Promise<HealthReport> {
+export async function healthReport(host: string | null, deps: HealthDeps, options: { deep?: boolean } = {}): Promise<HealthReport> {
+  const started = Date.now();
   const [db, storage] = await Promise.all([timed(deps.db), timed(deps.storage)]);
   let source: "postgres" | "pglite" | undefined;
   let kind: "filesystem" | "s3" | undefined;
@@ -75,19 +81,30 @@ export async function healthReport(host: string | null, deps: HealthDeps): Promi
     region: regionFor(host),
     db: { ...db, ...(source ? { source } : {}) },
     storage: { ...storage, ...(kind ? { kind } : {}) },
+    ...(options.deep ? { timings: { db: db.ms, storage: storage.ms, total: Date.now() - started } } : {}),
     time: (deps.now?.() ?? new Date()).toISOString(),
   };
 }
 
 const CACHE_MS = 30_000;
-let cached: { at: number; host: string; report: HealthReport } | undefined;
+let cached: { at: number; host: string; deep: boolean; report: HealthReport } | undefined;
 
-/** The report for a request, reusing one from the last 30 seconds for the same host. */
-export async function cachedHealth(host: string | null, deps: HealthDeps, now = Date.now()): Promise<HealthReport> {
+/**
+ * The report for a request, reusing one from the last 30 seconds for the same host. A `?deep=1` call
+ * is cached separately: its whole point is a fresh measurement, so it must not be served a cached
+ * one, nor hand its timings to a plain call.
+ */
+export async function cachedHealth(
+  host: string | null,
+  deps: HealthDeps,
+  now = Date.now(),
+  options: { deep?: boolean } = {},
+): Promise<HealthReport> {
   const key = host ?? "";
-  if (cached && cached.host === key && now - cached.at < CACHE_MS) return cached.report;
-  const report = await healthReport(host, deps);
-  cached = { at: now, host: key, report };
+  const deep = options.deep === true;
+  if (cached && cached.host === key && cached.deep === deep && now - cached.at < CACHE_MS) return cached.report;
+  const report = await healthReport(host, deps, { deep });
+  cached = { at: now, host: key, deep, report };
   return report;
 }
 
