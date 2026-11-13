@@ -16,8 +16,19 @@ export type BridgeLimits = {
 
 export const DEFAULT_LIMITS: BridgeLimits = { tokens: 5, perMinute: 60, pageSize: 200 };
 
-/** The one scope phase 1 issues and accepts. A token can only read. */
+/** Every token can read. */
 export const READ_SCOPE = "imap:read";
+
+/**
+ * Phase 2: MOVE and APPEND (sent copies). Issued only to a token created with `write: true`, and
+ * honoured only while `MAIL_BRIDGE_WRITE=on` as well as `MAIL_BRIDGE=on`. Turning the switch off makes
+ * every write token read-only again at once, without revoking anything.
+ */
+export const WRITE_SCOPE = "imap:write";
+
+/** Largest message APPEND accepts, and the longest an IDLE call waits. */
+export const DEFAULT_APPEND_BYTES = 25 * 1024 * 1024;
+export const DEFAULT_IDLE_SECONDS = 25;
 
 function positive(value: string | undefined, fallback: number, max: number): number {
   const n = Number.parseInt(value ?? "", 10);
@@ -26,6 +37,19 @@ function positive(value: string | undefined, fallback: number, max: number): num
 
 export function bridgeEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env.MAIL_BRIDGE?.trim().toLowerCase() === "on";
+}
+
+/** Writes need both switches, so the write path stays off on a deployment that only wants reads. */
+export function bridgeWriteEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return bridgeEnabled(env) && env.MAIL_BRIDGE_WRITE?.trim().toLowerCase() === "on";
+}
+
+export function appendMaxBytes(env: Record<string, string | undefined> = process.env): number {
+  return positive(env.MAIL_BRIDGE_APPEND_BYTES, DEFAULT_APPEND_BYTES, 50 * 1024 * 1024);
+}
+
+export function idleSeconds(env: Record<string, string | undefined> = process.env): number {
+  return positive(env.MAIL_BRIDGE_IDLE_SECONDS, DEFAULT_IDLE_SECONDS, 60);
 }
 
 export function bridgeLimits(env: Record<string, string | undefined> = process.env): BridgeLimits {

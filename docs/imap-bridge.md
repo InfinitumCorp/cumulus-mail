@@ -1,6 +1,6 @@
 # Read-only IMAP bridge: scope
 
-Status: **phase 1 built, off by default** (`MAIL_BRIDGE=on`); the bridge program itself is not written. `src/lib/mail/bridge.ts` holds the placeholder design
+Status: **phase 1 and phase 2 (server side) built, off by default** (`MAIL_BRIDGE=on`; writes also need `MAIL_BRIDGE_WRITE=on`); the bridge program itself is not written. `src/lib/mail/bridge.ts` holds the placeholder design
 (IMAP on `127.0.0.1:1143`, STARTTLS) that the account dialog shows, and the parity table lists the bridge as
 deferred. This page says what a first, **read-only** bridge would take, so it can be planned and estimated.
 
@@ -91,6 +91,38 @@ on the list for when the ID flow exists.
 Not in phase 1: raw RFC 822 bodies (S4) and search (S5), which the bridge needs before it can serve
 `FETCH BODY[]` or `SEARCH`.
 
+## What phase 2 added (server side)
+
+Still server-side only; the bridge program itself is not written. Everything stays **off by default**:
+- IDLE needs `MAIL_BRIDGE=on`.
+- MOVE and APPEND need **both** `MAIL_BRIDGE=on` and `MAIL_BRIDGE_WRITE=on`, **and** a token created with
+  `write: true`.
+- Turning `MAIL_BRIDGE_WRITE` off makes every write token read-only again at once, without revoking
+  anything.
+
+| Piece | What it does | Where |
+|---|---|---|
+| `imap:write` scope | Added to a token only on request, only while writes are on. Checked on every call. A read token on a write route gets **403**. | `bridge/config.ts`, `bridge/tokens.ts`, `bridge/http.ts` |
+| **IDLE** — `POST /api/bridge/idle` `{folder, sinceModseq}` | Long poll. Answers as soon as the folder's modseq passes `sinceModseq`, or after `MAIL_BRIDGE_IDLE_SECONDS` (default 25, max 60) with `changed: false`. Stops when the client disconnects. Keeps no per-connection state on the server. | `bridge/idle.ts` |
+| **MOVE** — `POST /api/bridge/move` `{from, to, uids}` | UID MOVE (RFC 6851). Returns the destination's UIDVALIDITY and `[old, new]` UID pairs for COPYUID. Each message moves by compare-and-swap on its folder, so a message the app moved in the meantime is skipped, not overwritten. Refuses Drafts or Quarantine as a target, refuses Quarantine as a source (release has its own checks), refuses unknown folders. | `bridge/write.ts` |
+| **APPEND** — `POST /api/bridge/append?folder=sent` (body: the raw RFC 822 message) | Files **sent copies only**. Rules below the table. Returns UIDVALIDITY and the new UID (APPENDUID), 201. | `bridge/write.ts` |
+| Inbound mail gets its UID on arrival | Phase 1 only assigned UIDs on a snapshot write, so a bridge, and so an IDLE, missed new mail until the web app next saved. | `inbound.ts` → `noteNewMessage` |
+
+APPEND rules:
+- The folder must be Sent.
+- `From` must be one of the mailbox's own addresses, so APPEND cannot plant "received" mail.
+- Size up to `MAIL_BRIDGE_APPEND_BYTES` (default 25 MB).
+- Storage quota is enforced when `MAIL_ENFORCE_STORAGE` is on.
+- The message is stored sealed, raw bytes included.
+- Flags: `\Seen` is set unless `?seen=0`; `?flagged=1` sets `\Flagged`.
+- The same bytes twice give the same UID: 200, `duplicate: true`.
+
+Still refused through the bridge: STORE (flags), COPY, EXPUNGE, CREATE, DELETE and RENAME.
+
+Known limit: the web app saves whole snapshots. A web client holding an older snapshot can therefore put a
+bridge-moved message back on its next save. This already applies to every write outside the web client,
+and needs per-message writes in the app to fix.
+
 ## Owner decisions
 
 - **B1** Local bridge (recommended) or hosted IMAP per region.
@@ -98,5 +130,5 @@ Not in phase 1: raw RFC 822 bodies (S4) and search (S5), which the bridge needs 
 - **B3** Plan gating: which plans get the bridge (`docs/plans.md` has no bridge row yet).
 - **B4** Russia: same bridge build pointed at `ru.mail.cumuluscloud.app`, distributed without blocked
   stores/CDNs.
-- **B5** Later: read-write (flags, moves) and SMTP submission through the bridge, which need the outbound
+- **B5** Later: flags (STORE) and SMTP submission (MOVE and APPEND for sent copies are built behind `MAIL_BRIDGE_WRITE`, phase 2) through the bridge, which need the outbound
   path (#40) live first.

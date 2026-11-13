@@ -1,13 +1,14 @@
 /**
- * App passwords for the read-only bridge. The token is random, shown once, and stored only as a
- * SHA-256 hash: the table cannot be replayed into mailbox access. Every token carries the fixed
- * `imap:read` scope, which is checked on use, so a leaked token can never write.
+ * App passwords for the bridge. The token is random, shown once, and stored only as a SHA-256 hash:
+ * the table cannot be replayed into mailbox access. Every token carries `imap:read`. `imap:write`
+ * (MOVE, APPEND) is added only when asked for at creation, and only honoured while MAIL_BRIDGE_WRITE=on;
+ * scopes are checked on every call.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { assertTenantId } from "../../storage/adapter.ts";
 import { sealText, openText } from "../field-crypto.ts";
 import type { MailQuery } from "../query.ts";
-import { bridgeEnabled, bridgeLimits, READ_SCOPE, type BridgeLimits } from "./config.ts";
+import { bridgeEnabled, bridgeLimits, bridgeWriteEnabled, READ_SCOPE, WRITE_SCOPE, type BridgeLimits } from "./config.ts";
 
 export class BridgeOffError extends Error {
   constructor() {
@@ -15,6 +16,15 @@ export class BridgeOffError extends Error {
     this.name = "BridgeOffError";
   }
 }
+
+export class BridgeWriteOffError extends Error {
+  constructor() {
+    super("Bridge writes are off. Set MAIL_BRIDGE_WRITE=on to issue a token that can move or append.");
+    this.name = "BridgeWriteOffError";
+  }
+}
+
+const scopes = (scope: string) => new Set(scope.split(/\s+/).filter(Boolean));
 
 export class TooManyTokensError extends Error {
   constructor(limit: number) {
@@ -77,11 +87,13 @@ export async function createToken(
   db: MailQuery,
   tenantId: string,
   name: string,
-  options: { limits?: BridgeLimits; env?: Record<string, string | undefined>; value?: string; id?: string; now?: Date } = {},
+  options: { limits?: BridgeLimits; env?: Record<string, string | undefined>; value?: string; id?: string; now?: Date; write?: boolean } = {},
 ): Promise<{ token: string; record: BridgeToken }> {
   assertTenantId(tenantId);
   const env = options.env ?? process.env;
   if (!bridgeEnabled(env)) throw new BridgeOffError();
+  if (options.write && !bridgeWriteEnabled(env)) throw new BridgeWriteOffError();
+  const scope = options.write ? `${READ_SCOPE} ${WRITE_SCOPE}` : READ_SCOPE;
   const limits = options.limits ?? bridgeLimits(env);
   const live = await listTokens(db, tenantId);
   if (live.length >= limits.tokens) throw new TooManyTokensError(limits.tokens);
@@ -91,9 +103,9 @@ export async function createToken(
   await db.query(
     `insert into cumulus_mail.bridge_tokens (tenant_id, id, name_enc, token_sha256, scope, created_at)
      values ($1,$2,$3,$4,$5,$6)`,
-    [tenantId, id, sealText(tenantId, name.slice(0, 120)), tokenHash(token), READ_SCOPE, createdAt],
+    [tenantId, id, sealText(tenantId, name.slice(0, 120)), tokenHash(token), scope, createdAt],
   );
-  return { token, record: { id, name: name.slice(0, 120), scope: READ_SCOPE, createdAt, lastUsedAt: null, revokedAt: null } };
+  return { token, record: { id, name: name.slice(0, 120), scope, createdAt, lastUsedAt: null, revokedAt: null } };
 }
 
 /** Revoke one. Returns false when the id is not this mailbox's, or was already revoked. */
@@ -119,7 +131,7 @@ export type TokenCheck =
 export async function checkToken(
   db: MailQuery,
   authorization: string | null | undefined,
-  options: { env?: Record<string, string | undefined>; now?: Date } = {},
+  options: { env?: Record<string, string | undefined>; now?: Date; need?: "read" | "write" } = {},
 ): Promise<TokenCheck> {
   const env = options.env ?? process.env;
   if (!bridgeEnabled(env)) return { ok: false, reason: "off" };
@@ -133,7 +145,9 @@ export async function checkToken(
   const found = rows[0];
   if (!found || !sameHash(found.token_sha256, hash)) return { ok: false, reason: "unknown" };
   if (found.revoked_at) return { ok: false, reason: "revoked" };
-  if (found.scope !== READ_SCOPE) return { ok: false, reason: "scope" };
+  const granted = scopes(found.scope);
+  if (!granted.has(READ_SCOPE)) return { ok: false, reason: "scope" };
+  if (options.need === "write" && (!granted.has(WRITE_SCOPE) || !bridgeWriteEnabled(env))) return { ok: false, reason: "scope" };
   await db.query(`update cumulus_mail.bridge_tokens set last_used_at = $2 where token_sha256 = $1`, [
     hash,
     (options.now ?? new Date()).toISOString(),

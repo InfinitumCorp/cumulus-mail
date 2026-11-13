@@ -135,3 +135,20 @@ export async function syncUidsForMailbox(
     if (!byFolder.get(row.folder)?.has(row.message_id)) await expungeMessage(db, tenantId, row.folder, row.message_id);
   }
 }
+
+/**
+ * Give one newly written message its UID (inbound mail, an APPEND). The snapshot path reconciles a
+ * whole mailbox; this is for writes that add a single message without one. A no-op while MAIL_BRIDGE
+ * is off.
+ */
+export async function noteNewMessage(
+  db: MailQuery,
+  tenantId: string,
+  folder: string,
+  messageId: string,
+  options: { env?: Record<string, string | undefined>; now?: Date } = {},
+): Promise<number | null> {
+  const { bridgeEnabled } = await import("./config.ts");
+  if (!bridgeEnabled(options.env ?? process.env)) return null;
+  return touchMessage(db, tenantId, folder, messageId, options.now);
+}
