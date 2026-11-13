@@ -134,7 +134,7 @@ Then deploy from `main`. `/api/health` shows `schema.pending: 0` *(after #91)*.
 
 For each secret: where it lives, what rotating it does to people, and the steps. **Rotate one at a time**,
 verify, then the next. After any suspected exposure, rotate first and investigate after — except
-`MAIL_BLOB_KEY` (read its section).
+`MAIL_BLOB_KEY`, which has its own procedure (read its section).
 
 ### `BETTER_AUTH_SECRET` — signs sessions
 - **US:** GitHub env `production-us` + worker secret. **RU:** Lockbox.
@@ -144,14 +144,26 @@ verify, then the next. After any suspected exposure, rotate first and investigat
 
 ### `MAIL_BLOB_KEY` — encrypts every blob and every sealed field ⚠
 - **US:** GitHub env + worker secret. **RU:** Lockbox.
-- **There is no rotation path today.** One key seals all stored mail, attachments and encrypted fields
-  (`src/lib/storage/crypto.ts`), and the code reads exactly one key. **Changing it makes all existing mail
-  unreadable.** Do not change it as routine.
-- **If it is exposed:** an attacker also needs the database or the bucket to use it. Rotate the database
-  and bucket credentials (below) immediately, then treat re-keying as a planned engineering task: it needs
-  a key-version in each sealed value and a re-encryption job, neither of which exists yet. Record this in
-  the incident note.
-- **Back it up** in the password manager the team uses for recovery keys. Losing it loses every mailbox.
+- **Never just change it.** One key seals all stored mail, attachments and encrypted fields
+  (`src/lib/storage/crypto.ts`). Replacing it without the procedure below makes all existing mail
+  unreadable.
+- **Rotation (#114):** follow `docs/ops/key-rotation.md`.
+  1. Add the new key as current in `MAIL_BLOB_KEYS` (`1:<new>,0:<old>`) and deploy.
+  2. `npm run keys:rekey` (a dry run), then `npm run keys:rekey -- --apply`. It is resumable, and safe to
+     re-run.
+  3. Verify with another dry run.
+  4. Remove the old key from the list and deploy.
+  `MAIL_BLOB_KEY` itself stays set: it becomes the stable key for lookup hashes, which never rotate.
+  **Until #114 is merged and deployed there is no rotation path**: treat the steps below as the only
+  response.
+- **If it is exposed:** an attacker also needs the database or the bucket to use it.
+  1. Rotate the database and bucket credentials (below) immediately.
+  2. Then rotate the key as above.
+  3. Record in the incident note that the old key still lets someone test guesses against the lookup
+     hashes.
+- **Back it up**, and every key in `MAIL_BLOB_KEYS`, in the password manager the team uses for recovery
+  keys. Keep a retired key for as long as backups sealed under it are kept. Losing the current key loses
+  every mailbox.
 - The US and RU copies have **separate** keys; never copy one to the other.
 
 ### `DATABASE_URL` / database password
