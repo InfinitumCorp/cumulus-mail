@@ -1,4 +1,4 @@
-import { createHash, createSign } from "node:crypto";
+import { createHash, createPublicKey, createSign } from "node:crypto";
 
 /**
  * DKIM signing (RFC 6376), `a=rsa-sha256; c=relaxed/relaxed`.
@@ -112,4 +112,13 @@ export function dkimSignatureHeader(message: string, options: DkimOptions): stri
 /** Prepend a DKIM-Signature header to a CRLF message. */
 export function signMessage(message: string, options: DkimOptions): string {
   return `${dkimSignatureHeader(message, options)}\r\n${message.replace(/\r?\n/g, "\r\n")}`;
+}
+
+/**
+ * The DNS TXT record to publish at `<selector>._domainkey.<domain>` for a signing key: the public half,
+ * as SubjectPublicKeyInfo DER in base64 (RFC 6376 §3.6.1). `npm run dkim:record -- <key.pem>` prints it.
+ */
+export function dkimDnsRecord(privateKeyPem: string): string {
+  const der = createPublicKey(privateKeyPem).export({ type: "spki", format: "der" });
+  return `v=DKIM1; k=rsa; p=${Buffer.from(der).toString("base64")}`;
 }
