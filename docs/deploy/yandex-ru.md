@@ -36,9 +36,12 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 ## Steps
 
 1. **Database (D1).** Create the database (Managed PostgreSQL 16+ in `ru-central1`, or use the shared one).
-   Apply the migrations in `migrations/` in file-name order (`0001`–`0010`), recording each file name in
+   Apply the migrations in `migrations/` in file-name order, recording each file name in
    `public._migrations (name text primary key, applied_at timestamptz default now())`, the same table the app
-   and the US database use. Put the connection string (with `sslmode=verify-full` and Yandex's CA, or
+   and the US database use. From a checkout of the commit being deployed:
+   `DATABASE_URL=… npm run db:status` lists what is pending (exit 3) without changing anything, and
+   `DATABASE_URL=… npm run db:migrate` applies it, one transaction per file. Run `db:status` again before
+   every deploy: with #91, `/api/health` reports `schema.pending` and is `degraded` until it is 0. Put the connection string (with `sslmode=verify-full` and Yandex's CA, or
    `sslmode=require`) in Lockbox as `DATABASE_URL`.
 2. **Object Storage (D2).** Create the bucket `cumulus-mail-ru` (private, no public access) and a static
    access key for the service account. Put the key pair in Lockbox. The app uses the generic S3 driver with
