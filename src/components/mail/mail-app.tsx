@@ -40,6 +40,7 @@ import type { MailboxBackup } from "@/lib/mail/backup";
 import { defaultSettings, noteUnsubscribed, recordAudit } from "@/lib/mail/settings";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
+import { SetupCard, SetupDialog } from "./setup";
 import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
@@ -81,6 +82,13 @@ export function MailApp() {
   const remove = useMail((s) => s.remove);
   const saveMessage = useMail((s) => s.saveMessage);
   const addAlias = useMail((s) => s.addAlias);
+  const setDisplayName = useMail((s) => s.setDisplayName);
+  const [setupOpen, setSetupOpen] = useState(false);
+  // `?setup=1` shows the card on demand (it is otherwise only on a new mailbox).
+  const [setupForced, setSetupForced] = useState(false);
+  useEffect(() => {
+    setSetupForced(new URLSearchParams(window.location.search).get("setup") === "1");
+  }, []);
   const saveBrief = useMail((s) => s.saveBrief);
   const addTask = useMail((s) => s.addTask);
   const toggleTask = useMail((s) => s.toggleTask);
@@ -872,6 +880,18 @@ export function MailApp() {
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
               folders={settings?.folders ?? []}
+              query={query}
+              setup={
+                settings?.setupPending || setupForced ? (
+                  <SetupCard
+                    onOpen={() => setSetupOpen(true)}
+                    onDismiss={() => {
+                      setSetupForced(false);
+                      if (settings) setSettings({ ...settings, setupPending: false });
+                    }}
+                  />
+                ) : null
+              }
               tab={inboxTab}
               onTab={(next) => {
                 setInboxTab(next);
@@ -1050,6 +1070,27 @@ export function MailApp() {
             />
           </div>
         </div>
+      ) : null}
+      {setupOpen ? (
+        <SetupDialog
+          address={me.email}
+          aliases={aliases}
+          name={me.name}
+          signature={signature}
+          onClose={() => setSetupOpen(false)}
+          onImportContacts={() => {
+            setSetupOpen(false);
+            setView("contacts");
+          }}
+          onDone={(result) => {
+            if (result.name) setDisplayName(result.name);
+            setSignature(result.signature);
+            if (result.alias) addAlias(`${result.alias}@${me.email.split("@")[1] ?? ""}`);
+            if (settings) setSettings({ ...settings, setupPending: false });
+            setSetupForced(false);
+            setSetupOpen(false);
+          }}
+        />
       ) : null}
       {accountOpen ? (
         <AccountPanel
