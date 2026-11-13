@@ -23,4 +23,20 @@ const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
   return result;
 });
 
-export const startInstance = createStart(() => ({ requestMiddleware: [cspMiddleware] }));
+/**
+ * Refuse a state-changing request that the browser says came from another site (src/lib/csrf.ts).
+ * Covers server functions and API routes alike; Better Auth checks its own routes.
+ */
+const csrfMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const { csrfRefusal } = await import("./lib/csrf");
+  const refusal = csrfRefusal({ method: request.method, path: new URL(request.url).pathname, headers: request.headers });
+  if (refusal) {
+    return new Response("Forbidden: cross-site request", {
+      status: 403,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-csrf-refused": refusal },
+    });
+  }
+  return next();
+});
+
+export const startInstance = createStart(() => ({ requestMiddleware: [csrfMiddleware, cspMiddleware] }));
