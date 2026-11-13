@@ -192,7 +192,9 @@ if (invoked === fileURLToPath(import.meta.url)) {
   const hostIndex = process.argv.indexOf("--host");
   if (hostIndex >= 0) {
     const { runHostSmoke } = await import("./host-smoke.mjs");
-    const { ok } = await runHostSmoke(process.argv[hostIndex + 1] ?? "");
+    const regionIndex = process.argv.indexOf("--region");
+    const region = regionIndex >= 0 ? process.argv[regionIndex + 1] : undefined;
+    const { ok } = await runHostSmoke(process.argv[hostIndex + 1] ?? "", { region });
     process.exit(ok ? 0 : 1);
   }
   const code = await runSmoke();
