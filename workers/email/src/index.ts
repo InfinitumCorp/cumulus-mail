@@ -1,6 +1,6 @@
 import { resolverFromEnv, type DNSResolver } from "../../../src/lib/mail/authenticate.ts";
 import type { TenantStorage } from "../../../src/lib/mail/delivery.ts";
-import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
+import { ingestInboundEmail, storageEnforced, type InboundEmail } from "../../../src/lib/mail/inbound.ts";
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
 import { openWorkerIngest, type IngestHooks, type WorkerBindings } from "./bindings.ts";
 
@@ -20,6 +20,8 @@ export type EmailMessage = {
   from: string;
   to: string;
   raw: ReadableStream<Uint8Array> | Uint8Array;
+  /** Cloudflare Email Routing: refuse the message with an SMTP reply the sender sees as a bounce. */
+  setReject?: (reason: string) => void;
 };
 
 export type EmailEnv = WorkerBindings & {
@@ -28,6 +30,8 @@ export type EmailEnv = WorkerBindings & {
   MAIL_DOMAIN?: string;
   /** Web host for the app. Defaults to mail.cumuluscloud.app. Not a secret. */
   MAIL_APP_HOST?: string;
+  /** "1" refuses mail that would take a mailbox over its plan's storage. Default: off (accept). */
+  MAIL_ENFORCE_STORAGE?: string;
   /** Set to "live" to query DNS for SPF, DKIM, and DMARC. Default does not. */
   MAIL_AUTH_DNS?: string;
   /** Fixture resolver for tests. Production leaves this unset. */
@@ -50,7 +54,7 @@ async function rawBytes(raw: EmailMessage["raw"]): Promise<Uint8Array> {
 export async function handleEmail(
   message: EmailMessage,
   env: EmailEnv,
-): Promise<{ stored: string[] }> {
+): Promise<{ stored: string[]; rejected?: "mailbox_full" }> {
   const opened = env.ingest ? null : await openWorkerIngest(env, env.ingestHooks);
   const ingest = env.ingest ?? opened;
   if (!ingest) {
@@ -75,7 +79,13 @@ export async function handleEmail(
       ingest.storageFor,
       inbound,
       env.resolver ?? resolverFromEnv(env),
+      { enforceStorage: storageEnforced(env.MAIL_ENFORCE_STORAGE) },
     );
+    if (stored.rejected === "mailbox_full") {
+      message.setReject?.("552 5.2.2 Mailbox full");
+      console.log(JSON.stringify({ event: "mail.inbound.rejected", reason: "mailbox_full", domain }));
+      return stored;
+    }
     console.log(
       JSON.stringify({ event: "mail.inbound.stored", stored: stored.stored.length, domain }),
     );

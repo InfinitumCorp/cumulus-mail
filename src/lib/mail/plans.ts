@@ -93,3 +93,13 @@ export function planLabel(planId: unknown, status: unknown = "active"): string {
   if (status === "canceled") return LABELS.free;
   return LABELS[isPlanId(planId) ? planId : DEFAULT_PLAN];
 }
+
+/**
+ * The plan a NEW mailbox starts on (docs/plans.md step 7). `MAIL_DEFAULT_PLAN` (free, plus, pro or
+ * business) switches it without a deploy of code; unset or unknown keeps `plus`, today's behaviour.
+ * Existing mailboxes are never changed by this.
+ */
+export function newMailboxPlan(env: { MAIL_DEFAULT_PLAN?: string } = process.env): PlanId {
+  const value = env.MAIL_DEFAULT_PLAN?.trim().toLowerCase();
+  return isPlanId(value) ? value : DEFAULT_PLAN;
+}
