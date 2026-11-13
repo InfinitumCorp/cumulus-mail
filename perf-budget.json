@@ -1,0 +1,9 @@
+{
+  "//": "Gzip bytes and milliseconds for the production build (scripts/perf-budget.mjs). Set about 10% above the numbers measured on 2026-11-13; raise them only in the change that needs it, and say why. Timings fail only past 2x, because CI machines vary.",
+  "totalJsGzip": 353000,
+  "largestChunkGzip": 137000,
+  "routes": {
+    "/": { "jsGzip": 216000, "fcp": 1500, "load": 3000, "forbid": ["openpgp"] },
+    "/p/00000000000000000000000000000000": { "jsGzip": 161000, "fcp": 1500, "load": 3000 }
+  }
+}

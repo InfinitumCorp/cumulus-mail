@@ -205,7 +205,19 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
           <Paperclip className="size-4" />
           Drive file
         </button>
-        <input ref={picker} type="file" className="sr-only" multiple onChange={(event) => void addFiles(event.target.files)} />
+        {/* Opened by the "Drive file" button above. Kept out of the tab order and the accessibility tree
+            (it is the button that is the control), and named after that button in case a tool reaches it anyway:
+            the same words, so the name needs no new translation. */}
+        <input
+          ref={picker}
+          type="file"
+          className="sr-only"
+          multiple
+          tabIndex={-1}
+          aria-hidden="true"
+          aria-label="Drive file"
+          onChange={(event) => void addFiles(event.target.files)}
+        />
         <button
           type="button"
           className="inline-flex h-11 items-center gap-2 px-3 text-sm text-accent disabled:opacity-50"

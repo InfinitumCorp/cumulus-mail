@@ -1,7 +1,7 @@
 {
   "name": "app-builder-workspace",
   "private": true,
-  "sideEffects": false,
+  "sideEffects": ["./src/lib/zod-config.ts"],
   "type": "module",
   "overrides": {
     "nf3": "0.3.17",
@@ -13,8 +13,11 @@
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
     "build": "node scripts/with-app-env.mjs vite build && npm run db:migrate",
     "db:migrate": "node scripts/migrate.mjs",
+    "perf": "node scripts/perf-budget.mjs",
+    "csp:check": "node scripts/csp-check.mjs",
     "db:status": "node scripts/migrate.mjs --status",
     "keys:rekey": "node --experimental-strip-types --no-warnings scripts/rekey.mjs",
+    "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
     "build:node": "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build",
@@ -24,7 +27,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test --test-concurrency=1 src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/lib/health.test.ts src/lib/observability/observability.test.ts src/lib/mail/logic.test.ts src/lib/mail/domain.test.ts src/lib/storage/storage.test.ts src/lib/storage/keyring.test.ts src/lib/storage/rekey.test.ts src/lib/storage/s3.integration.test.ts src/lib/auth/cumulus-issuer.test.ts src/lib/auth/auth-settings.test.ts src/lib/auth/cumulus-id.test.ts src/lib/mail/share.test.ts src/lib/mail/authenticate.test.ts src/lib/mail/field-crypto.test.ts src/lib/mail/metadata.test.ts src/lib/mail/mailbox.test.ts src/lib/mail/delivery.test.ts src/lib/mail/inbound.test.ts src/lib/mail/dsn.test.ts src/lib/mail/abuse.test.ts src/lib/mail/backup.test.ts src/lib/mail/parity.test.ts src/lib/ai/open-models.test.ts src/lib/mail/scalvs.test.ts src/lib/mail/release.test.ts src/lib/mail/outbound/dkim.test.ts src/lib/mail/outbound/outbound.test.ts src/lib/mail/folders.test.ts src/lib/mail/categories.test.ts src/lib/mail/coverage.test.ts src/lib/mail/calendar.test.ts src/lib/a11y/focus.test.ts src/lib/mail/outbound/cf-socket.test.ts src/lib/mail/outbound/hardening.test.ts src/lib/mail/outbound/limits.test.ts src/lib/mail/plans.test.ts src/lib/mail/billing.test.ts src/lib/mail/storage-usage.test.ts src/lib/mail/plan-switches.test.ts src/lib/auth/devices.test.ts src/lib/cloudflare-env.test.ts workers/email/src/index.test.ts workers/email/src/bindings.test.ts src/lib/mail/rls.test.ts src/lib/mail/inbound-runtime.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test --test-concurrency=1 src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/lib/health.test.ts src/lib/observability/observability.test.ts src/lib/mail/logic.test.ts src/lib/mail/domain.test.ts src/lib/storage/storage.test.ts src/lib/storage/keyring.test.ts src/lib/storage/rekey.test.ts src/lib/storage/s3.integration.test.ts src/lib/auth/cumulus-issuer.test.ts src/lib/auth/auth-settings.test.ts src/lib/auth/cumulus-id.test.ts src/lib/mail/share.test.ts src/lib/mail/authenticate.test.ts src/lib/mail/field-crypto.test.ts src/lib/mail/metadata.test.ts src/lib/mail/mailbox.test.ts src/lib/mail/delivery.test.ts src/lib/mail/inbound.test.ts src/lib/mail/dsn.test.ts src/lib/mail/abuse.test.ts src/lib/mail/backup.test.ts src/lib/mail/parity.test.ts src/lib/ai/open-models.test.ts src/lib/mail/scalvs.test.ts src/lib/mail/release.test.ts src/lib/mail/outbound/dkim.test.ts src/lib/mail/outbound/outbound.test.ts src/lib/mail/folders.test.ts src/lib/mail/categories.test.ts src/lib/mail/coverage.test.ts src/lib/mail/calendar.test.ts src/lib/a11y/focus.test.ts src/lib/mail/outbound/cf-socket.test.ts src/lib/mail/outbound/hardening.test.ts src/lib/mail/outbound/limits.test.ts src/lib/mail/plans.test.ts src/lib/mail/billing.test.ts src/lib/mail/storage-usage.test.ts src/lib/mail/plan-switches.test.ts src/lib/auth/devices.test.ts src/lib/cloudflare-env.test.ts workers/email/src/index.test.ts workers/email/src/bindings.test.ts src/lib/mail/rls.test.ts src/lib/mail/inbound-runtime.test.ts src/lib/security-headers.test.ts src/lib/csp.test.ts src/lib/mail/calendar-feed.test.ts",
     "test:e2e": "node scripts/e2e.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
@@ -96,6 +99,7 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "axe-core": "4.10.3",
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
