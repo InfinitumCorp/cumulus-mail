@@ -136,6 +136,22 @@ export async function readAttachmentForSession(
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
 }
 
+/** Account deletion: ask (7-day grace period), cancel, or see where it stands. */
+export async function accountDeletionForSession(
+  contextUserId: string,
+  action: "status" | "request" | "cancel",
+  bearerToken?: string,
+): Promise<{ status: { purgeAfter: string } | null }> {
+  const { cancelDeletion, deletionStatus, requestDeletion } = await import("./account-deletion.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (action === "request") await requestDeletion(db, tenantId);
+  if (action === "cancel") await cancelDeletion(db, tenantId);
+  const status = await deletionStatus(db, tenantId);
+  return { status: status && !status.cancelled ? { purgeAfter: status.purgeAfter } : null };
+}
+
 /** Calendar subscription feed: status, make or rotate (returns the URL, once), or turn off. */
 export async function calendarFeedForSession(
   contextUserId: string,
