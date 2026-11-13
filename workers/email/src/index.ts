@@ -4,6 +4,8 @@ import { ingestInboundEmail, type InboundEmail } from "../../../src/lib/mail/inb
 import type { MailQuery } from "../../../src/lib/mail/query.ts";
 import { releaseScheduledMail, type ReleaseReport } from "../../../src/lib/mail/release.ts";
 import { outboundFromEnv, type OutboundConfig } from "../../../src/lib/mail/outbound/config.ts";
+import { dialCloudflare } from "../../../src/lib/mail/outbound/cf-socket.ts";
+import type { SmtpDial } from "../../../src/lib/mail/outbound/smtp.ts";
 import { processOutboundQueue, type QueueReport } from "../../../src/lib/mail/outbound/queue.ts";
 import { openWorkerIngest, type IngestHooks, type WorkerBindings } from "./bindings.ts";
 
@@ -49,6 +51,8 @@ export type EmailEnv = WorkerBindings & {
   MAIL_OUTBOUND_DEV?: string;
   /** Test double for the outbound transport. Production leaves this unset. */
   outbound?: OutboundConfig | null;
+  /** Test double for the TCP dialer. Production uses `cloudflare:sockets`. */
+  smtpDial?: SmtpDial;
 };
 
 /** Outbound config from the worker's own bindings (not process.env, which Workers may leave empty). */
@@ -64,7 +68,7 @@ export function workerOutbound(env: EmailEnv): OutboundConfig | null {
     MAIL_DKIM_SELECTOR: env.MAIL_DKIM_SELECTOR,
     MAIL_DKIM_PRIVATE_KEY: env.MAIL_DKIM_PRIVATE_KEY,
     MAIL_OUTBOUND_DEV: env.MAIL_OUTBOUND_DEV,
-  });
+  }, env.smtpDial ?? dialCloudflare);
 }
 
 export type ScheduledReport = ReleaseReport & { outbound: QueueReport | null };
