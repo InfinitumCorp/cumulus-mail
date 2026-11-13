@@ -33,7 +33,7 @@ import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
 import { catchAllAddress } from "./routing.ts";
-import { readSettings, writeSettings } from "./records.ts";
+import { readProfile, readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -134,6 +134,56 @@ export async function readAttachmentForSession(
   const file = await readAttachment(db, storageFor(tenantId), tenantId, messageId, attachmentId);
   if (!file) throw new TenantAccessError("Attachment not found");
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
+}
+
+/** Ranked, paged search over the signed-in mailbox (encrypted word index, search.ts). */
+export async function searchMailForSession(
+  contextUserId: string,
+  input: { query: string; cursor?: string | null; folders?: string[] },
+  bearerToken?: string,
+): Promise<import("./search.ts").SearchPage> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const { searchMessages } = await import("./search.ts");
+  return searchMessages(db, tenantId, input.query, { cursor: input.cursor, folders: input.folders, limit: 25 });
+}
+
+/** Calendar subscription feed: status, make or rotate (returns the URL, once), or turn off. */
+export async function calendarFeedForSession(
+  contextUserId: string,
+  action: "status" | "rotate" | "disable",
+  bearerToken?: string,
+): Promise<{ enabled: boolean; url?: string }> {
+  const { disableFeed, feedStatus, rotateFeed } = await import("./calendar-feed.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (action === "rotate") {
+    const token = await rotateFeed(db, tenantId);
+    return { enabled: true, url: `/api/calendar/${token}.ics` };
+  }
+  if (action === "disable") await disableFeed(db, tenantId);
+  return { enabled: (await feedStatus(db, tenantId)).enabled };
+}
+
+/** The feed itself, for the route. 404 for an unknown token, exactly as for no feed. */
+export async function calendarFeedResponse(token: string): Promise<Response> {
+  const { feedIcs, feedTenant } = await import("./calendar-feed.ts");
+  const db = await database();
+  const tenantId = await feedTenant(db, token);
+  if (!tenantId) return new Response("Not found", { status: 404, headers: { "cache-control": "no-store" } });
+  const settings = await readSettings(db, tenantId);
+  const profile = await readProfile(db, tenantId);
+  return new Response(feedIcs(settings.events ?? [], `${profile?.name ?? "Cumulus"} — Cumulus://Mail`), {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": 'inline; filename="calendar.ics"',
+      // Private: a shared cache must never hand one person's calendar to another.
+      "cache-control": "private, max-age=300",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
 }
 
 export async function exportMailboxForSession(contextUserId: string, bearerToken?: string): Promise<MailboxBackup> {

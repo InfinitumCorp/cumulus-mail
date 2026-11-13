@@ -90,10 +90,20 @@ jobs:
           done
           docker logs "$name"
           exit 1
+      # UI text and translations: en.json / catalogs.js current, and no locale missing a key.
+      - run: npm run i18n -- --check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # Every migration against real Postgres 16 (the tests above use PGLite for most of the schema),
+      # plus the read-only `db:status` check, in a database of its own: the test resets it.
+      - name: Migrations on Postgres 16 (db:status / db:migrate)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/migrate_status
+        run: |
+          node -e "const pg=require('pg');const c=new pg.Client({connectionString:process.env.MAIL_RUNTIME_DATABASE_URL});c.connect().then(()=>c.query('create database migrate_status')).finally(()=>c.end())"
+          node --test scripts/migrate-status.test.mjs
       - name: Stop SeaweedFS
         if: always()
         run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true
@@ -112,6 +122,25 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  # Performance budget: JS per route (gzip, exact) and Lighthouse-style timings against the production
+  # build. perf-budget.json holds the numbers; raise them only in the change that needs it.
+  perf:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Sign-in off, as in e2e, so "/" is the mail app itself rather than the sign-in screen.
+      - run: VITE_AUTH_ENABLED=false npm run build:node
+      - run: npm run perf
+      # The Content-Security-Policy, enforced, on the same production build: no violation on any screen.
+      - run: npm run csp:check
 
   # The Russia copy (Yandex Cloud) runs this image. Build it and check it serves and reports healthy.
   # Nothing is pushed anywhere.

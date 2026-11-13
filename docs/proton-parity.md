@@ -68,7 +68,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
 | Import / export in the account dialog | added | |
-| IMAP/SMTP bridge | deferred | Design only: IMAP `127.0.0.1:1143`, SMTP `127.0.0.1:1025`, STARTTLS, decrypt on the machine that holds the key. Nothing listens. |
+| IMAP/SMTP bridge | deferred | Design only: IMAP `127.0.0.1:1143`, SMTP `127.0.0.1:1025`, STARTTLS, decrypt on the machine that holds the key. Nothing listens. A read-only IMAP bridge is scoped in `docs/imap-bridge.md`. |
 | POP3 | deferred | Proton does not offer POP3. Neither does this app. |
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |

@@ -1,7 +1,9 @@
 {
   "name": "app-builder-workspace",
   "private": true,
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/lib/zod-config.ts"
+  ],
   "type": "module",
   "overrides": {
     "nf3": "0.3.17",
@@ -13,6 +15,12 @@
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
     "build": "node scripts/with-app-env.mjs vite build && npm run db:migrate",
     "db:migrate": "node scripts/migrate.mjs",
+    "i18n": "node scripts/i18n-extract.mjs",
+    "perf": "node scripts/perf-budget.mjs",
+    "csp:check": "node scripts/csp-check.mjs",
+    "db:status": "node scripts/migrate.mjs --status",
+    "load:inbound": "node --experimental-strip-types --no-warnings scripts/load/inbound-load.mjs",
+    "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
     "build:node": "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build",
@@ -94,6 +102,7 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "axe-core": "4.10.3",
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",

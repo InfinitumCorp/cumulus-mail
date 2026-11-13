@@ -25,11 +25,30 @@ export function nitroPreset(env = process.env) {
   return requested;
 }
 
-/** Strip // and block comments enough to JSON.parse a wrangler jsonc file. */
+/**
+ * JSON.parse a wrangler jsonc file: drops // and block comments, but never inside a string. (A regex stripper once turned Nitro's `"**\/*.mjs", "**\/*.js"` module globs into `"***.js"`,
+ * so the guarded deploy config uploaded only the entry file and the API worker could not start.)
+ */
 export function parseJsonc(text) {
-  const withoutBlock = text.replace(/\/\*[\s\S]*?\*\//g, "");
-  const withoutLine = withoutBlock.replace(/^\s*\/\/.*$/gm, "");
-  return JSON.parse(withoutLine);
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i += 1;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 1;
+    } else {
+      out += c;
+    }
+  }
+  return JSON.parse(out);
 }
 
 export function projectRoot() {
