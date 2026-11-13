@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { Language } from "@/components/language";
+import { ServiceWorker } from "@/components/service-worker";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Cumulus://Mail";
@@ -18,12 +19,14 @@ export const Route = createRootRoute({
           "Cumulus://Mail — private email with every Cumulus://ID. Encrypted at rest. Never scanned for ads.",
       },
       { name: "theme-color", content: "#ffffff" },
+      { name: "apple-mobile-web-app-title", content: "Mail" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
     ],
   }),
   component: () => (
@@ -34,6 +37,7 @@ export const Route = createRootRoute({
       <body>
         <PreviewHostBridge />
         <Language />
+        <ServiceWorker />
         <AuthProvider>
           <Outlet />
         </AuthProvider>
