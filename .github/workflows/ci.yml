@@ -137,6 +137,8 @@ jobs:
       # Sign-in off, as in e2e, so "/" is the mail app itself rather than the sign-in screen.
       - run: VITE_AUTH_ENABLED=false npm run build:node
       - run: npm run perf
+      # The Content-Security-Policy, enforced, on the same production build: no violation on any screen.
+      - run: npm run csp:check
 
   # The Russia copy (Yandex Cloud) runs this image. Build it and check it serves and reports healthy.
   # Nothing is pushed anywhere.

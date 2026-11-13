@@ -58,3 +58,16 @@ test("inbound and API wrangler files stay off the live page worker", () => {
   assertInboundSafe(readWorkerConfig("workers/email/wrangler.jsonc"));
   assertApiSafe(readWorkerConfig("workers/api/wrangler.jsonc"));
 });
+
+test("parseJsonc drops comments but never touches comment-like text inside strings", async () => {
+  const { parseJsonc } = await import("./nitro-preset.mjs");
+  const parsed = parseJsonc(`{
+    // a line comment
+    "rules": [{ "type": "ESModule", "globs": ["**/*.mjs", "**/*.js"] }], /* a block
+       comment */
+    "url": "https://example.com//path", "quote": "a \\"/* not a comment */\\" b"
+  }`);
+  assert.deepEqual(parsed.rules[0].globs, ["**/*.mjs", "**/*.js"]);
+  assert.equal(parsed.url, "https://example.com//path");
+  assert.equal(parsed.quote, 'a "/* not a comment */" b');
+});
