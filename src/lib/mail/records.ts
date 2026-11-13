@@ -409,9 +409,18 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.tasks where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.rules where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
+    // The display name is the owner's to change (first-run setup, settings); the address never is.
+    const displayName = (snapshot.me?.name ?? "").replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
     await db.query(
-      `update cumulus_mail.mailboxes set signature = $2, settings_enc = $3 where tenant_id = $1`,
-      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000)), sealText(tenantId, JSON.stringify(settings))],
+      `update cumulus_mail.mailboxes
+          set signature = $2, settings_enc = $3, display_name = coalesce($4, display_name)
+        where tenant_id = $1`,
+      [
+        tenantId,
+        sealText(tenantId, snapshot.signature.slice(0, 4000)),
+        sealText(tenantId, JSON.stringify(settings)),
+        displayName ? sealText(tenantId, displayName) : null,
+      ],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);
