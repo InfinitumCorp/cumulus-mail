@@ -11,10 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as LegalDocRouteImport } from './routes/legal/$doc'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 import { Route as ApiCalendarTokenRouteImport } from './routes/api/calendar/$token'
+import { Route as ApiAccountExportTokenRouteImport } from './routes/api/account/export/$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -24,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalDocRoute = LegalDocRouteImport.update({
+  id: '/legal/$doc',
+  path: '/legal/$doc',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PTokenRoute = PTokenRouteImport.update({
@@ -46,66 +53,85 @@ const ApiCalendarTokenRoute = ApiCalendarTokenRouteImport.update({
   path: '/api/calendar/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAccountExportTokenRoute = ApiAccountExportTokenRouteImport.update({
+  id: '/api/account/export/$token',
+  path: '/api/account/export/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/api/health'
+    | '/legal/$doc'
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/api/health'
+    | '/legal/$doc'
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   id:
     | '__root__'
     | '/'
     | '/api/health'
+    | '/legal/$doc'
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  LegalDocRoute: typeof LegalDocRoute
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
   ApiCalendarTokenRoute: typeof ApiCalendarTokenRoute
+  ApiAccountExportTokenRoute: typeof ApiAccountExportTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/$doc': {
+      id: '/legal/$doc'
+      path: '/legal/$doc'
+      fullPath: '/legal/$doc'
+      preLoaderRoute: typeof LegalDocRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$token': {
@@ -152,16 +185,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCalendarTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/account/export/$token': {
+      id: '/api/account/export/$token'
+      path: '/api/account/export/$token'
+      fullPath: '/api/account/export/$token'
+      preLoaderRoute: typeof ApiAccountExportTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
+  LegalDocRoute: LegalDocRoute,
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
   ApiCalendarTokenRoute: ApiCalendarTokenRoute,
+  ApiAccountExportTokenRoute: ApiAccountExportTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
