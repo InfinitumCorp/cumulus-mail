@@ -15,6 +15,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "perf": "node scripts/perf-budget.mjs",
     "db:status": "node scripts/migrate.mjs --status",
+    "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
     "build:node": "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build",
