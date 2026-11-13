@@ -6,7 +6,8 @@ import { releaseScheduledMail, type ReleaseReport } from "../../../src/lib/mail/
 import { outboundFromEnv, type OutboundConfig } from "../../../src/lib/mail/outbound/config.ts";
 import { dialCloudflare } from "../../../src/lib/mail/outbound/cf-socket.ts";
 import type { SmtpDial } from "../../../src/lib/mail/outbound/smtp.ts";
-import { processOutboundQueue, type QueueReport } from "../../../src/lib/mail/outbound/queue.ts";
+import { processOutboundQueue, queueDepth, type QueueReport } from "../../../src/lib/mail/outbound/queue.ts";
+import { metric } from "../../../src/lib/observability/metrics.ts";
 import { openWorkerIngest, type IngestHooks, type WorkerBindings } from "./bindings.ts";
 
 /**
@@ -104,6 +105,7 @@ export async function handleEmail(
     const bracket = /<([^>]+)>/.exec(message.to);
     const recipient = (bracket?.[1] ?? message.to).trim().toLowerCase();
     if (!recipient.endsWith(`@${domain}`)) {
+      metric("mail.inbound.result", { outcome: "other_domain" });
       return { stored: [] };
     }
     const inbound: InboundEmail = {
@@ -150,6 +152,7 @@ export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<
     // Retries for outside mail: every due queue row, all tenants. Off unless SMTP is configured.
     const outbound = workerOutbound(env);
     const queue = outbound ? await processOutboundQueue(ingest.db, outbound, { now: new Date(now) }) : null;
+    if (outbound) metric("mail.queue.depth", await queueDepth(ingest.db, new Date(now)));
     const report: ScheduledReport = { ...released, outbound: queue };
     console.log(JSON.stringify({ event: "mail.schedule.ran", ...released, outbound: queue }));
     return report;
@@ -173,6 +176,7 @@ export default {
       await handleEmail(message, env);
     } catch (error) {
       console.error(JSON.stringify({ event: "mail.inbound.failed", error: safeError(error) }));
+      metric("mail.inbound.result", { outcome: "failed" });
       throw error;
     }
   },
