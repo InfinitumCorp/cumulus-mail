@@ -1,5 +1,6 @@
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, MessageExtra, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
+import { syncUidsForMailbox } from "./bridge/uids.ts";
 import { mailDomain } from "./domain.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
@@ -449,6 +450,8 @@ export async function replaceMailboxContents(
       );
     }
     await replaceRoutedAddresses(db, tenantId, routedAddresses({ ...snapshot, settings }));
+    // IMAP UID bookkeeping for the read-only bridge. A no-op unless MAIL_BRIDGE=on.
+    await syncUidsForMailbox(db, tenantId, snapshot.messages.map((m) => ({ id: m.id, folder: asFolder(m.folder) })));
     for (const [key, text] of Object.entries(snapshot.briefs)) {
       await db.query(
         `insert into cumulus_mail.briefs (tenant_id, brief_key, body) values ($1,$2,$3)`,

@@ -58,21 +58,20 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
 
 test("the auth schema source stays outside the globbed directory", () => {
   const migrationsDir = join(projectRoot(), "migrations");
+  const entries = readdirSync(migrationsDir);
   // With sign-in on (Cumulus ID), the verbatim copy migrations/0001_auth.sql is applied first.
   const signInOn = authSchemaCopy(projectRoot()) !== null;
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), [
-    ...(signInOn ? [{ name: "0001_auth.sql", path: "0001_auth.sql" }] : []),
-    { name: "0002_cumulus_mail.sql", path: "0002_cumulus_mail.sql" },
-    { name: "0003_mail_auth_share.sql", path: "0003_mail_auth_share.sql" },
-    { name: "0004_message_metadata.sql", path: "0004_message_metadata.sql" },
-    { name: "0005_profile_and_routes.sql", path: "0005_profile_and_routes.sql" },
-    { name: "0006_parity_settings.sql", path: "0006_parity_settings.sql" },
-    { name: "0007_mail_rls.sql", path: "0007_mail_rls.sql" },
-    { name: "0008_outbound_queue.sql", path: "0008_outbound_queue.sql" },
-    { name: "0009_message_due.sql", path: "0009_message_due.sql" },
-    { name: "0010_plans.sql", path: "0010_plans.sql" },
-  ]);
-  assert.equal(readdirSync(migrationsDir).includes("0001_auth.sql"), signInOn);
+  // Every .sql in migrations/, in file-name order, and nothing from migrations/auth/. Derived from the
+  // directory rather than listed here, so adding a migration does not mean editing this test.
+  const expected = entries
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => ({ name, path: name }));
+  assert.deepEqual(pendingMigrations(entries, []), expected);
+  assert.equal(expected.length >= 10, true, "the migrations directory should not be empty");
+  assert.equal(expected.some(({ name }) => name === "0001_auth.sql"), signInOn);
+  assert.equal(entries.includes("0001_auth.sql"), signInOn);
+  assert.equal(pendingMigrations(entries, []).some(({ path }) => path.includes("/")), false);
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });
 

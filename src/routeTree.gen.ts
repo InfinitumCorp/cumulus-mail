@@ -14,6 +14,7 @@ import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
+import { Route as ApiBridgeSyncRouteImport } from './routes/api/bridge/sync'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const ApiBillingWebhookRoute = ApiBillingWebhookRouteImport.update({
   path: '/api/billing/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBridgeSyncRoute = ApiBridgeSyncRouteImport.update({
+  id: '/api/bridge/sync',
+  path: '/api/bridge/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,25 @@ export interface FileRoutesById {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/api/health' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
+    | '/'
+    | '/api/health'
+    | '/p/$token'
+    | '/api/auth/$'
+    | '/api/billing/webhook'
+    | '/api/bridge/sync'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/p/$token' | '/api/auth/$' | '/api/billing/webhook'
+  to:
+    | '/'
+    | '/api/health'
+    | '/p/$token'
+    | '/api/auth/$'
+    | '/api/billing/webhook'
+    | '/api/bridge/sync'
   id:
     | '__root__'
     | '/'
@@ -76,6 +96,7 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
+    | '/api/bridge/sync'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -84,6 +105,7 @@ export interface RootRouteChildren {
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
+  ApiBridgeSyncRoute: typeof ApiBridgeSyncRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -123,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBillingWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bridge/sync': {
+      id: '/api/bridge/sync'
+      path: '/api/bridge/sync'
+      fullPath: '/api/bridge/sync'
+      preLoaderRoute: typeof ApiBridgeSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -132,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
+  ApiBridgeSyncRoute: ApiBridgeSyncRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
