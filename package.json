@@ -17,6 +17,7 @@
     "perf": "node scripts/perf-budget.mjs",
     "csp:check": "node scripts/csp-check.mjs",
     "db:status": "node scripts/migrate.mjs --status",
+    "load:inbound": "node --experimental-strip-types --no-warnings scripts/load/inbound-load.mjs",
     "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
