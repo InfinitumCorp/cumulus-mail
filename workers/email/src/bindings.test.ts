@@ -131,3 +131,24 @@ test("sslmode=disable is refused before a connection is opened", async () => {
   );
   assert.equal(connected, false);
 });
+
+test("the inbound worker accepts the string Hyperdrive actually gives it (<id>.hyperdrive.local, sslmode=disable)", async () => {
+  let connected = "";
+  const opened = await openWorkerIngest({
+    HYPERDRIVE: { connectionString: "postgres://postgres:pw@547414fe3a8b737a87dd17ca93df4b52.hyperdrive.local:5432/postgres?sslmode=disable" },
+    SUPABASE_S3_ENDPOINT: "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    SUPABASE_S3_ACCESS_KEY_ID: "key",
+    SUPABASE_S3_SECRET_ACCESS_KEY: "secret",
+    MAIL_BLOB_KEY: KEY,
+    CUMULUS_ALLOW_SUPABASE: "1",
+    ingestHooks: {
+      connect: async (connectionString: string) => {
+        connected = connectionString;
+        return { query: async () => [], end: async () => undefined };
+      },
+      createDriver: () => ({ kind: "s3", put: async () => undefined, get: async () => new Uint8Array(), delete: async () => undefined, probe: async () => true }),
+    },
+  });
+  assert.match(connected, /hyperdrive\.local/);
+  await opened.close?.();
+});
