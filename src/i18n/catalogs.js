@@ -157,6 +157,7 @@ export default {
   "Mailbox backup": "Mailbox backup",
   "Make a new address": "Make a new address",
   "Manage billing": "Manage billing",
+  "Marked as not spam. Mail from this sender will go to the Inbox.": "Marked as not spam. Mail from this sender will go to the Inbox.",
   "Marked as unread.": "Marked as unread.",
   "Maybe": "Maybe",
   "message": "message",
@@ -182,6 +183,7 @@ export default {
   "No organizer to answer. It is saved here only.": "No organizer to answer. It is saved here only.",
   "No unsubscribe link": "No unsubscribe link",
   "None yet. A rule runs when mail arrives in the inbox.": "None yet. A rule runs when mail arrives in the inbox.",
+  "Not spam": "Not spam",
   "Nothing in": "Nothing in",
   "Nothing is waiting.": "Nothing is waiting.",
   "On": "On",
@@ -241,6 +243,8 @@ export default {
   "Reply all": "Reply all",
   "reply all ·": "reply all ·",
   "Report": "Report",
+  "Report spam": "Report spam",
+  "Reported as spam. Mail from this sender will go to Quarantine.": "Reported as spam. Mail from this sender will go to Quarantine.",
   "Reported from the reader.": "Reported from the reader.",
   "Reported.": "Reported.",
   "Restore": "Restore",
@@ -680,6 +684,10 @@ export default {
   "Select the address and copy it.": "Выделите адрес и скопируйте его.",
   "Subscribe from another calendar": "Подписка из другого календаря",
   "Turn off": "Выключить",
-  "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает."
+  "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает.",
+  "Marked as not spam. Mail from this sender will go to the Inbox.": "Отмечено как не спам. Письма от этого отправителя будут приходить во «Входящие».",
+  "Not spam": "Не спам",
+  "Report spam": "Это спам",
+  "Reported as spam. Mail from this sender will go to Quarantine.": "Отмечено как спам. Письма от этого отправителя будут попадать в «Карантин»."
  }
 };
