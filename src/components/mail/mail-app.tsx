@@ -777,7 +777,8 @@ export function MailApp() {
             <Menu className="size-5" />
           </button>
           <div className="min-w-0">
-            <p className="truncate text-xl tracking-tight">
+            {/* The wordmark is a name, not UI text: translate="no" keeps it out of the interface translator. */}
+            <p className="truncate text-xl tracking-tight" translate="no">
               Cumulus<span className="font-mono text-accent">://</span>Mail
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
