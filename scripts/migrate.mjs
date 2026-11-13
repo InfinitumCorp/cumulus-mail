@@ -11,6 +11,9 @@
  *
  * No DATABASE_URL (local / preview builds) -> skip; the PGLite fallback applies
  * the same files at startup instead (see src/lib/db.ts).
+ *
+ * `--status` (`npm run db:status`) is read-only: it creates nothing, applies nothing, lists the
+ * pending files and exits 3 when any are pending (0 when up to date), so a deploy can be gated on it.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -19,6 +22,7 @@ import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
+const statusOnly = process.argv.includes("--status");
 if (!databaseUrl) {
   console.log(
     "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
@@ -44,6 +48,24 @@ async function main() {
 
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
   const client = await pool.connect();
+  if (statusOnly) {
+    try {
+      let applied = [];
+      try {
+        applied = (await client.query("SELECT name FROM _migrations")).rows.map((r) => r.name);
+      } catch (err) {
+        if (err?.code !== "42P01") throw err; // no _migrations table yet: everything is pending
+      }
+      const pending = pendingMigrations(entries, applied);
+      for (const { name } of pending) console.log(`[migrate] pending ${name}`);
+      console.log(pending.length ? `[migrate] ${pending.length} pending.` : "[migrate] up to date.");
+      process.exitCode = pending.length ? 3 : 0;
+    } finally {
+      client.release();
+      await pool.end();
+    }
+    return;
+  }
   try {
     await client.query(
       "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",

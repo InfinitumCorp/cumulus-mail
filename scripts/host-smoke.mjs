@@ -1,5 +1,7 @@
 /**
  * Smoke check of a DEPLOYED copy: `node scripts/smoke.mjs --host https://ru.mail.cumuluscloud.app`.
+ * Before cutover, check a copy on its own URL with the region it should be:
+ * `--host https://<id>.apigw.yandexcloud.net --region ru` or `--host https://cumulus-mail-api.<acct>.workers.dev`.
  * Read-only: it sends GET requests and starts (never completes) one sign-in to read the redirect URL.
  *
  *   1. GET /api/health    -> 200, status ok, the expected region (ru.* -> ru), a commit
@@ -14,7 +16,9 @@
 
 const ISSUERS = { us: "id.cumuluscloud.app", ru: "ru.id.cumuluscloud.app" };
 
-export function expectedRegion(hostUrl) {
+/** The region a host should report: `--region` when given (gateway or workers.dev URLs), else ru.* -> ru. */
+export function expectedRegion(hostUrl, override) {
+  if (override === "ru" || override === "us") return override;
   return new URL(hostUrl).hostname.toLowerCase().startsWith("ru.") ? "ru" : "us";
 }
 
@@ -26,8 +30,7 @@ async function readJson(response) {
   }
 }
 
-export async function checkHealth(base, fetcher) {
-  const region = expectedRegion(base);
+export async function checkHealth(base, fetcher, region = expectedRegion(base)) {
   const response = await fetcher(new URL("/api/health", base), { redirect: "manual" });
   const body = await readJson(response);
   if (response.status === 404) {
@@ -49,8 +52,7 @@ export async function checkHealth(base, fetcher) {
   };
 }
 
-export async function checkPage(base, fetcher) {
-  const region = expectedRegion(base);
+export async function checkPage(base, fetcher, region = expectedRegion(base)) {
   const response = await fetcher(new URL("/", base), { redirect: "manual" });
   const html = await response.text().catch(() => "");
   const via = [];
@@ -81,8 +83,7 @@ export async function checkPage(base, fetcher) {
   return results;
 }
 
-export async function checkSignIn(base, fetcher) {
-  const region = expectedRegion(base);
+export async function checkSignIn(base, fetcher, region = expectedRegion(base)) {
   const origin = new URL(base).origin;
   const response = await fetcher(new URL("/api/auth/sign-in/social", base), {
     method: "POST",
@@ -106,15 +107,17 @@ export async function checkSignIn(base, fetcher) {
   };
 }
 
-export async function runHostSmoke(base, { fetcher = fetch, log = console.log } = {}) {
+export async function runHostSmoke(base, { fetcher = fetch, log = console.log, region } = {}) {
   const url = new URL(base);
+  if (region !== undefined && region !== "us" && region !== "ru") throw new Error("--region must be us or ru");
+  const expected = expectedRegion(url.toString(), region);
   if (url.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(url.hostname)) {
     throw new Error("Use an https:// URL");
   }
   const results = [];
   for (const run of [checkHealth, checkPage, checkSignIn]) {
     try {
-      const out = await run(url.toString(), fetcher);
+      const out = await run(url.toString(), fetcher, expected);
       results.push(...(Array.isArray(out) ? out : [out]));
     } catch (error) {
       results.push({ name: run.name, ok: false, detail: error instanceof Error ? error.message : String(error) });

@@ -38,7 +38,7 @@ import { SIGN_IN_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
 import { PREVIEW_ALLOWED_HOSTS } from "./preview";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
-import { authSettingsKey, resolveAuthSecret } from "./auth-settings.ts";
+import { authIpOptions, authSettingsKey, resolveAuthSecret } from "./auth-settings.ts";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -204,6 +204,8 @@ function buildAuth(region: Region) {
     // Secure + the names ourselves. (Browsers allow Secure cookies on
     // `http://localhost`, so local dev still works.)
     advanced: {
+      // Per-client rate limiting: see authIpOptions (cf-connecting-ip on Workers).
+      ipAddress: authIpOptions(process.env),
       useSecureCookies: false,
       defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
       cookies: {
