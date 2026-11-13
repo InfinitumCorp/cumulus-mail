@@ -1,5 +1,6 @@
+# Russian legal pages (templates)
 
-## Legal pages
+Status: **templates for review, not published documents.**
 
 `/legal/privacy` and `/legal/terms` are served **only on `ru.*` hosts** (404 elsewhere) from the
 templates in `src/lib/legal/ru-templates.ts`. See the comment at the top of that file: they are a
