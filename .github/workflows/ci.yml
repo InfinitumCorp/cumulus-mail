@@ -90,6 +90,8 @@ jobs:
           done
           docker logs "$name"
           exit 1
+      # UI text and translations: en.json / catalogs.js current, and no locale missing a key.
+      - run: npm run i18n -- --check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
