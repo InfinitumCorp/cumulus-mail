@@ -59,6 +59,9 @@ function isBranchWord(node) {
   let outer = parent.parent;
   while (outer && ts.isParenthesizedExpression(outer)) outer = outer.parent;
   if (outer && ts.isCallExpression(outer) && /^set[A-Z]/.test(outer.expression.getText())) return false;
+  // Nor is a single lowercase token handed to any other call (`moveToFolder(id, spam ? "quarantine" :
+  // "inbox")`): that is an id. Capitalised words and phrases in a call are still UI text.
+  if (outer && ts.isCallExpression(outer) && outer.arguments.some((a) => a === parent || (ts.isParenthesizedExpression(a) && a.expression === parent)) && /^[a-z][a-z0-9_-]*$/.test(node.text)) return false;
   return /^\p{L}[\p{L} '’.…-]*$/u.test(node.text) && !/^[a-z]+(-[a-z]+)+$/.test(node.text);
 }
 

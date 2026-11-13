@@ -89,3 +89,16 @@ test("extractor: a value handed to a state setter is state, not UI text", () => 
   )].sort();
   assert.deepEqual(found, ["Save", "Saved"]);
 });
+
+test("extractor: a lowercase id handed to a call is not UI text; a capitalised label in a call still is", () => {
+  const found = [...extractFrom(
+    `function A({ spam, ok }) {
+       moveToFolder(id, spam ? "quarantine" : "inbox");
+       moveToFolder(id, (spam ? "quarantine" : "inbox"));
+       notify(ok ? "Moved" : "Not moved");
+       return <p>{spam ? "spam" : "clean"}</p>;
+     }`,
+    "a.tsx",
+  )].sort();
+  assert.deepEqual(found, ["Moved", "Not moved", "clean", "spam"]);
+});
