@@ -337,5 +337,12 @@
  "Select the address and copy it.": "Выделите адрес и скопируйте его.",
  "Subscribe from another calendar": "Подписка из другого календаря",
  "Turn off": "Выключить",
- "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает."
+ "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает.",
+ "A copy of everything in this mailbox, decrypted for you. Each file once a day.": "Копия всего содержимого ящика, расшифрованная для вас. Каждый файл — не чаще раза в день.",
+ "Already downloaded today. Available again {0}.": "Сегодня уже скачано. Снова доступно {0}.",
+ "Contacts, calendar and settings (JSON)": "Контакты, календарь и настройки (JSON)",
+ "Could not prepare the download.": "Не удалось подготовить файл.",
+ "Messages (mbox)": "Письма (mbox)",
+ "Preparing…": "Подготовка…",
+ "Your data": "Ваши данные"
 }

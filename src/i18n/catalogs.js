@@ -12,6 +12,7 @@ export default {
   "{0} conversations moved to Trash.": "{0} conversations moved to Trash.",
   "{0} has no one-click unsubscribe.": "{0} has no one-click unsubscribe.",
   "{0} is verified.": "{0} is verified.",
+  "A copy of everything in this mailbox, decrypted for you. Each file once a day.": "A copy of everything in this mailbox, decrypted for you. Each file once a day.",
   "A task is a promise you already made in mail. Architect keeps score. It does not send.": "A task is a promise you already made in mail. Architect keeps score. It does not send.",
   "Accept": "Accept",
   "accepted": "accepted",
@@ -27,6 +28,7 @@ export default {
   "alert": "alert",
   "Aliases": "Aliases",
   "All": "All",
+  "Already downloaded today. Available again {0}.": "Already downloaded today. Available again {0}.",
   "An unexpected error occurred. Try reloading the page.": "An unexpected error occurred. Try reloading the page.",
   "Answer this invite": "Answer this invite",
   "Architect": "Architect",
@@ -68,6 +70,7 @@ export default {
   "Connecting to your data…": "Connecting to your data…",
   "Contact email": "Contact email",
   "Contacts": "Contacts",
+  "Contacts, calendar and settings (JSON)": "Contacts, calendar and settings (JSON)",
   "Conversation archived.": "Conversation archived.",
   "Conversation moved to Trash.": "Conversation moved to Trash.",
   "Copied.": "Copied.",
@@ -80,6 +83,7 @@ export default {
   "Could not load devices": "Could not load devices",
   "Could not open the file.": "Could not open the file.",
   "Could not open this message.": "Could not open this message.",
+  "Could not prepare the download.": "Could not prepare the download.",
   "Could not rename the folder.": "Could not rename the folder.",
   "Could not report.": "Could not report.",
   "Could not save the draft.": "Could not save the draft.",
@@ -164,6 +168,7 @@ export default {
   "Message password": "Message password",
   "Message sent.": "Message sent.",
   "messages": "messages",
+  "Messages (mbox)": "Messages (mbox)",
   "METATRON briefing": "METATRON briefing",
   "Move to folder": "Move to folder",
   "Move to…": "Move to…",
@@ -218,6 +223,7 @@ export default {
   "Plus, monthly": "Plus, monthly",
   "Plus, yearly": "Plus, yearly",
   "Postal address": "Postal address",
+  "Preparing…": "Preparing…",
   "previous ·": "previous ·",
   "Primary": "Primary",
   "Private by default.": "Private by default.",
@@ -339,7 +345,8 @@ export default {
   "Write a subject or a message.": "Write a subject or a message.",
   "Write a task after @scalvs.": "Write a task after @scalvs.",
   "You can add up to": "You can add up to",
-  "You don't have access to this data.": "You don't have access to this data."
+  "You don't have access to this data.": "You don't have access to this data.",
+  "Your data": "Your data"
  },
  "ru": {
   ". SMTP": ". SMTP",
@@ -680,6 +687,13 @@ export default {
   "Select the address and copy it.": "Выделите адрес и скопируйте его.",
   "Subscribe from another calendar": "Подписка из другого календаря",
   "Turn off": "Выключить",
-  "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает."
+  "Turned off. The old address no longer works.": "Выключено. Старый адрес больше не работает.",
+  "A copy of everything in this mailbox, decrypted for you. Each file once a day.": "Копия всего содержимого ящика, расшифрованная для вас. Каждый файл — не чаще раза в день.",
+  "Already downloaded today. Available again {0}.": "Сегодня уже скачано. Снова доступно {0}.",
+  "Contacts, calendar and settings (JSON)": "Контакты, календарь и настройки (JSON)",
+  "Could not prepare the download.": "Не удалось подготовить файл.",
+  "Messages (mbox)": "Письма (mbox)",
+  "Preparing…": "Подготовка…",
+  "Your data": "Ваши данные"
  }
 };
