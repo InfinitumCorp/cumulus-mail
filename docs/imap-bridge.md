@@ -1,6 +1,6 @@
 # Read-only IMAP bridge: scope
 
-Status: **scoping only**. Nothing here is built. `src/lib/mail/bridge.ts` holds the placeholder design
+Status: **phase 1 built, off by default** (`MAIL_BRIDGE=on`); the bridge program itself is not written. `src/lib/mail/bridge.ts` holds the placeholder design
 (IMAP on `127.0.0.1:1143`, STARTTLS) that the account dialog shows, and the parity table lists the bridge as
 deferred. This page says what a first, **read-only** bridge would take, so it can be planned and estimated.
 
@@ -64,10 +64,32 @@ do not fit a remote, encrypted store.
 
 | Phase | Work | Size |
 |---|---|---|
-| 1 | S1 device sign-in, S2 UIDs/modseq, S3 incremental reads (shared with snapshot paging) | ~2 weeks |
+| 1 | ✅ **built** — app-password tokens (S1 variant), S2 UIDs/UIDVALIDITY/modseq, S3 incremental reads, rate limits | done |
 | 2 | Bridge core: IMAP parser/serializer, LOGIN/LIST/SELECT/FETCH/UID, STARTTLS, keychain | ~2 weeks |
 | 3 | S4 raw bodies + BODYSTRUCTURE, S5 search mapping, IDLE polling | ~1 week |
 | 4 | Packaging (macOS/Windows/Linux signing), setup guide, testing with Thunderbird, Apple Mail, Outlook | ~1–2 weeks |
+
+## What phase 1 actually built
+
+Server-side only, and **off unless `MAIL_BRIDGE=on`**: with the flag off the route answers 404, no token
+can be made or used, and no bridge row is ever written.
+
+| Piece | Where |
+|---|---|
+| Flag and limits (`MAIL_BRIDGE`, `MAIL_BRIDGE_MAX_TOKENS`, `MAIL_BRIDGE_RATE_PER_MINUTE`, `MAIL_BRIDGE_PAGE_SIZE`) | `src/lib/mail/bridge/config.ts` |
+| App passwords: random `cmb_…`, shown once, stored only as a SHA-256 hash, fixed `imap:read` scope, revocable | `src/lib/mail/bridge/tokens.ts` |
+| UIDVALIDITY / UID / modseq, never reusing a UID; a move is an expunge here and a new UID there | `src/lib/mail/bridge/uids.ts` |
+| Incremental read and the per-token rate limit | `src/lib/mail/bridge/sync.ts` |
+| `POST /api/bridge/sync` (404 while off, 401 without a token, 429 over the limit) | `src/routes/api/bridge/sync.ts` |
+| Tables `bridge_tokens`, `message_uids`, `bridge_folders` | `migrations/0012_bridge.sql` |
+
+Phase 1 took **app passwords instead of S1's device sign-in**. A device flow through Cumulus ID is the
+better end state (it reuses the signed-in devices list), but it needs changes on the ID side; an app
+password is revocable, read-only by scope, and enough for a local bridge to be built against. S1 stays
+on the list for when the ID flow exists.
+
+Not in phase 1: raw RFC 822 bodies (S4) and search (S5), which the bridge needs before it can serve
+`FETCH BODY[]` or `SEARCH`.
 
 ## Owner decisions
 
