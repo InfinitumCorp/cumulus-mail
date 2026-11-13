@@ -136,6 +136,24 @@ export async function readAttachmentForSession(
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
 }
 
+/** "Report spam" / "Not spam" for a message in this mailbox. The sender is read from the stored message. */
+export async function reportSpamForSession(
+  contextUserId: string,
+  messageId: string,
+  verdict: "spam" | "ham",
+  bearerToken?: string,
+): Promise<{ ok: true }> {
+  const { messageSender, reportNotSpam, reportSpam } = await import("./spam.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const sender = await messageSender(db, tenantId, messageId);
+  if (!sender) throw new Error("That message is not in this mailbox.");
+  if (verdict === "spam") await reportSpam(db, tenantId, sender);
+  else await reportNotSpam(db, tenantId, sender);
+  return { ok: true };
+}
+
 /** Ranked, paged search over the signed-in mailbox (encrypted word index, search.ts). */
 export async function searchMailForSession(
   contextUserId: string,

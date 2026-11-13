@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
@@ -1003,6 +1003,14 @@ export function MailApp() {
                   labels: ["Receipt"],
                   extra: { autoReply: true },
                 });
+              }}
+              onSpam={(verdict) => {
+                if (!reading) return;
+                const id = reading.id;
+                // Move first, so the list reacts at once; the server trains the lists from the stored message.
+                moveToFolder(id, verdict === "spam" ? "quarantine" : "inbox");
+                remember(verdict === "spam" ? "Reported as spam. Mail from this sender will go to Quarantine." : "Marked as not spam. Mail from this sender will go to the Inbox.");
+                void reportSpamMessage({ data: { messageId: id, verdict } }).catch(() => setNotice("Could not report."));
               }}
               onReport={() => {
                 if (!reading) return;
