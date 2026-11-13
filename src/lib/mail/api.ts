@@ -59,6 +59,19 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
     return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
+/** Calendar subscription feed: "status", "rotate" (makes or replaces it; the URL is returned once) or "disable". */
+export const calendarFeed = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { action: "status" | "rotate" | "disable" } => {
+    const action = (input as { action?: unknown } | null)?.action;
+    if (action !== "status" && action !== "rotate" && action !== "disable") throw new Error("Unknown action");
+    return { action };
+  })
+  .handler(async ({ context, data }) => {
+    const { calendarFeedForSession } = await import("./mailbox.server");
+    return calendarFeedForSession(context.userId, data.action, context.bearerToken);
+  });
+
 export const importMailboxBackup = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(asBackup)
