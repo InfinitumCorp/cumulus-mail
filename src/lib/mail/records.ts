@@ -4,6 +4,7 @@ import { mailDomain } from "./domain.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
 import { messageSnippet } from "./logic.ts";
+import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
 import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
@@ -321,6 +322,8 @@ export async function insertMessage(
       [tenantId, message.id, field, blindIndex(tenantId, field, value)],
     );
   }
+  // Encrypted word index for server-side search (search.ts): one upsert into message_words.
+  await indexMessageWords(db, tenantId, message);
 }
 
 export async function readMessages(db: MailQuery, tenantId: string): Promise<MailMessage[]> {

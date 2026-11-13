@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { expectedRegion, runHostSmoke } from "./host-smoke.mjs";
+import { expectedRegion, runHostSmoke, schemaNote } from "./host-smoke.mjs";
 
 /** A fake host: routes -> { status, headers, body }. */
 function host(routes) {
@@ -84,4 +84,26 @@ test("a correct RU deployment passes; the wrong issuer, region or callback fails
 
 test("plain http to a public host is refused", async () => {
   await assert.rejects(() => runHostSmoke("http://mail.cumuluscloud.app", { log: quiet }), /https/);
+});
+
+test("--region checks a copy on its own URL before cutover (gateway or workers.dev domain)", async () => {
+  const origin = "https://d5d1abc.apigw.yandexcloud.net";
+  const fetcher = host({
+    "GET /api/health": health("ru"),
+    "GET /": { body: APP },
+    "POST /api/auth/sign-in/social": signIn("ru.id.cumuluscloud.app", origin),
+  });
+  assert.equal((await runHostSmoke(origin, { log: quiet, fetcher })).ok, false);
+  const ru = await runHostSmoke(origin, { log: quiet, fetcher, region: "ru" });
+  assert.equal(ru.ok, true, JSON.stringify(ru.results));
+  assert.ok(ru.results.some((r) => r.name === "ru-path"));
+  await assert.rejects(() => runHostSmoke(origin, { log: quiet, fetcher, region: "eu" }), /--region/);
+});
+
+test("schemaNote: current, pending count, unreachable, absent", () => {
+  assert.equal(schemaNote(undefined), "");
+  assert.equal(schemaNote({ ok: true, ms: 3, pending: 0 }), ", schema current");
+  assert.equal(schemaNote({ ok: false, ms: 3, pending: 1 }), ", 1 migration pending");
+  assert.equal(schemaNote({ ok: false, ms: 3, pending: 2 }), ", 2 migrations pending");
+  assert.equal(schemaNote({ ok: false, ms: 3000, error: "timeout" }), ", schema timeout");
 });

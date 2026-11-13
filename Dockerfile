@@ -17,6 +17,9 @@ COPY . .
 # when VITE_AUTH_ENABLED=false is set at build AND no DATABASE_URL at run time.
 ARG VITE_AUTH_ENABLED=true
 ENV VITE_AUTH_ENABLED=${VITE_AUTH_ENABLED}
+# Short commit for /api/health (passed by deploy/yandex/deploy.sh); not a secret.
+ARG APP_COMMIT=""
+ENV APP_COMMIT=${APP_COMMIT}
 RUN npm run build:node
 
 FROM node:22-bookworm-slim AS run

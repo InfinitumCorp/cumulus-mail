@@ -37,8 +37,33 @@ export function resolveAuthSecret(env: AuthEnv, previewSecret: () => string): st
 /** The settings the auth instance is built from; a change in any of them builds a new instance. */
 export function authSettingsKey(env: AuthEnv): string {
   return JSON.stringify(
-    ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "DATABASE_URL", "VITE_AUTH_ENABLED", "CID_ISSUER", "CID_ISSUER_RU", "CID_CLIENT_ID", "MAIL_REGION", "CUMULUS_RUNTIME"].map(
+    ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "DATABASE_URL", "VITE_AUTH_ENABLED", "CID_ISSUER", "CID_ISSUER_RU", "CID_CLIENT_ID", "MAIL_REGION", "CUMULUS_RUNTIME", "BETTER_AUTH_IP_HEADERS", "BETTER_AUTH_TRUSTED_PROXIES"].map(
       (key) => value(env, key) ?? null,
     ),
   );
+}
+
+const list = (raw: string | undefined): string[] =>
+  (raw ?? "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => /^[a-z0-9.:/_-]+$/.test(item));
+
+/**
+ * Where Better Auth reads the client IP for rate limiting and session records. Without a header it
+ * falls back to ONE shared bucket per path, so a single client could rate-limit sign-in for everyone.
+ *   - `BETTER_AUTH_IP_HEADERS` (comma list) when set;
+ *   - on Cloudflare Workers, `cf-connecting-ip` (set by Cloudflare, not forgeable by the client);
+ *   - otherwise `x-forwarded-for`, as set by the gateway in front (Yandex API Gateway, a load balancer).
+ * `BETTER_AUTH_TRUSTED_PROXIES` lists proxies whose appended addresses may be skipped.
+ */
+export function authIpOptions(env: AuthEnv): { ipAddressHeaders: string[]; trustedProxies?: string[] } {
+  const configured = list(env.BETTER_AUTH_IP_HEADERS);
+  const headers = configured.length
+    ? configured
+    : value(env, "CUMULUS_RUNTIME") === "cloudflare"
+      ? ["cf-connecting-ip"]
+      : ["x-forwarded-for"];
+  const proxies = list(env.BETTER_AUTH_TRUSTED_PROXIES);
+  return proxies.length ? { ipAddressHeaders: headers, trustedProxies: proxies } : { ipAddressHeaders: headers };
 }
