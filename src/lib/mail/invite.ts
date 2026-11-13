@@ -85,6 +85,16 @@ export function parseInvite(text: string): CalEvent | null {
   const organizer = field(lines, "ORGANIZER");
   const rule = field(lines, "RRULE");
   const parsedRule = rule ? parseRRule(rule) : null;
+  // EXDATE lines may repeat and hold comma-separated values; each keeps its line's TZID.
+  const exdates: string[] = [];
+  for (const line of lines.filter((item) => /^EXDATE[;:]/i.test(item))) {
+    const params = line.slice(0, line.indexOf(":", line.search(/[;:]/)) + 1);
+    const values = line.slice(params.length).split(",");
+    for (const value of values) {
+      const iso = whenLabel(`${params.replace(/:$/, "")}:${value.trim()}`).sort;
+      if (/^\d{4}-\d{2}-\d{2}T/.test(iso)) exdates.push(iso);
+    }
+  }
   return {
     id: `ics-${uid.replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 60) || "event"}`,
     title: title.slice(0, 200),
@@ -93,6 +103,7 @@ export function parseInvite(text: string): CalEvent | null {
     with: organizer.slice(0, 200) || "Calendar invite",
     sort: when.sort,
     ...(parsedRule ? { rrule: rule.slice(0, 300) } : {}),
+    ...(parsedRule && exdates.length ? { exdates: [...new Set(exdates)].slice(0, 100) } : {}),
     ...(rawUid ? { uid: rawUid.slice(0, 300) } : {}),
     ...(/^[^\s@]+@[^\s@]+$/.test(organizer) ? { organizer: organizer.toLowerCase().slice(0, 320) } : {}),
   };

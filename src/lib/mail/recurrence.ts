@@ -1,12 +1,14 @@
 /**
- * RFC 5545 RRULE subset: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL, COUNT, UNTIL,
+ * RFC 5545 RRULE subset: FREQ=DAILY|WEEKLY|MONTHLY|YEARLY, INTERVAL, COUNT, UNTIL,
  * BYDAY (weekly: MO..SU; monthly: MO..SU with an optional ordinal like 2TU or -1FR).
+ * YEARLY repeats the start's month and day (a 29 February start skips other years);
+ * YEARLY with BYDAY is not supported.
  * Times are UTC instants; expansion keeps the start's time of day.
  */
 export type Weekday = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
 
 export type RRule = {
-  freq: "DAILY" | "WEEKLY" | "MONTHLY";
+  freq: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
   interval: number;
   count?: number;
   /** ISO instant, inclusive. */
@@ -39,7 +41,7 @@ export function parseRRule(value: string): RRule | null {
     if (key && val !== undefined) parts.set(key.trim().toUpperCase(), val.trim().toUpperCase());
   }
   const freq = parts.get("FREQ");
-  if (freq !== "DAILY" && freq !== "WEEKLY" && freq !== "MONTHLY") return null;
+  if (freq !== "DAILY" && freq !== "WEEKLY" && freq !== "MONTHLY" && freq !== "YEARLY") return null;
   const interval = Math.max(1, Math.min(1000, Number.parseInt(parts.get("INTERVAL") ?? "1", 10) || 1));
   const countRaw = parts.get("COUNT");
   const count = countRaw ? Math.max(1, Math.min(MAX_OCCURRENCES, Number.parseInt(countRaw, 10) || 1)) : undefined;
@@ -48,7 +50,7 @@ export function parseRRule(value: string): RRule | null {
   const byDay: RRule["byDay"] = [];
   for (const item of (parts.get("BYDAY") ?? "").split(",").filter(Boolean)) {
     const match = /^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/.exec(item);
-    if (!match) return null;
+    if (!match || freq === "YEARLY") return null;
     const ordinal = match[1] ? Number.parseInt(match[1], 10) : undefined;
     if (ordinal !== undefined && (ordinal === 0 || Math.abs(ordinal) > 5)) return null;
     byDay.push({ day: match[2] as Weekday, ordinal });
@@ -95,7 +97,14 @@ export function occurrences(startIso: string, rule: RRule, options: { limit?: nu
   push(start);
   for (let step = 0; out.length < limit && step < 5000; step += 1) {
     let candidates: number[] = [];
-    if (rule.freq === "DAILY") {
+    if (rule.freq === "YEARLY") {
+      const base = new Date(start);
+      const year = base.getUTCFullYear() + (step + 1) * rule.interval;
+      const ms = Date.UTC(year, base.getUTCMonth(), base.getUTCDate());
+      // 29 February only exists in leap years; other years are skipped, as RFC 5545 says.
+      if (new Date(ms).getUTCMonth() === base.getUTCMonth()) candidates = [ms + timeOfDay];
+      else continue;
+    } else if (rule.freq === "DAILY") {
       candidates = [start + (step + 1) * rule.interval * 86_400_000];
     } else if (rule.freq === "WEEKLY") {
       const week = startOfWeekUtc(start) + step * rule.interval * 7 * 86_400_000;
@@ -137,7 +146,7 @@ export function occurrences(startIso: string, rule: RRule, options: { limit?: nu
 
 /** Short human text, e.g. "Every 2 weeks on Mon, Wed · 10 times". */
 export function describeRule(rule: RRule): string {
-  const unit = rule.freq === "DAILY" ? "day" : rule.freq === "WEEKLY" ? "week" : "month";
+  const unit = rule.freq === "DAILY" ? "day" : rule.freq === "WEEKLY" ? "week" : rule.freq === "MONTHLY" ? "month" : "year";
   let text = rule.interval === 1 ? `Every ${unit}` : `Every ${rule.interval} ${unit}s`;
   if (rule.byDay.length) {
     const ordinal = (n: number) => (n === -1 ? "last " : n > 0 ? `${["", "1st", "2nd", "3rd", "4th", "5th"][n]} ` : `${n} `);
