@@ -47,6 +47,8 @@ export type MailSettings = {
   audit: AuditEvent[];
   /** Lists the owner unsubscribed from, newest last. */
   unsubscribed: Unsubscribed[];
+  /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
+  setupPending: boolean;
 };
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
@@ -77,6 +79,7 @@ export function defaultSettings(): MailSettings {
     events: [],
     audit: [],
     unsubscribed: [],
+    setupPending: false,
   };
 }
 
@@ -174,6 +177,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           .map((item) => ({ key: text(item.key, 320).toLowerCase(), at: text(item.at, 40), method: item.method }))
           .slice(-200)
       : [],
+    setupPending: row.setupPending === true,
   };
 }
 

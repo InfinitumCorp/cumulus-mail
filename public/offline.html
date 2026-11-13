@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Offline · Cumulus://Mail</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <!--
+    The offline shell (public/sw.js serves it when a page cannot load). No script, and no mail: mail is never
+    stored on the device. It cannot tell the language without script, so it says it in English and Russian.
+  -->
+  <body style="margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#fff;color:#111820">
+    <main style="max-width:28rem;margin:0 auto;padding:3rem 1.25rem">
+      <img src="/icons/icon-192.png" width="56" height="56" alt="" style="display:block" />
+      <h1 style="font-size:1.5rem;font-weight:500;margin:1.5rem 0 0.5rem">You're offline</h1>
+      <p style="color:#4a5560;line-height:1.5;margin:0">Cumulus://Mail doesn't keep your mail on this device, so it needs a connection to show it. Check your connection and try again.</p>
+      <div lang="ru">
+        <h2 style="font-size:1.25rem;font-weight:500;margin:2rem 0 0.5rem">Нет подключения к сети</h2>
+        <p style="color:#4a5560;line-height:1.5;margin:0">Cumulus://Mail не хранит почту на этом устройстве, поэтому без сети её не показать. Проверьте подключение и попробуйте ещё раз.</p>
+      </div>
+      <p style="margin:2rem 0 0">
+        <a href="/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 1rem;background:#111820;color:#fff;text-decoration:none">Try again · <span lang="ru">Повторить</span></a>
+      </p>
+    </main>
+  </body>
+</html>
