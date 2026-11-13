@@ -59,6 +59,19 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
     return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
+/** "Download my data": a short-lived link to one part (mbox or json), or when it is next available. */
+export const requestDataExport = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { part: "mbox" | "json" } => {
+    const part = (input as { part?: unknown } | null)?.part;
+    if (part !== "mbox" && part !== "json") throw new Error("Unknown export part");
+    return { part };
+  })
+  .handler(async ({ context, data }) => {
+    const { requestDataExportForSession } = await import("./mailbox.server");
+    return requestDataExportForSession(context.userId, data.part, context.bearerToken);
+  });
+
 /** Calendar subscription feed: "status", "rotate" (makes or replaces it; the URL is returned once) or "disable". */
 export const calendarFeed = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
