@@ -70,3 +70,46 @@ test("implicit TLS to a peer that does not speak TLS fails rather than sending i
   script = (peer) => peer.write("220 plain text, not TLS\r\n");
   await assert.rejects(dialNode("127.0.0.1", port, true));
 });
+
+/**
+ * STARTTLS: the upgrade must verify the server's certificate. A peer presenting a self-signed one must
+ * be refused, or a network attacker could intercept the session and read the mail. The certificate is
+ * made at test time with openssl (no key is committed); the test is skipped where openssl is missing.
+ */
+test("STARTTLS refuses a server whose certificate is not trusted", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { TLSSocket } = await import("node:tls");
+  const dir = mkdtempSync(join(tmpdir(), "smtp-tls-"));
+  const made = spawnSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1",
+    "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem"),
+  ], { stdio: "ignore" });
+  if (made.status !== 0) {
+    t.skip("openssl is not available");
+    return;
+  }
+  const key = readFileSync(join(dir, "key.pem"));
+  const cert = readFileSync(join(dir, "cert.pem"));
+  let upgraded = false;
+  script = (peer) => {
+    peer.write("220 ready\r\n");
+    peer.once("data", () => {
+      peer.write("220 go ahead\r\n", () => {
+        const secure = new TLSSocket(peer, { isServer: true, key, cert });
+        secure.on("secure", () => {
+          upgraded = true;
+        });
+        secure.on("error", () => undefined); // the client hangs up when it refuses the certificate
+      });
+    });
+  };
+  const smtp = await dialNode("127.0.0.1", port, false);
+  assert.equal(await smtp.readLine(), "220 ready");
+  await smtp.write("STARTTLS\r\n");
+  assert.equal(await smtp.readLine(), "220 go ahead");
+  await assert.rejects(smtp.startTls(), /self[- ]signed|certificate/i);
+  assert.equal(upgraded, false, "no secure session was established with the untrusted server");
+});
