@@ -1,4 +1,4 @@
-// Server functions refuse cross-site browser requests (src/start.ts, csrfMiddleware). Replays one of the
+// Server functions refuse cross-site browser requests (src/start.ts, serverFnCsrfMiddleware). Replays one of the
 // app's own server-function calls with the headers a browser sends from another site, and from this one.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";

@@ -31,9 +31,9 @@ const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
  * browser, so no ambient cookies) are allowed, as `assertSameSiteRequest` (auth/isolation.server.ts)
  * already allows them for authenticated calls.
  */
-export const csrfMiddleware = createCsrfMiddleware({
+export const serverFnCsrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
   allowRequestsWithoutOriginCheck: true,
 });
 
-export const startInstance = createStart(() => ({ requestMiddleware: [csrfMiddleware, cspMiddleware] }));
+export const startInstance = createStart(() => ({ requestMiddleware: [serverFnCsrfMiddleware, cspMiddleware] }));
