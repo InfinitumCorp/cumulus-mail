@@ -127,7 +127,8 @@ function Opened({
   const inline = composer?.placement === "inline" ? composer : null;
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1">
+      {/* Phones: one row that scrolls sideways, so the message starts near the top instead of under four rows of buttons. */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-line px-2 py-1 [scrollbar-width:none] *:shrink-0 md:flex-wrap md:overflow-visible">
         <button type="button" className="grid size-11 place-items-center lg:hidden" onClick={onBack} aria-label="Back to list">
           <ChevronLeft className="size-5" />
         </button>
@@ -210,7 +211,7 @@ function Opened({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
           <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
-          <h2 translate="no" className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
+          <h2 translate="no" className="mt-3 text-2xl leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-3xl md:text-4xl">{message.subject}</h2>
           <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
