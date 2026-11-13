@@ -94,6 +94,48 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # Every migration against real Postgres 16 (the tests above use PGLite for most of the schema),
+      # plus the read-only `db:status` check, in a database of its own: the test resets it.
+      - name: Migrations on Postgres 16 (db:status / db:migrate)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/migrate_status
+        run: |
+          node -e "const pg=require('pg');const c=new pg.Client({connectionString:process.env.MAIL_RUNTIME_DATABASE_URL});c.connect().then(()=>c.query('create database migrate_status')).finally(()=>c.end())"
+          node --test scripts/migrate-status.test.mjs
       - name: Stop SeaweedFS
         if: always()
         run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true
+
+  # Browser smoke tests against the local dev mode (no Cumulus ID, in-memory PGLite). Separate job so
+  # a browser problem never hides the result of the main checks.
+  e2e:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  # The Russia copy (Yandex Cloud) runs this image. Build it and check it serves and reports healthy.
+  # Nothing is pushed anywhere.
+  docker:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t cumulus-mail-ru:ci .
+      - name: Run the image and check it
+        run: |
+          docker run -d --name mail-ru -p 8080:8080 -e MAIL_BLOB_KEY="$(openssl rand -hex 32)" cumulus-mail-ru:ci
+          for i in $(seq 1 40); do curl -sf -o /dev/null http://127.0.0.1:8080/api/auth/get-session && break; sleep 2; done
+          curl -sf http://127.0.0.1:8080/api/auth/get-session
+          curl -sf -o /dev/null http://127.0.0.1:8080/
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' mail-ru)" = healthy ] && break; sleep 2; done
+          test "$(docker inspect -f '{{.State.Health.Status}}' mail-ru)" = healthy
+      - if: always()
+        run: docker logs mail-ru 2>&1 | tail -50; docker rm -f mail-ru >/dev/null 2>&1 || true

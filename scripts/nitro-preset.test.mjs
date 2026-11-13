@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { VERCEL_PRESET, WORKERS_PRESET, nitroPreset, readWorkerConfig } from "./nitro-preset.mjs";
+import { NODE_PRESET, VERCEL_PRESET, WORKERS_PRESET, nitroPreset, readWorkerConfig } from "./nitro-preset.mjs";
 
 const FORBIDDEN = [
   "send_email",
@@ -50,6 +50,7 @@ test("the default Nitro preset stays vercel and workers is opt-in", () => {
   assert.equal(nitroPreset({}), VERCEL_PRESET);
   assert.equal(nitroPreset({ NITRO_PRESET: "" }), VERCEL_PRESET);
   assert.equal(nitroPreset({ NITRO_PRESET: WORKERS_PRESET }), WORKERS_PRESET);
+  assert.equal(nitroPreset({ NITRO_PRESET: NODE_PRESET }), "node-server");
   assert.throws(() => nitroPreset({ NITRO_PRESET: "cloudflare-pages" }), /cloudflare-module/);
 });
 

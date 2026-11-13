@@ -7,6 +7,7 @@ import {
   type MailRule,
   type Person,
 } from "./model.ts";
+import { isCustomFolderId } from "./folders.ts";
 
 export function isCumulus(email: string, domain = mailDomain()): boolean {
   return email.toLowerCase().endsWith(`@${domain}`);
@@ -66,7 +67,9 @@ export function withSignature(body: string, signature: string): string {
 export function archiveThreads(messages: MailMessage[], threadIds: string[]): MailMessage[] {
   const ids = new Set(threadIds);
   return messages.map((message) =>
-    ids.has(message.threadId) && message.folder === "inbox" ? { ...message, folder: "archive", unread: false } : message,
+    ids.has(message.threadId) && (message.folder === "inbox" || isCustomFolderId(message.folder))
+      ? { ...message, folder: "archive", unread: false }
+      : message,
   );
 }
 
@@ -213,8 +216,11 @@ export function listThreads(
   box: BoxId,
   query: string,
   unreadOnly: boolean,
+  // One clock for the whole list: `inBox` is called many times here, and reading Date.now() in each
+  // call lets a snooze that expires mid-list put a message in two boxes at once (or neither).
+  now = Date.now(),
 ): MailMessage[] {
-  const inView = messages.filter((m) => inBox(m, box));
+  const inView = messages.filter((m) => inBox(m, box, now));
   const latest = new Map<string, MailMessage>();
   for (const message of inView) {
     const prev = latest.get(message.threadId);
@@ -224,7 +230,7 @@ export function listThreads(
   if (query.trim()) rows = rows.filter((row) => threadMatches(messages, row, query));
   if (unreadOnly) {
     rows = rows.filter((row) =>
-      messages.some((m) => m.threadId === row.threadId && m.unread && inBox(m, box)),
+      messages.some((m) => m.threadId === row.threadId && m.unread && inBox(m, box, now)),
     );
   }
   rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
@@ -256,15 +262,32 @@ export function rowTitle(message: MailMessage, meEmail: string = ME.email): stri
   return message.from.name;
 }
 
-export function quota(messages: MailMessage[], quotaGb: number = ME.quotaGb): { label: string; pct: number } {
-  const extra = messages.reduce((n, message) => {
-    const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
-    return n + message.subject.length + message.body.length + files;
-  }, 0);
-  const bytes = 2.41e9 + extra;
+export type QuotaWarning = "near" | "over" | null;
+
+/**
+ * Storage shown in the sidebar. With `usedBytes` from the server it is the real count; without it
+ * (sample data, profiles built outside the database) it is the old estimate. Never enforced here:
+ * `warning` is a soft notice at 90% and above.
+ */
+export function quota(
+  messages: MailMessage[],
+  quotaGb: number = ME.quotaGb,
+  usedBytes?: number,
+): { label: string; pct: number; warning: QuotaWarning; measured: boolean } {
+  const measured = typeof usedBytes === "number" && Number.isFinite(usedBytes) && usedBytes >= 0;
+  const bytes = measured
+    ? usedBytes
+    : 2.41e9 +
+      messages.reduce((n, message) => {
+        const files = (message.attachments ?? []).reduce((sum, file) => sum + file.size, 0);
+        return n + message.subject.length + message.body.length + files;
+      }, 0);
   const gb = bytes / 1e9;
-  const pct = Math.min(100, (gb / quotaGb) * 100);
-  return { label: `${gb.toFixed(2)} GB of ${quotaGb} GB`, pct };
+  const ratio = quotaGb > 0 ? gb / quotaGb : 1;
+  const pct = Math.min(100, ratio * 100);
+  const warning: QuotaWarning = ratio >= 1 ? "over" : ratio >= 0.9 ? "near" : null;
+  const shown = gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2);
+  return { label: `${shown} GB of ${quotaGb} GB`, pct, warning, measured };
 }
 
 export function parsePeople(value: string): Person[] {

@@ -4,6 +4,7 @@ import { TenantAccessError } from "../storage/adapter.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import { rejectCallerTenant } from "./snapshot.ts";
+import { readSnapshot, replaceMailboxContents } from "./records.ts";
 import { createHarness, profile } from "./test-support.ts";
 import type { MailMessage } from "./model.ts";
 import { bytesToBase64 } from "./bytes.ts";
@@ -104,4 +105,66 @@ test("the preview mailbox is seeded once and keeps its address", async () => {
   assert.equal(await findTenantByAddress(db, "leah@cumuluscloud.app"), "demo-leah");
   const second = await openMailbox(db, "dev-user", profile("dev-user", "alex@cumuluscloud.app", "Alex Reid"));
   assert.equal(second.messages.length, first.messages.length);
+});
+
+test("the server enforces the address limit, but keeps mailboxes that already went over it", async () => {
+  const { MAX_ALIASES } = await import("./model.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("alias-cap", "cap@cumuluscloud.app", "Cap");
+    await openMailbox(harness.db, "alias-cap", me);
+    const base = await readSnapshot(harness.db, "alias-cap");
+    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap.alias${index}@cumuluscloud.app`);
+    const saved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...base, aliases: many(MAX_ALIASES) });
+    assert.equal(saved.aliases.length, MAX_ALIASES);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: many(MAX_ALIASES + 1) }),
+      /up to 15 addresses/,
+    );
+    assert.equal((await readSnapshot(harness.db, "alias-cap")).aliases.length, MAX_ALIASES);
+    // Duplicates and the mailbox's own address do not count toward the limit.
+    const dupes = [...many(MAX_ALIASES), "CAP.ALIAS0@cumuluscloud.app", me.email];
+    assert.equal((await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: dupes })).aliases.length, MAX_ALIASES);
+
+    // A mailbox stored with more than the limit before this check existed can still save, but not grow.
+    const over = await readSnapshot(harness.db, "alias-cap");
+    await replaceMailboxContents(harness.db, "alias-cap", { ...over, aliases: many(MAX_ALIASES + 2) }, [], new Map());
+    const legacy = await readSnapshot(harness.db, "alias-cap");
+    assert.equal(legacy.aliases.length, MAX_ALIASES + 2);
+    const resaved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...legacy, signature: "still works" });
+    assert.equal(resaved.aliases.length, MAX_ALIASES + 2);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...legacy, aliases: many(MAX_ALIASES + 3) }),
+      /up to 15 addresses/,
+    );
+  } finally {
+    await harness.close();
+  }
+});
+
+test("the server refuses a fourth custom domain instead of silently dropping it", async () => {
+  const { MAX_DOMAINS, defaultSettings, requestedDomainCount } = await import("./settings.ts");
+  const { readSnapshot } = await import("./records.ts");
+  const harness = await createHarness();
+  try {
+    const me = profile("dom-cap", "domcap@cumuluscloud.app", "Dom");
+    await openMailbox(harness.db, "dom-cap", me);
+    const base = await readSnapshot(harness.db, "dom-cap");
+    const domain = (name: string) => ({ domain: name, catchAll: false, verified: false, txtName: "", txtValue: "" });
+    const three = ["a.example", "b.example", "c.example"].map(domain);
+    const saved = await writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...base, settings: { ...defaultSettings(), domains: three } });
+    assert.equal(saved.settings?.domains.length, MAX_DOMAINS);
+    await assert.rejects(
+      () => writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...saved, settings: { ...saved.settings!, domains: [...three, domain("d.example")] } }),
+      /up to 3 custom domains/,
+    );
+    assert.equal((await readSnapshot(harness.db, "dom-cap")).settings?.domains.length, 3);
+    // Duplicates, invalid names and the platform domain do not count.
+    assert.equal(requestedDomainCount({ domains: [...three, domain("A.EXAMPLE"), domain("not a domain"), domain("cumuluscloud.app")] }), 3);
+    // Removing one makes room again.
+    const fewer = await writeSnapshot(harness.db, harness.storageFor, "dom-cap", { ...saved, settings: { ...saved.settings!, domains: three.slice(1) } });
+    assert.deepEqual(fewer.settings?.domains.map((item) => item.domain), ["b.example", "c.example"]);
+  } finally {
+    await harness.close();
+  }
 });

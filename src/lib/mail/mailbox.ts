@@ -5,10 +5,14 @@ import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
 import { addressOwnedByOther } from "./directory.ts";
+import { requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
+import { mailDomain } from "./domain.ts";
 import { validEmail } from "./logic.ts";
 import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { releaseDue } from "./schedule.ts";
+import { reconcileFolders } from "./folders.ts";
 import {
   loadAttachmentMap,
   previousRawKeys,
@@ -23,8 +27,8 @@ import type { MailProfile } from "./snapshot.ts";
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
 const MAX_FILES = 8;
-const MAX_MESSAGES = 5000;
 const MAX_BODY = 1_000_000;
+
 
 export async function openMailbox(db: MailQuery, tenantId: string, profile: MailProfile): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
@@ -50,7 +54,8 @@ export async function writeSnapshot(
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   const current = await readSnapshot(db, tenantId);
-  if (snapshot.messages.length > MAX_MESSAGES) throw new Error("Mailbox is too large");
+  const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
+  if (snapshot.messages.length > limits.messages) throw new Error("Mailbox is too large");
   const existing = await loadAttachmentMap(db, tenantId);
   const byId = new Map<string, { messageId: string; file: StoredAttachment }>();
   for (const [messageId, files] of existing) {
@@ -64,7 +69,9 @@ export async function writeSnapshot(
   const storage = storageFor(tenantId);
   const messages: MailMessage[] = [];
 
-  for (const incoming of releaseDue(snapshot.messages)) {
+  // Mail in a folder the saved settings no longer list goes back to the Inbox.
+  const folders = sanitizeSettings(snapshot.settings).folders;
+  for (const incoming of reconcileFolders(releaseDue(snapshot.messages), folders)) {
     assertId(incoming.id, "message id");
     assertId(incoming.threadId, "thread id");
     const message: MailMessage =
@@ -113,6 +120,14 @@ export async function writeSnapshot(
     keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
   }
 
+  // Refuse rather than silently keep the first few.
+  if (requestedDomainCount(snapshot.settings, mailDomain()) > limits.domains) {
+    throw new Error(`You can add up to ${limits.domains} custom domains.`);
+  }
+  if (sanitizeSettings(snapshot.settings).folders.length > limits.folders) {
+    throw new Error(`You can have up to ${limits.folders} folders.`);
+  }
+
   const aliases: string[] = [];
   for (const alias of snapshot.aliases) {
     const email = alias.trim().toLowerCase();
@@ -121,6 +136,11 @@ export async function writeSnapshot(
       throw new TenantAccessError("That address belongs to another mailbox");
     }
     aliases.push(email);
+  }
+  // A mailbox that already holds more (saved before this check existed) keeps them, but cannot add more.
+  const allowed = Math.max(limits.aliases, current.aliases.length);
+  if (aliases.length > allowed) {
+    throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
 
   const next: MailboxSnapshot = {

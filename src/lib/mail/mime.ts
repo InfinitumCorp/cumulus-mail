@@ -79,7 +79,10 @@ function decodeQuotedPrintable(value: string): string {
       bytes.push(Number.parseInt(stripped.slice(index + 1, index + 3), 16));
       index += 2;
     } else {
-      bytes.push(stripped.charCodeAt(index));
+      // Literal characters may be 8-bit UTF-8 already decoded to a string; re-encode them.
+      const char = String.fromCodePoint(stripped.codePointAt(index) ?? 0);
+      bytes.push(...new TextEncoder().encode(char));
+      index += char.length - 1;
     }
   }
   return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
@@ -107,7 +110,8 @@ function decodeBody(body: string, encoding: string | undefined, asText: boolean)
 }
 
 function decodeWords(value: string): string {
-  return value.replace(/=\?([^?]+)\?([BbQq])\?([^?]+)\?=/g, (_all, _charset, encoding, data) => {
+  // RFC 2047 §6.2: whitespace between two adjacent encoded words is not part of the text.
+  return value.replace(/(\?=)\s+(?==\?)/g, "$1").replace(/=\?([^?]+)\?([BbQq])\?([^?]+)\?=/g, (_all, _charset, encoding, data) => {
     if (String(encoding).toLowerCase() === "b") {
       return new TextDecoder("utf-8").decode(decodeBase64(String(data)));
     }

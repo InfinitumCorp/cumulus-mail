@@ -1,5 +1,5 @@
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
-import type { Attachment, CalEvent, MailMessage } from "@/lib/mail/model";
+import type { Attachment, CalEvent, CustomFolder, FolderId, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
 import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
@@ -23,6 +23,9 @@ type Props = {
   onMute: () => void;
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Custom folders offered by "Move to". The control is hidden when there are none. */
+  folders?: CustomFolder[];
+  onMoveTo?: (id: string, folder: FolderId) => void;
   onReply: () => void;
   onReplyAll: () => void;
   onForward: () => void;
@@ -45,6 +48,9 @@ type Props = {
   onOpenLink?: (href: string) => void;
   invite?: CalEvent | null;
   onAcceptInvite?: () => void;
+  /** Answer the invite (adds it to the calendar and sends an iTIP REPLY when it has an organizer). */
+  onRsvp?: (answer: "accepted" | "tentative" | "declined") => void;
+  inviteRsvp?: "accepted" | "tentative" | "declined";
   onReceipt?: (accept: boolean) => void;
   onReport?: () => void;
 };
@@ -88,6 +94,8 @@ function Opened({
   onMute,
   onRestore,
   onRemove,
+  folders = [],
+  onMoveTo,
   onReply,
   onReplyAll,
   onForward,
@@ -110,6 +118,8 @@ function Opened({
   onOpenLink,
   invite,
   onAcceptInvite,
+  onRsvp,
+  inviteRsvp,
   onReceipt,
   onReport,
 }: Props & { message: MailMessage }) {
@@ -156,6 +166,27 @@ function Opened({
             <button type="button" className="grid size-11 place-items-center" onClick={onSnooze} aria-label="Snooze until tomorrow morning">
               <Clock className="size-4" />
             </button>
+            {onMoveTo && folders.length > 0 && message.folder !== "drafts" && message.folder !== "sent" ? (
+              <select
+                className="h-11 bg-transparent px-2 text-sm hover:text-accent"
+                aria-label="Move to folder"
+                value=""
+                onChange={(event) => {
+                  const target = event.target.value as FolderId;
+                  if (target) onMoveTo(message.id, target);
+                }}
+              >
+                <option value="">Move to…</option>
+                {message.folder !== "inbox" ? <option value="inbox">Inbox</option> : null}
+                {folders
+                  .filter((folder) => folder.id !== message.folder)
+                  .map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
           </>
         )}
         <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onUnread}>
@@ -220,9 +251,26 @@ function Opened({
               <p className="font-mono text-xs uppercase tracking-wide text-accent">Invite</p>
               <p className="mt-2 text-lg tracking-tight">{invite.title}</p>
               <p className="mt-1 text-sm text-muted">{invite.whenLabel}</p>
-              <button type="button" className="mt-3 inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onAcceptInvite}>
-                Add to calendar
-              </button>
+              {onRsvp ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Answer this invite">
+                  {(["accepted", "tentative", "declined"] as const).map((answer) => (
+                    <button
+                      key={answer}
+                      type="button"
+                      aria-pressed={inviteRsvp === answer}
+                      className={`inline-flex h-11 items-center border px-3 text-sm ${inviteRsvp === answer ? "border-accent text-accent" : "border-line hover:border-ink"}`}
+                      onClick={() => onRsvp(answer)}
+                    >
+                      {answer === "accepted" ? "Accept" : answer === "tentative" ? "Maybe" : "Decline"}
+                    </button>
+                  ))}
+                  {!invite.organizer ? <span className="text-xs text-muted">No organizer to answer. It is saved here only.</span> : null}
+                </div>
+              ) : (
+                <button type="button" className="mt-3 inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onAcceptInvite}>
+                  Add to calendar
+                </button>
+              )}
             </div>
           ) : null}
           {message.delivery?.length ? (

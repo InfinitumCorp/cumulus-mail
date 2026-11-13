@@ -2,6 +2,8 @@
  * Nitro preset selection. The default build stays `vercel`.
  * `NITRO_PRESET=cloudflare-module` builds the API worker and nothing else.
  * That preset must not be pointed at mail.cumuluscloud.app.
+ * `NITRO_PRESET=node-server` builds a plain Node server for the Russia copy
+ * (ru.mail.cumuluscloud.app on Yandex Cloud; see docs/deploy/yandex-ru.md).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,14 +11,16 @@ import { fileURLToPath } from "node:url";
 
 export const VERCEL_PRESET = "vercel";
 export const WORKERS_PRESET = "cloudflare-module";
+/** Plain Node server (`node .output/server/index.mjs`), for the Russia copy on Yandex Cloud. */
+export const NODE_PRESET = "node-server";
 
-const ALLOWED = new Set([VERCEL_PRESET, WORKERS_PRESET]);
+const ALLOWED = new Set([VERCEL_PRESET, WORKERS_PRESET, NODE_PRESET]);
 
 export function nitroPreset(env = process.env) {
   const requested = (env.NITRO_PRESET ?? "").trim();
   if (!requested) return VERCEL_PRESET;
   if (!ALLOWED.has(requested)) {
-    throw new Error(`NITRO_PRESET must be ${VERCEL_PRESET} or ${WORKERS_PRESET}`);
+    throw new Error(`NITRO_PRESET must be ${VERCEL_PRESET}, ${WORKERS_PRESET} or ${NODE_PRESET}`);
   }
   return requested;
 }

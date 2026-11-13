@@ -4,21 +4,29 @@ export const DEFAULT_MAIL_DOMAIN = "cumuluscloud.app";
 /** Default web host for the mail app. Override with MAIL_APP_HOST or VITE_MAIL_APP_HOST. */
 export const DEFAULT_MAIL_APP_HOST = "mail.cumuluscloud.app";
 
-// Each variable is read by name: Vite's dev module runner refuses dynamic `import.meta.env[name]`
-// access on the server, which broke every server call that needed the mail domain in `npm run dev`.
-const META_ENV: Record<"MAIL_DOMAIN" | "MAIL_APP_HOST", () => string | undefined> = {
-  MAIL_DOMAIN: () => (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_MAIL_DOMAIN,
-  MAIL_APP_HOST: () => (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_MAIL_APP_HOST,
-};
+type EnvName = "MAIL_DOMAIN" | "MAIL_APP_HOST";
 
-function envValue(name: "MAIL_DOMAIN" | "MAIL_APP_HOST"): string | undefined {
-  const fromProcess = typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined;
-  if (fromProcess) return fromProcess;
+/**
+ * Vite's env, read with fixed names only. Vite replaces `import.meta.env.NAME` at build time and its dev
+ * SSR runner refuses computed access (`import.meta.env[name]`), which used to throw in `npm run dev`.
+ * Plain Node (tests, scripts) has no `import.meta.env`, hence the try.
+ */
+function viteEnv(name: EnvName): string | undefined {
   try {
-    return META_ENV[name]()?.trim() || undefined;
+    const values: Record<EnvName, Array<string | undefined>> = {
+      MAIL_DOMAIN: [import.meta.env.MAIL_DOMAIN, import.meta.env.VITE_MAIL_DOMAIN],
+      MAIL_APP_HOST: [import.meta.env.MAIL_APP_HOST, import.meta.env.VITE_MAIL_APP_HOST],
+    };
+    return values[name].map((value) => (typeof value === "string" ? value.trim() : "")).find(Boolean);
   } catch {
     return undefined;
   }
+}
+
+function envValue(name: EnvName): string | undefined {
+  const fromProcess = typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined;
+  if (fromProcess) return fromProcess;
+  return viteEnv(name);
 }
 
 function hostName(value: string, fallback: string): string {

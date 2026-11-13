@@ -1,12 +1,28 @@
 import { Check, Plus, X } from "lucide-react";
+import { useDialogFocus } from "@/lib/a11y/focus";
+import { BillingControls } from "./billing-controls";
+import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
+import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
-import { addressAllowed, expectedTxt, type MailSettings } from "@/lib/mail/settings";
+import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
-import { ME, type CalEvent, type ArchitectTask, type Contact, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
+import { parseSieve } from "@/lib/mail/sieve";
+import { planUsage } from "@/lib/mail/plans";
 import type { MailProfile } from "@/lib/mail/snapshot";
 import { IdSessions } from "./id-sessions";
+
+function sieveProblem(source: string, folders: CustomFolder[]): string {
+  if (!source.trim()) return "";
+  try {
+    parseSieve(source, folders);
+    return "";
+  } catch (error) {
+    return error instanceof Error ? error.message : "The filter could not be read.";
+  }
+}
 
 export function CalendarPanel({ events }: { events: CalEvent[] }) {
   return (
@@ -137,15 +153,6 @@ export function TasksPanel({ tasks, onToggle }: { tasks: ArchitectTask[]; onTogg
   );
 }
 
-const ALIAS_WORDS = ["north", "quiet", "glass", "harbor", "lumen", "cedar", "field", "orbit", "paper", "signal"];
-
-export function newAlias(): string {
-  const a = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "north";
-  const b = ALIAS_WORDS[Math.floor(Math.random() * ALIAS_WORDS.length)] ?? "quiet";
-  const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}.${b}.${n}@${mailDomain()}`;
-}
-
 export function AccountPanel({
   me = ME,
   aliases,
@@ -169,7 +176,9 @@ export function AccountPanel({
   publishedKey = null,
   onPublishKey,
   onWithdrawKey,
+  usage,
 }: {
+  usage?: { folders: number; messages: number };
   me?: MailProfile;
   aliases: string[];
   quotaLabel: string;
@@ -196,10 +205,13 @@ export function AccountPanel({
 }) {
   const posture = identityPosture();
   const bridge = bridgeDesign();
+  const dialog = useDialogFocus<HTMLDivElement>(true, onClose);
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
       <div
+        ref={dialog}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="account-title"
         className="max-h-dvh w-full overflow-y-auto bg-paper md:max-w-lg md:border md:border-line"
         onClick={(event) => event.stopPropagation()}
@@ -220,7 +232,29 @@ export function AccountPanel({
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Plan</dt>
-              <dd>{me.plan} · {quotaLabel}</dd>
+              <dd>
+                {me.plan} · {quotaLabel}
+                {me.limits && usage ? (
+                  <ul aria-label="Plan usage" className="mt-3 flex flex-col gap-1 text-xs">
+                    {planUsage(me.limits, {
+                      aliases: aliases.length,
+                      domains: settings.domains.length,
+                      folders: usage.folders,
+                      messages: usage.messages,
+                      usedBytes: me.usedBytes,
+                    }).map((row) => (
+                      <li key={row.key} className="flex justify-between gap-3">
+                        <span className="text-muted">{row.label}</span>
+                        <span className={row.full ? "font-mono text-accent" : "font-mono"}>
+                          {row.text}
+                          {row.full ? " (limit reached)" : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <BillingControls />
+              </dd>
             </div>
             <div className="border-b border-line py-4">
               <dt className="text-muted">Aliases</dt>
@@ -255,6 +289,7 @@ export function AccountPanel({
                 </form>
               </dd>
             </div>
+            <SignedInDevices />
             <div className="border-b border-line py-4">
               <dt className="text-muted">Signature</dt>
               <dd className="mt-3">
@@ -342,6 +377,14 @@ export function AccountPanel({
                   placeholder={'if header :contains "From" "vyral" {\n  fileinto "archive";\n}'}
                   className="min-h-28 w-full border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none"
                 />
+                <p className="mt-2 text-xs text-muted">
+                  fileinto takes inbox, archive, trash, Spam, label:Name, or the name of one of your folders.
+                </p>
+                {sieveProblem(settings.sieve, settings.folders) ? (
+                  <p role="alert" className="mt-1 text-xs">
+                    {sieveProblem(settings.sieve, settings.folders)} The filter is saved but not applied until this is fixed.
+                  </p>
+                ) : null}
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -367,8 +410,22 @@ export function AccountPanel({
                     <button type="button" className="ml-3 text-accent" onClick={() => onCheckDomain(domain.domain)}>
                       Check DNS
                     </button>
+                    <button
+                      type="button"
+                      className="ml-3 text-muted hover:text-ink"
+                      aria-label={`Remove ${domain.domain}`}
+                      onClick={() => {
+                        if (!window.confirm(`Remove ${domain.domain}? Mail to it will no longer arrive here.`)) return;
+                        onSettings({ ...settings, domains: settings.domains.filter((item) => item.domain !== domain.domain) });
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
+                {settings.domains.length >= (me.limits?.domains ?? MAX_DOMAINS) ? (
+                  <p className="text-sm text-muted">You can add up to {me.limits?.domains ?? MAX_DOMAINS} custom domains. Remove one to add another.</p>
+                ) : (
                 <form
                   className="flex gap-2"
                   onSubmit={(event) => {
@@ -389,6 +446,7 @@ export function AccountPanel({
                     Add domain
                   </button>
                 </form>
+                )}
                 {domainNote ? <p className="text-sm text-muted">{domainNote}</p> : null}
               </dd>
             </div>

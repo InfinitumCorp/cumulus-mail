@@ -1,7 +1,8 @@
 import { getRequest } from "@tanstack/react-start/server";
-import { cidConfig } from "./cumulus-id.ts";
+import { cidConfigForRegion } from "./cumulus-id.ts";
 import { SIGN_IN_PROVIDERS } from "./providers";
-import { auth, authConfigured } from "./server";
+import { regionFor } from "../region.ts";
+import { authForRequest, isAuthConfigured } from "./server";
 
 /**
  * The Cumulus://ID access token Better Auth stored (encrypted) on the signed-in
@@ -28,9 +29,12 @@ function requestHeaders(bearerToken?: string): Headers | null {
 }
 
 export async function storedCidToken(bearerToken?: string): Promise<StoredCidToken> {
-  if (!authConfigured) return NONE;
+  if (!isAuthConfigured()) return NONE;
+  const request = getRequest();
   const headers = requestHeaders(bearerToken);
-  if (!headers) return NONE;
+  if (!request || !headers) return NONE;
+  // The instance for this host's region: a refresh goes to the issuer the person signed in through.
+  const auth = authForRequest(request);
   let accounts: Array<{ id: string; providerId: string; updatedAt?: Date | string }>;
   try {
     accounts = (await auth.api.listUserAccounts({ headers })) as typeof accounts;
@@ -56,6 +60,7 @@ export async function storedCidToken(bearerToken?: string): Promise<StoredCidTok
 
 /** Issuer plus the stored token, in the shape `cid-account.ts` takes. */
 export async function cidCall(bearerToken?: string) {
-  const { issuer } = cidConfig();
+  // ru.* hosts talk to the Russia mirror of Cumulus://ID, like their sign-in.
+  const { issuer } = cidConfigForRegion(regionFor(getRequest()?.headers.get("host") ?? null));
   return { issuer, ...(await storedCidToken(bearerToken)) };
 }

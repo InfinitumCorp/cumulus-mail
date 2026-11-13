@@ -1,3 +1,4 @@
+import { limitsFor, newMailboxPlan, planLabel } from "./plans.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { mailboxAddress } from "./domain.ts";
 import { addressBlind, publishAddress } from "./directory.ts";
@@ -88,10 +89,11 @@ export async function provisionMailbox(
   assertTenantId(tenantId);
   const email = profile.email.trim().toLowerCase();
   if (!validEmail(email)) throw new Error("Mailbox address is invalid");
+  const startPlan = newMailboxPlan();
   await db.query(
     `insert into cumulus_mail.mailboxes (
-       tenant_id, address, address_bidx, display_name, cid, plan, quota_gb, signature, seeded
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,false)
+       tenant_id, address, address_bidx, display_name, cid, plan, quota_gb, signature, seeded, plan_id
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,false,$9)
      on conflict (tenant_id) do nothing`,
     [
       tenantId,
@@ -99,9 +101,10 @@ export async function provisionMailbox(
       addressBlind(tenantId, email),
       sealText(tenantId, profile.name.slice(0, 200)),
       profile.cid.slice(0, 200),
-      profile.plan.slice(0, 40),
-      profile.quotaGb,
+      planLabel(startPlan),
+      limitsFor(startPlan).quotaGb,
       sealText(tenantId, `${profile.name}\n${email}`),
+      startPlan,
     ],
   );
   await publishAddress(db, tenantId, email);

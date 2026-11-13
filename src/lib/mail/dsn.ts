@@ -58,6 +58,30 @@ export function isPermanentFailure(report: DsnRecipient): boolean {
   return report.action === "failed" && report.status.startsWith("5");
 }
 
+/**
+ * Store one bounce, and suppress the address when the failure is permanent.
+ * Used for incoming DSNs and for SMTP failures from the outbound queue.
+ * Returns whether the address was suppressed.
+ */
+export async function recordBounce(
+  db: MailQuery,
+  tenantId: string,
+  report: DsnRecipient,
+  messageId: string | null,
+  suppressions = createSuppressionList(db, tenantId),
+): Promise<boolean> {
+  assertTenantId(tenantId);
+  const suppressed = isPermanentFailure(report);
+  await db.query(
+    `insert into cumulus_mail.bounces (
+       tenant_id, id, message_id, recipient, action, status, diagnostic
+     ) values ($1,$2,$3,$4,$5,$6,$7)`,
+    [tenantId, newId("bounce"), messageId, sealText(tenantId, report.recipient), report.action, report.status, report.diagnostic.slice(0, 2000)],
+  );
+  if (suppressed) await suppressions.add(report.recipient, `dsn:${report.status}`);
+  return suppressed;
+}
+
 export function createBounceHandler(db: MailQuery, tenantId: string): BounceHandler {
   assertTenantId(tenantId);
   const suppressions = createSuppressionList(db, tenantId);
@@ -66,15 +90,7 @@ export function createBounceHandler(db: MailQuery, tenantId: string): BounceHand
       const reports = parseDsn(rawDsn);
       const receipts: BounceReceipt[] = [];
       for (const report of reports) {
-        const suppressed = isPermanentFailure(report);
-        const id = newId("bounce");
-        await db.query(
-          `insert into cumulus_mail.bounces (
-             tenant_id, id, message_id, recipient, action, status, diagnostic
-           ) values ($1,$2,$3,$4,$5,$6,$7)`,
-          [tenantId, id, null, sealText(tenantId, report.recipient), report.action, report.status, report.diagnostic.slice(0, 2000)],
-        );
-        if (suppressed) await suppressions.add(report.recipient, `dsn:${report.status}`);
+        const suppressed = await recordBounce(db, tenantId, report, null, suppressions);
         receipts.push({ ...report, suppressed });
       }
       return receipts;

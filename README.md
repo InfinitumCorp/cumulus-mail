@@ -4,7 +4,7 @@ Private email for every [Cumulus://ID](https://infinitum-corporation.vercel.app/
 
 This client is the web app: inbox, compose, drafts, calendar, contacts, and Architect tasks. SCALVS briefs and drafts run on open-weight models through OmniRoute (`OMNIROUTE_API_KEY`, `OMNIROUTE_URL` default `http://localhost:20128/v1`), switching automatically to Cloudflare Workers AI (`CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_AI_TOKEN`) or Groq (`GROQ_API_KEY`) when one fails or stalls. The mailbox is stored on the server. Metadata is in the `cumulus_mail` Postgres schema, and attachment bytes go through the storage adapter (`MAIL_STORAGE=local` by default, under `MAIL_BLOB_DIR` or `.data/mail-blobs`). The S3 driver uses AWS SDK v3 with the same `put` / `get` / `delete` / `probe` shape as the Drive driver. Subjects, addresses, snippets, headers, display names, signatures, and authentication results are encrypted in Postgres. An address is found by its domain, then by an HMAC under that tenant's key. Mail between local Cumulus addresses is delivered inside the app. This preview does not send to external addresses.
 
-Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). Blob encryption uses `MAIL_BLOB_KEY` (32 bytes, hex or base64). Cumulus://ID is its own OpenID Connect issuer, so bearer tokens are verified against `https://id.cumuluscloud.app/realms/cumulus` by default (ES256; discovery at `/.well-known/openid-configuration` under the issuer, JWKS at `/protocol/openid-connect/certs`). A Cumulus://ID access token (`typ: at+jwt`) must carry Mail's client id (`CID_CLIENT_ID`, default `cumulus-mail`) in `aud`, and its verified `sub` (the cid) is the tenant. Name any other OIDC issuer with `CUMULUS_OIDC_ISSUER`, and override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. An Amazon Cognito user pool is opt-in only: set `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id). No client secret is needed: Mail is a public client with PKCE. The account dialog lists Cumulus://ID sessions and publishes or looks up OpenPGP keys through the `/api/id/sessions` and `/api/id/keys` APIs on `CID_ISSUER` (default `https://id.cumuluscloud.app`). `npm run build:inbound` writes `dist/inbound/index.js` and `dist/inbound/metadata.json` for a Cloudflare Workers script upload. DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker config lives in `workers/email/wrangler.jsonc` (worker name `cumulus-mail-inbound`) and is not deployed by this repository. `npm run build` stays on the Vercel preset. `npm run build:workers` builds the API for Cloudflare with Nitro preset `cloudflare-module` as worker `cumulus-mail-api` on workers.dev, with no route on `mail.cumuluscloud.app`. Inbound SPF, DKIM, and DMARC use a fixture resolver unless `MAIL_AUTH_DNS=live`. Deploy steps are in `docs/deploy/cloudflare-handoff.md`.
+Addresses default to `@cumuluscloud.app`. The app host defaults to `mail.cumuluscloud.app`. Override either with `MAIL_DOMAIN` and `MAIL_APP_HOST` (or `VITE_MAIL_DOMAIN` and `VITE_MAIL_APP_HOST` in the browser). Blob encryption uses `MAIL_BLOB_KEY` (32 bytes, hex or base64). Cumulus://ID is its own OpenID Connect issuer, so bearer tokens are verified against `https://id.cumuluscloud.app/realms/cumulus` by default (ES256; discovery at `/.well-known/openid-configuration` under the issuer, JWKS at `/protocol/openid-connect/certs`). A Cumulus://ID access token (`typ: at+jwt`) must carry Mail's client id (`CID_CLIENT_ID`, default `cumulus-mail`) in `aud`, and its verified `sub` (the cid) is the tenant. Name any other OIDC issuer with `CUMULUS_OIDC_ISSUER`, and override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. An Amazon Cognito user pool is opt-in only: set `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id). No client secret is needed: Mail is a public client with PKCE. The account dialog lists Cumulus://ID sessions and publishes or looks up OpenPGP keys through the `/api/id/sessions` and `/api/id/keys` APIs on `CID_ISSUER` (default `https://id.cumuluscloud.app`). `npm run build:inbound` writes `dist/inbound/index.js` and `dist/inbound/metadata.json` for a Cloudflare Workers script upload. DNS templates for that Cloudflare zone live in `docs/dns/`. The inbound worker config lives in `workers/email/wrangler.jsonc` (worker name `cumulus-mail-inbound`) and is not deployed by this repository. `npm run build` stays on the Vercel preset. `npm run build:node` builds a plain Node server (Nitro `node-server`) for the Russia copy on Yandex Cloud, packaged by the `Dockerfile`; see `docs/deploy/yandex-ru.md`. `npm run build:workers` builds the API for Cloudflare with Nitro preset `cloudflare-module` as worker `cumulus-mail-api` on workers.dev, with no route on `mail.cumuluscloud.app`. Inbound SPF, DKIM, and DMARC use a fixture resolver unless `MAIL_AUTH_DNS=live`. Deploy steps are in `docs/deploy/cloudflare-handoff.md`.
 
 ## Sign in
 
@@ -18,6 +18,26 @@ npm run dev
 ```
 
 Open the printed local address. The dev server listens on port 8080.
+
+### Without Cumulus ID (local only)
+
+To try the app on your machine without signing in, turn sign-in off and give it a throwaway encryption key:
+
+```sh
+export MAIL_BLOB_KEY=$(openssl rand -hex 32)   # 32 random bytes; a new one each time is fine
+VITE_AUTH_ENABLED=false npm run dev
+```
+
+With sign-in off and no `DATABASE_URL`, every visitor is the same dev user and the mailbox lives in an
+in-process PGLite database (sample mail included). The server refuses this mode when `DATABASE_URL` is
+set, so it can never share one user across a real database. Without `MAIL_BLOB_KEY` the page shows
+"MAIL_BLOB_KEY is not set" and nothing is saved. Never reuse a local key in production.
+
+### Browser tests
+
+`npm run test:e2e` starts the dev server in that local mode on a free port, runs the Playwright smoke tests in
+`e2e/` (inbox, saving, keyboard shortcuts, folders, phone layout) in Chromium, and stops the server. Set
+`E2E_CHROMIUM_PATH` to use a specific Chromium; `npx playwright install chromium` installs Playwright's own.
 
 ## Stack
 

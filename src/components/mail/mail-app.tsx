@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList } from "@/lib/mail/api";
+import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { lookupRecipientKeys, withdrawMailKey } from "@/lib/auth/cid-api";
 import { recipientKeys } from "@/lib/auth/cid-account";
 import { base64ToBytes } from "@/lib/mail/bytes";
@@ -28,17 +30,19 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
-import { parseInvite } from "@/lib/mail/invite";
+import { EVENTS, type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
+import { buildReply, parseInvite } from "@/lib/mail/invite";
+import { expandEvents, withRsvp } from "@/lib/mail/calendar";
 import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
 import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } from "@/lib/mail/protect";
 import { releaseDue } from "@/lib/mail/schedule";
 import { assessPhishing, classifyLink, extractLinks, stripRemoteImages } from "@/lib/mail/safety";
 import type { MailboxBackup } from "@/lib/mail/backup";
-import { defaultSettings, recordAudit } from "@/lib/mail/settings";
+import { defaultSettings, noteUnsubscribed, recordAudit } from "@/lib/mail/settings";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
-import { MessageList } from "./message-list";
+import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
@@ -113,10 +117,14 @@ export function MailApp() {
   const [unlockError, setUnlockError] = useState("");
   const [pendingLink, setPendingLink] = useState<{ href: string; reason?: string } | null>(null);
   const [help, setHelp] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
   const [keyError, setKeyError] = useState("");
   const [publishedKey, setPublishedKey] = useState<{ id: string; fingerprint: string } | null>(null);
   const [domainNote, setDomainNote] = useState("");
+  const [inboxTab, setInboxTab] = useState<InboxTab>("all");
+  const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
+  const [subscriptionNote, setSubscriptionNote] = useState("");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -176,6 +184,12 @@ export function MailApp() {
       } else if (event.key === "r" && reading) {
         event.preventDefault();
         reply();
+      } else if (event.key === "a" && reading) {
+        event.preventDefault();
+        replyAll();
+      } else if (event.key === "f" && reading) {
+        event.preventDefault();
+        forward();
       } else if (event.key === "e" && reading && reading.folder !== "trash") {
         event.preventDefault();
         moveSelected(reading.id, "archive");
@@ -202,19 +216,47 @@ export function MailApp() {
       } else if (event.key === "?") {
         event.preventDefault();
         setHelp(true);
+      } else if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if ((event.key === "o" || event.key === "Enter") && !reading && rows[0] && view === "mail") {
+        if (event.key === "Enter" && target instanceof HTMLElement && target.closest("button, a")) return;
+        event.preventDefault();
+        openRow(rows.find((row) => row.id === selectedId) ?? rows[0]);
+      } else if (event.key === "Escape" && reading && !help && !pendingLink && !modal && !accountOpen) {
+        event.preventDefault();
+        const id = reading.id;
+        setSelectedId(null);
+        // Give focus back to the row that was open, so j/k and Tab carry on from there.
+        window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(id)}"] button`)?.focus());
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const rows = listThreads(messages, box, query, unreadOnly);
+  useEffect(() => {
+    if (!selectedId) return;
+    document.querySelector(`[data-row-id="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
+
+  const allRows = listThreads(messages, box, query, unreadOnly);
+  const rows =
+    box === "inbox" && inboxTab !== "all" && inboxTab !== "subscriptions"
+      ? allRows.filter((row) => categorize(row) === inboxTab)
+      : allRows;
+  const subscriptionRows = box === "inbox" && inboxTab === "subscriptions" ? listSubscriptions(messages, me.email) : [];
   const selected = messages.find((message) => message.id === selectedId) ?? null;
   const reading = selected && selected.folder !== "drafts" ? selected : null;
   const thread = visibleThread(messages, reading);
   const briefText = thread.length ? briefs[briefKey(thread)] ?? "" : "";
   const openTasks = tasks.filter((task) => !task.done).length;
   const modal = composer?.placement === "modal" ? composer : null;
+  // Compose has no Escape-to-close: it would drop what was typed. Focus still moves in and stays.
+  const composeDialog = useDialogFocus<HTMLDivElement>(Boolean(modal));
+  const linkDialog = useDialogFocus<HTMLDivElement>(Boolean(pendingLink), () => setPendingLink(null));
+  const helpDialog = useDialogFocus<HTMLDivElement>(help, () => setHelp(false));
 
   function openRow(message: MailMessage) {
     setNavOpen(false);
@@ -557,6 +599,145 @@ export function MailApp() {
     setPicked([]);
   }
 
+  function moveToFolder(id: string, folder: FolderId) {
+    const message = messages.find((item) => item.id === id);
+    const threadId = message?.threadId ?? id;
+    remember(`Moved to ${folderLabel(settings?.folders ?? [], folder)}.`);
+    replaceMessages(moveThreads(messages, [threadId], folder));
+    if (selectedId === id) setSelectedId(null);
+    setPicked([]);
+  }
+
+  function addFolder(name: string): string | null {
+    const current = settings ?? defaultSettings();
+    const error = folderNameError(current.folders, name);
+    if (error) return error;
+    try {
+      const { folders, folder } = createFolder(current.folders, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.create", folder.name));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not create the folder.";
+    }
+  }
+
+  function renameFolderTo(id: CustomFolderId, name: string): string | null {
+    const current = settings ?? defaultSettings();
+    try {
+      const folders = renameFolder(current.folders, id, name);
+      setSettings(recordAudit({ ...current, folders }, "folder.rename", name.trim()));
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Could not rename the folder.";
+    }
+  }
+
+  function removeFolder(id: CustomFolderId) {
+    const current = settings ?? defaultSettings();
+    const folder = current.folders.find((item) => item.id === id);
+    if (!folder) return;
+    const result = deleteFolder(current.folders, messages, id);
+    const note = result.moved ? ` ${result.moved === 1 ? "Its message goes" : `Its ${result.moved} messages go`} back to the Inbox.` : "";
+    if (!window.confirm(`Delete the folder “${folder.name}”?${note}`)) return;
+    if (result.moved) replaceMessages(result.messages);
+    setSettings(recordAudit({ ...current, folders: result.folders }, "folder.delete", folder.name));
+    if (box === id) {
+      setBox("inbox");
+      setSelectedId(null);
+    }
+    setNotice(`Folder “${folder.name}” deleted.`);
+  }
+
+  async function unsubscribe(item: Subscription) {
+    if (!item.option) return;
+    setUnsubscribing(item.key);
+    setSubscriptionNote("");
+    const done = (method: "one-click" | "mailto" | "link", note: string) => {
+      const current = useMail.getState().settings ?? defaultSettings();
+      setSettings(recordAudit(noteUnsubscribed(current, item.key, method), "unsubscribe", item.email));
+      setSubscriptionNote(note);
+    };
+    try {
+      if (item.option.kind === "one-click") {
+        const result = await unsubscribeList({ data: { messageId: item.messageId } });
+        if (result.method === "one-click" && result.ok) {
+          done("one-click", `Unsubscribed from ${item.name}.`);
+        } else {
+          setSubscriptionNote(
+            result.method === "one-click"
+              ? `${item.name} answered ${result.status}. Try again later or use the link in one of their emails.`
+              : `${item.name} has no one-click unsubscribe.`,
+          );
+        }
+      } else if (item.option.kind === "mailto") {
+        const option = item.option;
+        const id = `m-unsub-${Date.now().toString(36)}`;
+        saveMessage({
+          id,
+          threadId: id,
+          folder: "sent",
+          from: { name: me.name, email: me.email },
+          to: [{ name: option.address, email: option.address }],
+          cc: [],
+          subject: option.subject,
+          body: option.body || "unsubscribe",
+          at: new Date().toISOString(),
+          unread: false,
+          starred: false,
+          labels: [],
+          delivery: planDelivery([{ name: option.address, email: option.address }], { password: false }),
+        });
+        await useMail.getState().flush();
+        done("mailto", `Unsubscribe request to ${option.address} is in Sent. Mail to outside addresses waits in the Outbox until outbound SMTP is turned on.`);
+      } else {
+        const url = item.option.url;
+        if (!window.confirm(`Open ${new URL(url).hostname} to unsubscribe from ${item.name}?`)) return;
+        window.open(url, "_blank", "noopener,noreferrer");
+        done("link", `Opened ${new URL(url).hostname}. Finish there.`);
+      }
+    } catch (error) {
+      setSubscriptionNote(error instanceof Error ? error.message : "Could not unsubscribe.");
+    } finally {
+      setUnsubscribing(null);
+    }
+  }
+
+  async function answerInvite(answer: "accepted" | "tentative" | "declined") {
+    if (!reading || !settings) return;
+    const invite = parseInvite(reading.body);
+    if (!invite) return;
+    setSettings(recordAudit({ ...settings, events: withRsvp(settings.events, invite, answer) }, `invite.${answer}`, invite.title));
+    const word = answer === "accepted" ? "Accepted" : answer === "tentative" ? "Tentative" : "Declined";
+    if (!invite.organizer || !invite.uid || invite.organizer === me.email.toLowerCase()) {
+      setNotice(`${word}. Saved in your calendar.`);
+      return;
+    }
+    const partstat = answer === "accepted" ? "ACCEPTED" : answer === "tentative" ? "TENTATIVE" : "DECLINED";
+    const id = `m-rsvp-${Date.now().toString(36)}`;
+    const organizer = { name: invite.organizer, email: invite.organizer };
+    saveMessage({
+      id,
+      threadId: reading.threadId,
+      folder: "sent",
+      from: { name: me.name, email: me.email },
+      to: [organizer],
+      cc: [],
+      subject: `${word}: ${invite.title}`,
+      body: `${me.name} ${answer === "tentative" ? "might attend" : answer} “${invite.title}”.\n\n${buildReply(invite, { name: me.name, email: me.email }, partstat)}`,
+      at: new Date().toISOString(),
+      unread: false,
+      starred: false,
+      labels: [],
+      delivery: planDelivery([organizer], { password: false }),
+    });
+    try {
+      await useMail.getState().flush();
+      setNotice(`${word}. Your answer went to ${invite.organizer}${isCumulus(invite.organizer) ? "." : " and waits in the Outbox until outbound SMTP is on."}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not send the answer.");
+    }
+  }
+
   function actOnPicked(kind: "archive" | "trash" | "unread") {
     if (!picked.length) return;
     const count = picked.length;
@@ -612,12 +793,30 @@ export function MailApp() {
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
+          {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
+          <button
+            type="button"
+            onClick={() => writeNew()}
+            className="ml-auto grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
+            aria-label="Compose"
+          >
+            <SquarePen className="size-5" />
+          </button>
         </div>
         <label className="flex h-11 min-w-0 flex-1 items-center gap-2 border border-line px-3 md:max-w-xl">
           <Search className="size-4 shrink-0 text-muted" />
           <input
+            ref={searchRef}
+            type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                if (query) setQuery("");
+                else event.currentTarget.blur();
+              }
+            }}
             placeholder={view === "contacts" ? "Search people" : "Search mail"}
             title="from: leah · to: priya · subject: forecast · label:spectre · in:inbox · is:unread · is:encrypted · has:file"
             aria-label={view === "contacts" ? "Search people" : "Search mail"}
@@ -627,7 +826,7 @@ export function MailApp() {
         <button
           type="button"
           onClick={() => writeNew()}
-          className="inline-flex h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent"
+          className="hidden h-11 items-center justify-center gap-2 bg-ink px-4 text-sm text-paper transition-colors hover:bg-accent md:inline-flex"
         >
           <SquarePen className="size-4" />
           Compose
@@ -660,6 +859,10 @@ export function MailApp() {
             setAccountOpen(true);
             setNavOpen(false);
           }}
+          folders={settings?.folders ?? []}
+          onCreateFolder={addFolder}
+          onRenameFolder={renameFolderTo}
+          onDeleteFolder={removeFolder}
         />
         {view === "mail" ? (
           <>
@@ -680,6 +883,18 @@ export function MailApp() {
               onTrashPicked={() => actOnPicked("trash")}
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
+              folders={settings?.folders ?? []}
+              tab={inboxTab}
+              onTab={(next) => {
+                setInboxTab(next);
+                setPicked([]);
+                setSubscriptionNote("");
+              }}
+              subscriptions={subscriptionRows}
+              unsubscribedKeys={(settings?.unsubscribed ?? []).map((item) => item.key)}
+              unsubscribing={unsubscribing}
+              onUnsubscribe={(item) => void unsubscribe(item)}
+              subscriptionNote={subscriptionNote}
               onEmptyTrash={() => {
                 if (!messages.some((message) => message.folder === "trash")) return;
                 if (!window.confirm("Delete everything in Trash? This can be undone.")) return;
@@ -726,6 +941,8 @@ export function MailApp() {
                 setSelectedId(null);
               }}
               onRestore={(id) => moveSelected(id, "inbox")}
+              folders={settings?.folders ?? []}
+              onMoveTo={moveToFolder}
               onRemove={(id) => {
                 remember("Deleted.");
                 remove(id);
@@ -774,6 +991,11 @@ export function MailApp() {
                 if (!invite || settings.events.some((event) => event.id === invite.id)) return;
                 setSettings(recordAudit({ ...settings, events: [...settings.events, invite] }, "invite", invite.title));
               }}
+              inviteRsvp={(() => {
+                const invite = reading ? parseInvite(reading.body) : null;
+                return invite ? settings?.events.find((event) => event.id === invite.id)?.rsvp : undefined;
+              })()}
+              onRsvp={(answer) => void answerInvite(answer)}
               onReceipt={(accept) => {
                 if (!reading) return;
                 saveMessage({ ...reading, extra: { ...reading.extra, readReceipt: accept ? "accepted" : "declined" } });
@@ -806,7 +1028,7 @@ export function MailApp() {
         ) : null}
         {view === "calendar" ? (
           <CalendarPanel
-            events={[...EVENTS, ...(settings?.events ?? [])].filter(
+            events={expandEvents([...EVENTS, ...(settings?.events ?? [])]).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
           />
@@ -818,7 +1040,7 @@ export function MailApp() {
       </div>
       {modal ? (
         <div className="scrim fixed inset-0 z-40 flex items-end md:items-center md:justify-center md:p-6" role="presentation">
-          <div className="flex max-h-dvh w-full flex-col bg-paper md:max-w-2xl md:border md:border-line" role="dialog" aria-label="Compose">
+          <div ref={composeDialog} className="flex h-dvh max-h-dvh w-full flex-col bg-paper md:h-auto md:max-w-2xl md:border md:border-line" role="dialog" aria-modal="true" aria-label="Compose">
             <Composer
               form={modal}
               error={composeError}
@@ -836,7 +1058,8 @@ export function MailApp() {
         <AccountPanel
           me={me}
           aliases={aliases}
-          quotaLabel={quota(messages, me.quotaGb).label}
+          quotaLabel={quota(messages, me.quotaGb, me.usedBytes).label}
+          usage={{ folders: (settings?.folders ?? []).length, messages: messages.length }}
           signature={signature}
           rules={rules}
           onClose={() => setAccountOpen(false)}
@@ -923,7 +1146,7 @@ export function MailApp() {
       ) : null}
       {pendingLink ? (
         <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setPendingLink(null)}>
-          <div role="dialog" aria-labelledby="link-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+          <div ref={linkDialog} role="dialog" aria-modal="true" aria-labelledby="link-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
             <h2 id="link-title" className="text-2xl tracking-tight">Open this link?</h2>
             <p className="mt-3 break-all font-mono text-xs">{pendingLink.href}</p>
             {pendingLink.reason ? <p className="mt-3 text-sm text-accent">{pendingLink.reason}</p> : null}
@@ -947,12 +1170,15 @@ export function MailApp() {
       ) : null}
       {help ? (
         <div className="scrim fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={() => setHelp(false)}>
-          <div role="dialog" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
+          <div ref={helpDialog} role="dialog" aria-modal="true" aria-labelledby="help-title" className="w-full bg-paper p-5 md:max-w-lg md:border md:border-line" onClick={(event) => event.stopPropagation()}>
             <h2 id="help-title" className="text-2xl tracking-tight">Shortcuts</h2>
             <ul className="mt-4 space-y-2 text-sm">
-              <li>c compose · r reply · e archive · # trash</li>
-              <li>j next · k previous · x select · u unread · z undo</li>
-              <li>? this list</li>
+              <li><kbd className="font-mono">c</kbd> compose · <kbd className="font-mono">r</kbd> reply · <kbd className="font-mono">a</kbd> reply all · <kbd className="font-mono">f</kbd> forward</li>
+              <li><kbd className="font-mono">e</kbd> archive · <kbd className="font-mono">#</kbd> trash</li>
+              <li><kbd className="font-mono">j</kbd> next · <kbd className="font-mono">k</kbd> previous · <kbd className="font-mono">o</kbd> or <kbd className="font-mono">Enter</kbd> open · <kbd className="font-mono">Esc</kbd> back to the list</li>
+              <li><kbd className="font-mono">x</kbd> select · <kbd className="font-mono">u</kbd> unread · <kbd className="font-mono">z</kbd> undo</li>
+              <li><kbd className="font-mono">/</kbd> search (<kbd className="font-mono">Esc</kbd> clears, then leaves) · <kbd className="font-mono">?</kbd> this list</li>
+              <li>Dialogs keep focus inside; <kbd className="font-mono">Esc</kbd> closes them.</li>
             </ul>
             <button type="button" className="mt-5 inline-flex h-11 items-center border border-line px-4 text-sm" onClick={() => setHelp(false)}>
               Close

@@ -1,3 +1,5 @@
+import { DEFAULT_PLAN, PLANS } from "./plans.ts";
+
 export const ME = {
   name: "Alex Reid",
   email: "alex@cumuluscloud.app",
@@ -8,7 +10,17 @@ export const ME = {
 
 export type Person = { name: string; email: string };
 
-export type FolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
+/** Addresses (aliases) on the default plan. The server checks the mailbox's own plan (plans.ts). */
+export const MAX_ALIASES = PLANS[DEFAULT_PLAN].aliases;
+
+export type SystemFolderId = "inbox" | "sent" | "drafts" | "archive" | "trash" | "quarantine";
+
+/** A user folder. The id is `folder-` plus lowercase letters and digits; the name lives in settings. */
+export type CustomFolderId = `folder-${string}`;
+
+export type FolderId = SystemFolderId | CustomFolderId;
+
+export type CustomFolder = { id: CustomFolderId; name: string };
 
 export type MailAuth = {
   spf: string;
@@ -122,6 +134,16 @@ export type CalEvent = {
   where: string;
   with: string;
   sort: string;
+  /** RFC 5545 RRULE value, when the event repeats. */
+  rrule?: string;
+  /** Occurrences removed from the series (EXDATE), as ISO instants. */
+  exdates?: string[];
+  /** The invite's UID, needed to answer it. */
+  uid?: string;
+  /** Organizer address, needed to answer it. */
+  organizer?: string;
+  /** This mailbox's answer. */
+  rsvp?: "accepted" | "tentative" | "declined";
 };
 
 export type ViewId = "mail" | "calendar" | "contacts" | "tasks";

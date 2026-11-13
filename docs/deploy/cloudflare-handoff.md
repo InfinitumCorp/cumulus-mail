@@ -127,11 +127,14 @@ Confirm the account before any command that talks to Cloudflare. `npx wrangler w
 2. Create the Hyperdrive config (section 3). Paste the id over `REPLACE_WITH_HYPERDRIVE_ID` in `workers/email/wrangler.jsonc`. Do the same in `workers/api/wrangler.jsonc` only if you are deploying the API.
 3. Put the three inbound secrets (section 6). Do not put them in `[vars]` or in git.
 
+If `npm run build:workers` has run in this checkout (for the API worker in step 7, or an earlier attempt), delete `.wrangler/deploy/config.json` at the repo root before `npx wrangler deploy`. That build writes this gitignored redirect to `.output/server/wrangler.json`, and while it exists Wrangler refuses to deploy from `workers/email` with "Found both a user configuration file at "wrangler.jsonc" and a deploy configuration file ... these do not share the same base path". The `rm -f` below is a no-op on a fresh checkout.
+
 ```sh
 cd workers/email
 npx wrangler secret put MAIL_BLOB_KEY
 npx wrangler secret put SUPABASE_S3_ACCESS_KEY_ID
 npx wrangler secret put SUPABASE_S3_SECRET_ACCESS_KEY
+rm -f ../../.wrangler/deploy/config.json
 npx wrangler deploy
 ```
 

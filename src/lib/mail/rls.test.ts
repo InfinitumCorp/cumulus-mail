@@ -6,6 +6,7 @@ const TABLES = [
   "mailboxes",
   "aliases",
   "messages",
+  "outbound_queue",
   "attachments",
   "contacts",
   "tasks",
@@ -19,6 +20,7 @@ const TABLES = [
   "message_blind",
   "address_routes",
   "protected_links",
+  "billing_events",
 ];
 
 test("row level security is enabled on every mail table and no policies are added", async () => {
