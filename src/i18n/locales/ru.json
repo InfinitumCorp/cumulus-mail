@@ -356,5 +356,13 @@
  "Try fewer words, or search another folder.": "Попробуйте меньше слов или поищите в другой папке.",
  "You're all caught up.": "Все письма прочитаны.",
  "Your address": "Ваш адрес",
- "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
+ "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+ "{0} already up to date": "{0} уже актуальны",
+ "{0} without an email skipped": "{0} без адреса эл. почты пропущено",
+ "Could not read that file.": "Не удалось прочитать этот файл.",
+ "Export vCard": "Экспорт vCard",
+ "Import contacts": "Импорт контактов",
+ "Imported: {0}.": "Импортировано: {0}.",
+ "That file is over 5 MB. Split it and import the parts.": "Файл больше 5 МБ. Разделите его и импортируйте по частям.",
+ "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) или CSV из Google Контактов, Outlook или Apple. Существующие данные сохраняются."
 }
