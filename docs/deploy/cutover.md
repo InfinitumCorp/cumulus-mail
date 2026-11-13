@@ -36,8 +36,8 @@ at every step below.
    `node scripts/smoke.mjs --host https://cumulus-mail-api.<account>.workers.dev`
    expects `health`, `page` and `sign-in` ok (`region us`). Sign in once through it end to end.
 3. Deploy the RU container (Actions → *Deploy RU (Yandex Cloud)*, #81) and check it on its API Gateway's
-   default domain (`https://<id>.apigw.yandexcloud.net`) with the smoke check: `MAIL_REGION=ru` makes it
-   report region `ru` and sign in through the mirror.
+   default domain: `node scripts/smoke.mjs --host https://<id>.apigw.yandexcloud.net --region ru`
+   (`MAIL_REGION=ru` makes it report region `ru` and sign in through the mirror).
 4. Run the handoff's real-database inbound probe (`docs/deploy/cloudflare-handoff.md`, section 8).
 
 **Rollback:** nothing to roll back; the old worker still serves both hosts. Delete the new workers or

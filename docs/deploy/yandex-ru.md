@@ -15,7 +15,7 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 | D1 | **Where Russian users' mail and account data live** | (a) Yandex Managed PostgreSQL in `ru-central1`, separate from the US database; (b) the shared Supabase database (`eu-west-1`) | Russian law (152-FZ) requires personal data of Russian citizens to be first recorded and stored in databases located in Russia. (a) keeps it in Russia; (b) does not. Get legal sign-off. |
 | D2 | **Where blobs (message bodies, attachments) live** | (a) Yandex Object Storage bucket in `ru-central1`; (b) the shared Supabase Storage bucket | Same consideration as D1. Blobs are sealed with `MAIL_BLOB_KEY` before upload either way. |
 | D3 | **Inbound mail for Russian mailboxes** | Inbound for `@cumuluscloud.app` arrives through Cloudflare Email Routing (US worker `cumulus-mail-inbound`), which writes to the database it is bound to | With D1 (a), the US worker cannot deliver into the Russian database. Options: a separate mail domain or subdomain for Russian mailboxes with its own MX in Russia; or have the US worker hand Russian recipients to the RU copy. Needs a design decision before Russian mailboxes receive mail. |
-| D4 | **Scheduled jobs** (scheduled send, outbound queue) | Yandex Cloud Functions timer trigger, or a cron on a VM | In the US these run from the inbound worker's cron. The RU copy has no scheduler yet; until one is added, scheduled sends and outbound SMTP from the RU copy wait. |
+| D4 | **Scheduled jobs** (scheduled send, outbound queue) | A Yandex Cloud timer trigger, or a cron on a VM, calling `POST /api/cron/tick` every minute with `Authorization: Bearer <CRON_SECRET>` (#88) | In the US these run from the inbound worker's cron. The endpoint is off (404) until `CRON_SECRET` is set; put it in Lockbox. |
 | D5 | **Serverless Container vs VM** | Serverless Container + API Gateway (default here); or one Compute VM with `deploy/yandex/docker-compose.yml` behind an ALB | Serverless scales to zero; a VM keeps PGLite-free warm state and simpler networking. |
 | D6 | **Cumulus ID mirror** | `CID_ISSUER=https://ru.id.cumuluscloud.app` (assumed) | Confirm the mirror host and that nexus lists `https://ru.mail.cumuluscloud.app` for the `cumulus-mail` client. |
 
@@ -26,7 +26,7 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 | Yandex Cloud: cloud + folder, `yc` logged in | your machine or CI |
 | Container Registry id | `REGISTRY_ID` for `deploy/yandex/deploy.sh` |
 | Service account with `container-registry.images.puller`, `lockbox.payloadViewer`, (and `storage.editor` on the bucket for its static key) | `SA_ID` |
-| Lockbox secret with keys `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`, `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY` | `LOCKBOX_ID` |
+| Lockbox secret with keys `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`, `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY`, `CRON_SECRET` | `LOCKBOX_ID` |
 | TLS certificate for `ru.mail.cumuluscloud.app` (Certificate Manager) | API Gateway / ALB |
 | DNS record for `ru.mail.cumuluscloud.app` → the gateway | DNS (owner only) |
 
