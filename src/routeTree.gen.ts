@@ -15,6 +15,7 @@ import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 import { Route as ApiCalendarTokenRouteImport } from './routes/api/calendar/$token'
+import { Route as ApiAccountExportTokenRouteImport } from './routes/api/account/export/$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const ApiCalendarTokenRoute = ApiCalendarTokenRouteImport.update({
   path: '/api/calendar/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAccountExportTokenRoute = ApiAccountExportTokenRouteImport.update({
+  id: '/api/account/export/$token',
+  path: '/api/account/export/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/calendar/$token'
+    | '/api/account/export/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
   ApiCalendarTokenRoute: typeof ApiCalendarTokenRoute
+  ApiAccountExportTokenRoute: typeof ApiAccountExportTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCalendarTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/account/export/$token': {
+      id: '/api/account/export/$token'
+      path: '/api/account/export/$token'
+      fullPath: '/api/account/export/$token'
+      preLoaderRoute: typeof ApiAccountExportTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
   ApiCalendarTokenRoute: ApiCalendarTokenRoute,
+  ApiAccountExportTokenRoute: ApiAccountExportTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

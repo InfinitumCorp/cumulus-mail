@@ -136,6 +136,55 @@ export async function readAttachmentForSession(
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
 }
 
+/**
+ * "Download my data": a five-minute link to one part of the export, or when it is next available.
+ * The session is checked here; the download route only verifies the link's signature.
+ */
+export async function requestDataExportForSession(
+  contextUserId: string,
+  part: "mbox" | "json",
+  bearerToken?: string,
+): Promise<{ url: string } | { retryAt: string }> {
+  const { exportToken, nextExportAt } = await import("./data-export.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const next = await nextExportAt(db, tenantId, part);
+  if (next) return { retryAt: next.toISOString() };
+  return { url: `/api/account/export/${exportToken(tenantId, part)}` };
+}
+
+/** The download itself, for the route: the once-a-day claim, then the streamed file. */
+export async function dataExportResponse(token: string): Promise<Response> {
+  const { claimExport, dataJsonText, mboxStream, nextExportAt, verifyExportToken } = await import("./data-export.ts");
+  const link = verifyExportToken(token);
+  if (!link) return new Response("This download link is not valid or has expired.", { status: 403 });
+  const db = await database();
+  if (!(await claimExport(db, link.tenantId, link.part))) {
+    const next = await nextExportAt(db, link.tenantId, link.part);
+    const seconds = next ? Math.max(1, Math.ceil((next.getTime() - Date.now()) / 1000)) : 3600;
+    return new Response("Already downloaded today.", { status: 429, headers: { "retry-after": String(seconds) } });
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const common = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
+  if (link.part === "json") {
+    return new Response(await dataJsonText(db, link.tenantId), {
+      headers: {
+        ...common,
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="cumulus-mail-data-${day}.json"`,
+      },
+    });
+  }
+  return new Response(await mboxStream(db, storageFor(link.tenantId), link.tenantId), {
+    headers: {
+      ...common,
+      "content-type": "application/mbox",
+      "content-disposition": `attachment; filename="cumulus-mail-messages-${day}.mbox"`,
+    },
+  });
+}
+
 /** Ranked, paged search over the signed-in mailbox (encrypted word index, search.ts). */
 export async function searchMailForSession(
   contextUserId: string,
