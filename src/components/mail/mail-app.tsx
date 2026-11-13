@@ -1016,6 +1016,7 @@ export function MailApp() {
         ) : null}
         {view === "calendar" ? (
           <CalendarPanel
+            feed
             events={expandEvents([...EVENTS, ...(settings?.events ?? [])]).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}

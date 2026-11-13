@@ -1,6 +1,7 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { BillingControls } from "./billing-controls";
+import { CalendarFeedControls } from "./calendar-feed-controls";
 import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
@@ -23,13 +24,14 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
   }
 }
 
-export function CalendarPanel({ events }: { events: CalEvent[] }) {
+export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {
   return (
     <div className="aux-pane overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
         <p className="font-mono text-xs uppercase tracking-wide text-muted">Calendar</p>
         <h2 className="mt-3 text-4xl tracking-tight">Coming up</h2>
         <p className="mt-3 max-w-lg text-muted">Encrypted with this mailbox. Spectre sees titles and times only while the Firmament grant stands.</p>
+        {feed ? <CalendarFeedControls /> : null}
         <ol className="mt-8">
           {events.map((event) => (
             <li key={event.id} className="grid gap-2 border-t border-line py-6 md:grid-cols-[200px_1fr] md:gap-8">

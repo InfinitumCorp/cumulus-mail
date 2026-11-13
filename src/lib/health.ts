@@ -17,6 +17,10 @@ export type HealthReport = {
   region: Region;
   db: Check & { source?: "postgres" | "pglite" };
   storage: Check & { kind?: "filesystem" | "s3" };
+  /** Migrations in this build not yet recorded in the database's `_migrations` (a count, never names). */
+  schema?: Check & { pending?: number };
+  /** Only with `?deep=1`. Milliseconds per check; never a host, a query or an error message. */
+  timings?: Timings;
   time: string;
 };
 
@@ -46,16 +50,33 @@ export async function timed(run: () => Promise<boolean>, timeoutMs = 3000): Prom
   }
 }
 
+/** `?deep=1`: what each check cost, so a slow copy can be told from a broken one. */
+export type Timings = { db: number; storage: number; schema?: number; total: number };
+
 export type HealthDeps = {
   db: () => Promise<boolean>;
   dbSource: () => "postgres" | "pglite";
   storage: () => Promise<boolean>;
   storageKind: () => "filesystem" | "s3";
+  /** How many of this build's migrations the database has not applied. */
+  pendingMigrations?: () => Promise<number>;
   now?: () => Date;
 };
 
-export async function healthReport(host: string | null, deps: HealthDeps): Promise<HealthReport> {
-  const [db, storage] = await Promise.all([timed(deps.db), timed(deps.storage)]);
+export async function healthReport(host: string | null, deps: HealthDeps, options: { deep?: boolean } = {}): Promise<HealthReport> {
+  const started = Date.now();
+  let pending: number | undefined;
+  const schemaCheck = deps.pendingMigrations
+    ? async () => {
+        pending = await deps.pendingMigrations!();
+        return pending === 0;
+      }
+    : undefined;
+  const [db, storage, schema] = await Promise.all([
+    timed(deps.db),
+    timed(deps.storage),
+    schemaCheck ? timed(schemaCheck) : Promise.resolve(undefined),
+  ]);
   let source: "postgres" | "pglite" | undefined;
   let kind: "filesystem" | "s3" | undefined;
   try {
@@ -69,25 +90,40 @@ export async function healthReport(host: string | null, deps: HealthDeps): Promi
     kind = undefined;
   }
   return {
-    status: db.ok && storage.ok ? "ok" : "degraded",
+    status: db.ok && storage.ok && (schema?.ok ?? true) ? "ok" : "degraded",
     service: "cumulus-mail",
     commit: buildCommit(),
     region: regionFor(host),
     db: { ...db, ...(source ? { source } : {}) },
     storage: { ...storage, ...(kind ? { kind } : {}) },
+    // A reachable database with migrations pending is not "unreachable": report the count, no error.
+    ...(schema ? { schema: pending === undefined ? schema : { ok: schema.ok, ms: schema.ms, pending } } : {}),
+    ...(options.deep
+      ? { timings: { db: db.ms, storage: storage.ms, ...(schema ? { schema: schema.ms } : {}), total: Date.now() - started } }
+      : {}),
     time: (deps.now?.() ?? new Date()).toISOString(),
   };
 }
 
 const CACHE_MS = 30_000;
-let cached: { at: number; host: string; report: HealthReport } | undefined;
+let cached: { at: number; host: string; deep: boolean; report: HealthReport } | undefined;
 
-/** The report for a request, reusing one from the last 30 seconds for the same host. */
-export async function cachedHealth(host: string | null, deps: HealthDeps, now = Date.now()): Promise<HealthReport> {
+/**
+ * The report for a request, reusing one from the last 30 seconds for the same host. A `?deep=1` call
+ * is cached separately: its whole point is a fresh measurement, so it must not be served a cached
+ * one, nor hand its timings to a plain call.
+ */
+export async function cachedHealth(
+  host: string | null,
+  deps: HealthDeps,
+  now = Date.now(),
+  options: { deep?: boolean } = {},
+): Promise<HealthReport> {
   const key = host ?? "";
-  if (cached && cached.host === key && now - cached.at < CACHE_MS) return cached.report;
-  const report = await healthReport(host, deps);
-  cached = { at: now, host: key, report };
+  const deep = options.deep === true;
+  if (cached && cached.host === key && cached.deep === deep && now - cached.at < CACHE_MS) return cached.report;
+  const report = await healthReport(host, deps, { deep });
+  cached = { at: now, host: key, deep, report };
   return report;
 }
 
