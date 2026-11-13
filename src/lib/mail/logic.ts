@@ -216,8 +216,11 @@ export function listThreads(
   box: BoxId,
   query: string,
   unreadOnly: boolean,
+  // One clock for the whole list: `inBox` is called many times here, and reading Date.now() in each
+  // call lets a snooze that expires mid-list put a message in two boxes at once (or neither).
+  now = Date.now(),
 ): MailMessage[] {
-  const inView = messages.filter((m) => inBox(m, box));
+  const inView = messages.filter((m) => inBox(m, box, now));
   const latest = new Map<string, MailMessage>();
   for (const message of inView) {
     const prev = latest.get(message.threadId);
@@ -227,7 +230,7 @@ export function listThreads(
   if (query.trim()) rows = rows.filter((row) => threadMatches(messages, row, query));
   if (unreadOnly) {
     rows = rows.filter((row) =>
-      messages.some((m) => m.threadId === row.threadId && m.unread && inBox(m, box)),
+      messages.some((m) => m.threadId === row.threadId && m.unread && inBox(m, box, now)),
     );
   }
   rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));

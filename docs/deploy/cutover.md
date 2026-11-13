@@ -12,7 +12,7 @@ dashboard (Cloudflare, Yandex Cloud, DNS). The repository and its workflows neve
 | `ru.mail.cumuluscloud.app` | The same static page, reached **through Cloudflare and then AWS API Gateway** (`cf-ray`, `apigw-requestid`) | This app as a **Yandex Cloud** Serverless Container in `ru-central1`, not behind Cloudflare or AWS |
 | Inbound mail (`@cumuluscloud.app`) | Email Routing catch-all → worker `cumulus-mail` | Catch-all → **`cumulus-mail-inbound`** |
 | `/api/health` | 404 on both hosts | 200 with the region and commit (#78); `schema.pending` 0, else apply the migrations first |
-| Production database (Supabase) | Migrations `0006`–`0010` applied; the mail tables are **empty** | Same database for the US copy; the RU database depends on decision D1 (`docs/deploy/yandex-ru.md`) |
+| Production database (Supabase) | Migrations `0006`–`0010` applied; the mail tables are **empty** | Same database for the US copy; `DATABASE_URL=… npm run db:status` lists pending migrations (exit 3) without applying them, `npm run db:migrate` applies them; the RU database depends on decision D1 (`docs/deploy/yandex-ru.md`) |
 
 `node scripts/smoke.mjs --host https://<host>` (#82) reports all of this for a host and is the go/no-go check
 at every step below.
@@ -36,8 +36,8 @@ at every step below.
    `node scripts/smoke.mjs --host https://cumulus-mail-api.<account>.workers.dev`
    expects `health`, `page` and `sign-in` ok (`region us`). Sign in once through it end to end.
 3. Deploy the RU container (Actions → *Deploy RU (Yandex Cloud)*, #81) and check it on its API Gateway's
-   default domain (`https://<id>.apigw.yandexcloud.net`) with the smoke check: `MAIL_REGION=ru` makes it
-   report region `ru` and sign in through the mirror.
+   default domain: `node scripts/smoke.mjs --host https://<id>.apigw.yandexcloud.net --region ru`
+   (`MAIL_REGION=ru` makes it report region `ru` and sign in through the mirror).
 4. Run the handoff's real-database inbound probe (`docs/deploy/cloudflare-handoff.md`, section 8).
 
 **Rollback:** nothing to roll back; the old worker still serves both hosts. Delete the new workers or

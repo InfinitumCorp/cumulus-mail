@@ -93,3 +93,17 @@ test("schemaNote: current, pending count, unreachable, absent", () => {
   assert.equal(schemaNote({ ok: false, ms: 3, pending: 2 }), ", 2 migrations pending");
   assert.equal(schemaNote({ ok: false, ms: 3000, error: "timeout" }), ", schema timeout");
 });
+
+test("--region checks a copy on its own URL before cutover (gateway or workers.dev domain)", async () => {
+  const origin = "https://d5d1abc.apigw.yandexcloud.net";
+  const fetcher = host({
+    "GET /api/health": health("ru"),
+    "GET /": { body: APP },
+    "POST /api/auth/sign-in/social": signIn("ru.id.cumuluscloud.app", origin),
+  });
+  assert.equal((await runHostSmoke(origin, { log: quiet, fetcher })).ok, false);
+  const ru = await runHostSmoke(origin, { log: quiet, fetcher, region: "ru" });
+  assert.equal(ru.ok, true, JSON.stringify(ru.results));
+  assert.ok(ru.results.some((r) => r.name === "ru-path"));
+  await assert.rejects(() => runHostSmoke(origin, { log: quiet, fetcher, region: "eu" }), /--region/);
+});

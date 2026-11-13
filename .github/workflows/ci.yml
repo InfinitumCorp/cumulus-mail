@@ -94,6 +94,14 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # Every migration against real Postgres 16 (the tests above use PGLite for most of the schema),
+      # plus the read-only `db:status` check, in a database of its own: the test resets it.
+      - name: Migrations on Postgres 16 (db:status / db:migrate)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/migrate_status
+        run: |
+          node -e "const pg=require('pg');const c=new pg.Client({connectionString:process.env.MAIL_RUNTIME_DATABASE_URL});c.connect().then(()=>c.query('create database migrate_status')).finally(()=>c.end())"
+          node --test scripts/migrate-status.test.mjs
       - name: Stop SeaweedFS
         if: always()
         run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true

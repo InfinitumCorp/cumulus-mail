@@ -99,3 +99,36 @@ test("schema: omitted when the copy has no schema check", async () => {
   const report = await healthReport("mail.cumuluscloud.app", ok);
   assert.equal("schema" in report, false);
 });
+
+test("?deep=1 adds a per-check latency breakdown; a plain call does not", async () => {
+  const plain = await healthReport("mail.cumuluscloud.app", ok);
+  assert.equal(plain.timings, undefined);
+  const deep = await healthReport("mail.cumuluscloud.app", ok, { deep: true });
+  assert.equal(typeof deep.timings?.db, "number");
+  assert.equal(typeof deep.timings?.storage, "number");
+  assert.ok((deep.timings?.total ?? -1) >= 0);
+  // Still no host, query or message anywhere in the report.
+  assert.doesNotMatch(JSON.stringify(deep), /postgres:\/\/|@|password/);
+});
+
+test("the deep report is measured, not served from the plain cache", async () => {
+  let calls = 0;
+  const counting = { ...ok, db: async () => { calls += 1; return true; } };
+  await cachedHealth("h", counting, 1000);
+  await cachedHealth("h", counting, 1001);
+  assert.equal(calls, 1, "a plain call is cached");
+  await cachedHealth("h", counting, 1002, { deep: true });
+  assert.equal(calls, 2, "a deep call measures again");
+  const again = await cachedHealth("h", counting, 1003, { deep: true });
+  assert.equal(calls, 2, "a second deep call within the window is cached");
+  assert.ok(again.timings);
+  const plain = await cachedHealth("h", counting, 1004);
+  assert.equal(plain.timings, undefined, "a plain call never gets the deep report");
+});
+
+test("?deep=1 times the schema check too, when there is one", async () => {
+  const deep = await healthReport("mail.cumuluscloud.app", { ...ok, pendingMigrations: async () => 0 }, { deep: true });
+  assert.equal(typeof deep.timings?.schema, "number");
+  const withoutSchema = await healthReport("mail.cumuluscloud.app", ok, { deep: true });
+  assert.equal(withoutSchema.timings?.schema, undefined);
+});

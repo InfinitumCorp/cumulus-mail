@@ -8,6 +8,8 @@ const PROBE_BLOB = "0".repeat(32);
 
 /** Read-only checks against this copy's own database and blob store. */
 export function healthForRequest(request: Request): Promise<HealthReport> {
+  // `?deep=1` asks for the per-check latency breakdown (and is measured, not served from the cache).
+  const deep = new URL(request.url).searchParams.get("deep") === "1";
   return cachedHealth(request.headers.get("host"), {
     db: async () => {
       const sql = await getSql();
@@ -43,5 +45,5 @@ export function healthForRequest(request: Request): Promise<HealthReport> {
       }
       return pendingMigrations(files, applied).length;
     },
-  });
+  }, Date.now(), { deep });
 }
