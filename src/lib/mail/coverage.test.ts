@@ -358,10 +358,10 @@ test("threads, snooze and boxes", () => {
   assert.equal(inBox(b1, "snoozed", now), true);
   assert.equal(inBox(s1, "outbox", now), true);
   assert.equal(inBox(t1, "starred", now), false);
-  const rows = listThreads(all, "inbox", "", false);
+  const rows = listThreads(all, "inbox", "", false, now);
   assert.deepEqual(rows.map((m) => m.id), ["a2"]);
-  assert.deepEqual(listThreads(all, "inbox", "numbers", false).map((m) => m.id), ["a2"]);
-  assert.deepEqual(listThreads(all, "inbox", "nothing-like-this", false), []);
+  assert.deepEqual(listThreads(all, "inbox", "numbers", false, now).map((m) => m.id), ["a2"]);
+  assert.deepEqual(listThreads(all, "inbox", "nothing-like-this", false, now), []);
   const unread = markThreadUnread([a1, a2], "a", "alex@cumuluscloud.app");
   assert.equal(unread.find((m) => m.id === "a2")?.unread, true);
   assert.equal(briefKey([a1, a2]), "a1:a2");
@@ -441,4 +441,17 @@ test("protected envelopes expire, count reads, and self-destruct", () => {
   assert.match(envelopeBlock(twice, now) ?? "", /already been opened/);
   const burned = spendRead({ ...envelope, selfDestruct: true });
   assert.deepEqual([burned.readsLeft, burned.ciphertext], [0, ""]);
+});
+
+test("listThreads takes the clock: a snooze that has not expired keeps a message out of the inbox", () => {
+  const before = Date.parse("2026-11-12T10:00:00.000Z");
+  const after = Date.parse("2026-11-13T09:00:00.000Z");
+  const awake = message({ id: "a1", threadId: "a", at: "2026-11-10T00:00:00.000Z" });
+  const naps = message({ id: "b1", threadId: "b", at: "2026-11-09T00:00:00.000Z", snoozeUntil: "2026-11-13T08:00:00.000Z" });
+  const all = [awake, naps];
+  assert.deepEqual(listThreads(all, "inbox", "", false, before).map((m) => m.id), ["a1"]);
+  assert.deepEqual(listThreads(all, "snoozed", "", false, before).map((m) => m.id), ["b1"]);
+  // Once it expires the same message is in the inbox and no longer snoozed - never in both.
+  assert.deepEqual(listThreads(all, "inbox", "", false, after).map((m) => m.id), ["a1", "b1"]);
+  assert.deepEqual(listThreads(all, "snoozed", "", false, after), []);
 });
