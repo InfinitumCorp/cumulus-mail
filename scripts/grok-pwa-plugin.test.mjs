@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  grokExtensionsFor,
+  isRussiaCopy,
   appNameFromHost,
   createHeadInjector,
   grokXCreatorHeadTags,
@@ -594,3 +596,48 @@ test("vite plugin bakes og identity as a virtual module", () => {
   assert.match(plugin, /snapshotOgIdentity/);
 });
 
+
+test("the Russia copy never gets the third-party extensions script (ru.* host or MAIL_REGION=ru)", () => {
+  const saved = { region: process.env.MAIL_REGION, ext: process.env.VITE_GROK_EXTENSIONS };
+  try {
+    delete process.env.MAIL_REGION;
+    process.env.VITE_GROK_EXTENSIONS = "1";
+    assert.equal(isRussiaCopy("ru.mail.cumuluscloud.app"), true);
+    assert.equal(isRussiaCopy("RU.mail.cumuluscloud.app:443"), true);
+    assert.equal(isRussiaCopy("mail.cumuluscloud.app"), false);
+    assert.equal(grokExtensionsFor("mail.cumuluscloud.app"), true);
+    const baked = '<html><head><script src="https://grok.com/grok-app-builder/extensions.js" defer></script></head></html>';
+    for (const host of ["ru.mail.cumuluscloud.app", "ru.localhost:8080"]) {
+      const out = injectGrokPwaHead(baked, { appName: "Demo", projectId: "proj-123", host });
+      assert.doesNotMatch(out, /grok-app-builder\/extensions\.js/, host);
+      assert.match(out, /rel="manifest"/, "the same-origin PWA tags stay");
+    }
+    // MAIL_REGION wins over the host, both ways, as in src/lib/region.ts.
+    process.env.MAIL_REGION = "ru";
+    assert.equal(grokExtensionsFor("container-abc.yandexcloud.net"), false);
+    process.env.MAIL_REGION = "us";
+    assert.equal(grokExtensionsFor("ru.mail.cumuluscloud.app"), true);
+  } finally {
+    if (saved.region === undefined) delete process.env.MAIL_REGION;
+    else process.env.MAIL_REGION = saved.region;
+    if (saved.ext === undefined) delete process.env.VITE_GROK_EXTENSIONS;
+    else process.env.VITE_GROK_EXTENSIONS = saved.ext;
+  }
+});
+
+test("isRussiaCopy matches src/lib/region.ts on the same inputs", async () => {
+  const { regionFor } = await import("../src/lib/region.ts");
+  for (const host of ["ru.mail.cumuluscloud.app", "RU.x:1", "mail.cumuluscloud.app", "", "rux.example", "ru."]) {
+    for (const region of [undefined, "ru", "us", "eu"]) {
+      const saved = process.env.MAIL_REGION;
+      if (region === undefined) delete process.env.MAIL_REGION;
+      else process.env.MAIL_REGION = region;
+      try {
+        assert.equal(isRussiaCopy(host), regionFor(host, { MAIL_REGION: region }) === "ru", `${host} / ${region}`);
+      } finally {
+        if (saved === undefined) delete process.env.MAIL_REGION;
+        else process.env.MAIL_REGION = saved;
+      }
+    }
+  }
+});

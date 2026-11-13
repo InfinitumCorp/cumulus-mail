@@ -212,6 +212,25 @@ export function readGrokExtensionsEnabled() {
   return String(fromProcess ?? "").trim() !== "0";
 }
 
+/**
+ * The Russia copy (Cumulus://Mail): `MAIL_REGION=ru`, or a `ru.` host when MAIL_REGION is unset. The same
+ * rule as src/lib/region.ts, repeated because this file must stay plain JS for vite.config.ts.
+ */
+export function isRussiaCopy(host = "") {
+  const configured = String((typeof process !== "undefined" ? process.env?.MAIL_REGION : "") ?? "").trim().toLowerCase();
+  if (configured === "us" || configured === "ru") return configured === "ru";
+  return String(host).trim().toLowerCase().replace(/:\d+$/, "").startsWith("ru.");
+}
+
+/**
+ * Whether a page gets the third-party extensions script. Never on the Russia copy: it would make every
+ * page there load a script from a US host, which the Russian privacy policy (152-ФЗ, data localisation)
+ * does not cover. Elsewhere, on unless VITE_GROK_EXTENSIONS=0.
+ */
+export function grokExtensionsFor(host = "") {
+  return readGrokExtensionsEnabled() && !isRussiaCopy(host);
+}
+
 export function readXCreator() {
   const fromProcess = typeof process !== "undefined" ? process.env?.X_CREATOR : "";
   return String(fromProcess ?? "").trim();
@@ -446,7 +465,8 @@ export function injectGrokPwaHead(html, ctx = {}) {
     documentTitle,
   );
   let next = stripShareMetaTags(html);
-  if (!readGrokExtensionsEnabled()) next = stripGrokExtensionsScript(next);
+  const extensions = grokExtensionsFor(host);
+  if (!extensions) next = stripGrokExtensionsScript(next);
 
   const missing = grokPwaHeadTags(appName)
     .filter(([key]) => {
@@ -461,7 +481,7 @@ export function injectGrokPwaHead(html, ctx = {}) {
     grokOgHeadTags({ host, appName, site, documentTitle, cwd }).join(""),
   );
 
-  if (readGrokExtensionsEnabled() && !next.includes("/grok-app-builder/extensions.js")) {
+  if (extensions && !next.includes("/grok-app-builder/extensions.js")) {
     missing.push(...grokExtensionsHeadTags(projectId));
   } else if (projectId && !next.includes('name="grok-project-id"')) {
     missing.push(`<meta name="grok-project-id" content="${escapeHtml(projectId)}">`);
