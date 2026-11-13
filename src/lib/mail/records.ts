@@ -4,6 +4,7 @@ import { mailDomain } from "./domain.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
 import { messageSnippet } from "./logic.ts";
+import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
 import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
@@ -313,14 +314,19 @@ export async function insertMessage(
     ["snippet", snippet],
   ];
   for (const person of [...message.to, ...message.cc]) indexed.push(["to", person.email]);
-  for (const [field, value] of indexed) {
-    if (!value.trim()) continue;
+  // One statement for every index row (subject, sender, snippet, each recipient): a message with many
+  // recipients was one round trip per row, which on Workers is one Hyperdrive trip each.
+  const rows = indexed.filter(([, value]) => value.trim());
+  if (rows.length) {
     await db.query(
       `insert into cumulus_mail.message_blind (tenant_id, message_id, field, bidx)
-       values ($1, $2, $3, $4) on conflict do nothing`,
-      [tenantId, message.id, field, blindIndex(tenantId, field, value)],
+       select $1, $2, field, bidx from unnest($3::text[], $4::text[]) as row(field, bidx)
+       on conflict do nothing`,
+      [tenantId, message.id, rows.map(([field]) => field), rows.map(([field, value]) => blindIndex(tenantId, field, value))],
     );
   }
+  // Encrypted word index for server-side search (search.ts): one upsert into message_words.
+  await indexMessageWords(db, tenantId, message);
 }
 
 export async function readMessages(db: MailQuery, tenantId: string): Promise<MailMessage[]> {
