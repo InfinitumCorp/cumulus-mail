@@ -67,3 +67,35 @@ test("results are reused for 30 seconds, so the endpoint cannot load the databas
   await cachedHealth("mail.cumuluscloud.app", counting, 40_000);
   assert.equal(calls, 2);
 });
+
+test("schema: no pending migrations is ok and reports pending 0", async () => {
+  const report = await healthReport("mail.cumuluscloud.app", { ...ok, pendingMigrations: async () => 0 });
+  assert.equal(report.status, "ok");
+  assert.deepEqual({ ok: report.schema?.ok, pending: report.schema?.pending, error: report.schema?.error }, { ok: true, pending: 0, error: undefined });
+});
+
+test("schema: pending migrations degrade the copy with a count and no error class", async () => {
+  const report = await healthReport("mail.cumuluscloud.app", { ...ok, pendingMigrations: async () => 1 });
+  assert.equal(report.status, "degraded");
+  assert.equal(report.schema?.ok, false);
+  assert.equal(report.schema?.pending, 1);
+  assert.equal(report.schema?.error, undefined);
+});
+
+test("schema: a failing check is unreachable, without a count", async () => {
+  const report = await healthReport("mail.cumuluscloud.app", {
+    ...ok,
+    pendingMigrations: async () => {
+      throw new Error("connect ECONNREFUSED 10.0.0.1:5432");
+    },
+  });
+  assert.equal(report.status, "degraded");
+  assert.equal(report.schema?.error, "unreachable");
+  assert.equal(report.schema?.pending, undefined);
+  assert.doesNotMatch(JSON.stringify(report), /ECONNREFUSED|10\.0\.0\.1/);
+});
+
+test("schema: omitted when the copy has no schema check", async () => {
+  const report = await healthReport("mail.cumuluscloud.app", ok);
+  assert.equal("schema" in report, false);
+});
