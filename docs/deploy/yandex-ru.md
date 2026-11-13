@@ -60,6 +60,10 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
    The script prints the folder and image and asks before doing anything. It builds the image, pushes it
    to `cr.yandex/<registry>/cumulus-mail-ru:<commit>`, creates the Serverless Container if needed, and
    deploys a revision with the plain settings and the Lockbox secrets.
+   Or run it from GitHub: **Actions → Deploy RU (Yandex Cloud) → Run workflow** on `main`, typing
+   `deploy ru`. It runs in the `production-ru` environment (add required reviewers there), whose secret
+   `YC_SA_KEY_JSON` (deploy service account key) and variables `YC_CLOUD_ID`, `YC_FOLDER_ID`,
+   `YC_REGISTRY_ID`, `YC_SA_ID`, `YC_LOCKBOX_ID` the owner sets. App secrets stay in Lockbox.
 6. **Custom domain.** Create an API Gateway with an `x-yc-apigateway-integration` of type
    `serverless_containers` for `/{proxy+}` (all methods) pointing at the container, attach the
    `ru.mail.cumuluscloud.app` certificate as the gateway's domain, then point DNS at it (owner).

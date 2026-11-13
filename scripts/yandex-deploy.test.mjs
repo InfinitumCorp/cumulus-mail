@@ -49,6 +49,23 @@ test("the RU settings file has region ru-central1, Yandex storage, the ru host a
 test("the deploy script asks before acting and takes secrets only as Lockbox references", () => {
   const script = read("deploy/yandex/deploy.sh");
   assert.match(script, /read -r -p "Deploy this image/);
+  // Only the reviewed CI workflow skips the prompt, by setting YES=1.
+  assert.match(script, /if \[ "\$\{YES:-\}" != "1" \]; then/);
+  assert.match(script, /--environment "MAIL_REGION=ru"/);
   assert.match(script, /--secret "environment-variable=\$\{key\},id=\$\{LOCKBOX_ID\},key=\$\{key\}"/);
   assert.equal(/wrangler|api\.cloudflare\.com/.test(script), false);
+});
+
+test("the RU deploy workflow is manual, main-only, reviewed, and keeps app secrets in Lockbox", () => {
+  const text = read(".github/workflows/deploy-yandex.yml");
+  assert.match(text, /\non:\n {2}workflow_dispatch:/);
+  assert.equal(/\n {2}(push|pull_request|pull_request_target|schedule|workflow_run):/.test(text), false);
+  assert.match(text, /\n {4}environment: production-ru\n/);
+  assert.match(text, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(text, /if: inputs\.confirm != 'deploy ru'/);
+  assert.match(text, /run: \.\/deploy\/yandex\/deploy\.sh/);
+  // The only GitHub secret is the deploy key; the app's secrets never pass through GitHub.
+  const secrets = [...text.matchAll(/secrets\.([A-Z_]+)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(secrets)], ["YC_SA_KEY_JSON"]);
+  assert.match(text, /rm -f "\$key"/);
 });
