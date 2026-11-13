@@ -77,3 +77,15 @@ test("initialLocale: a remembered choice beats the ru.* host", () => {
     else globalThis.localStorage = previous;
   }
 });
+
+test("extractor: a value handed to a state setter is state, not UI text", () => {
+  const found = [...extractFrom(
+    `function A({ done }) {
+       setFocusNext(done ? "cancel" : "start");
+       setMode((done) ? "edit" : "view");
+       return <button>{done ? "Saved" : "Save"}</button>;
+     }`,
+    "a.tsx",
+  )].sort();
+  assert.deepEqual(found, ["Save", "Saved"]);
+});

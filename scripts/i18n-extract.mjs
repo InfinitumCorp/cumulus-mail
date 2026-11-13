@@ -54,6 +54,11 @@ function isBranchWord(node) {
   if (!(ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) return false;
   const parent = node.parent;
   if (!parent || !ts.isConditionalExpression(parent) || parent.condition === node) return false;
+  // A value handed to a React state setter (`setFocusNext(done ? "cancel" : "start")`) is state, not text
+  // on screen. Walk out through parentheses to the call, if any.
+  let outer = parent.parent;
+  while (outer && ts.isParenthesizedExpression(outer)) outer = outer.parent;
+  if (outer && ts.isCallExpression(outer) && /^set[A-Z]/.test(outer.expression.getText())) return false;
   return /^\p{L}[\p{L} '’.…-]*$/u.test(node.text) && !/^[a-z]+(-[a-z]+)+$/.test(node.text);
 }
 
