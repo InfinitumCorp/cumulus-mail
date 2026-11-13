@@ -125,3 +125,40 @@ test("subjects, addresses, snippets and headers are ciphertext with blind indexe
   ]);
   await assert.rejects(() => readSnapshot(db, "meta-ada"));
 });
+
+test("blind index rows for every recipient are written in one statement, and lookups find them", async () => {
+  const { insertMessage } = await import("./records.ts");
+  await openMailbox(harness.db, "blind-batch", profile("blind-batch", "blind.batch@cumuluscloud.app"));
+  const statements: string[] = [];
+  const counting = {
+    query: <T,>(text: string, params?: unknown[]) => {
+      statements.push(text);
+      return harness.db.query<T>(text, params);
+    },
+  };
+  const people = (n: number, tag: string) => Array.from({ length: n }, (_, i) => ({ name: `${tag}${i}`, email: `${tag}${i}@example.org` }));
+  await insertMessage(
+    counting,
+    "blind-batch",
+    {
+      id: "bb-1", threadId: "bb-1", folder: "inbox", from: { name: "Leah", email: "leah@example.org" },
+      to: people(6, "to"), cc: people(4, "cc"), subject: "Quarterly numbers", body: "Body", at: "2026-11-10T09:30:00.000Z",
+      unread: true, starred: false, labels: [],
+    },
+    null,
+  );
+  const blindInserts = statements.filter((s) => /insert into cumulus_mail\.message_blind/.test(s));
+  assert.equal(blindInserts.length, 1, "one statement, not one per field");
+  const rows = await harness.db.query<{ n: number }>(`select count(*)::int as n from cumulus_mail.message_blind where tenant_id = 'blind-batch' and message_id = 'bb-1'`);
+  assert.equal(rows[0]!.n, 3 + 10, "subject, sender, snippet and all ten recipients");
+  assert.deepEqual(await findMessageIds(harness.db, "blind-batch", "to", "cc3@example.org"), ["bb-1"]);
+  assert.deepEqual(await findMessageIds(harness.db, "blind-batch", "subject", "Quarterly numbers"), ["bb-1"]);
+  // Re-indexing the same message replaces its rows (the delete before the insert), never duplicates them.
+  await insertMessage(harness.db, "blind-batch", {
+    id: "bb-1", threadId: "bb-1", folder: "inbox", from: { name: "Leah", email: "leah@example.org" },
+    to: people(1, "to"), cc: [], subject: "Renamed", body: "Body", at: "2026-11-10T09:30:00.000Z", unread: true, starred: false, labels: [],
+  }, null);
+  const after = await harness.db.query<{ n: number }>(`select count(*)::int as n from cumulus_mail.message_blind where tenant_id = 'blind-batch' and message_id = 'bb-1'`);
+  assert.equal(after[0]!.n, 4);
+  assert.deepEqual(await findMessageIds(harness.db, "blind-batch", "to", "cc3@example.org"), []);
+});
