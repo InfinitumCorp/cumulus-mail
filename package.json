@@ -17,6 +17,7 @@
     "csp:check": "node scripts/csp-check.mjs",
     "db:status": "node scripts/migrate.mjs --status",
     "keys:rekey": "node --experimental-strip-types --no-warnings scripts/rekey.mjs",
+    "drill:restore": "node --experimental-strip-types --no-warnings scripts/drill-restore.mjs",
     "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
