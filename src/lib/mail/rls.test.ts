@@ -22,6 +22,7 @@ const TABLES = [
   "protected_links",
   "billing_events",
   "calendar_feeds",
+  "outbound_pauses",
 ];
 
 test("row level security is enabled on every mail table and no policies are added", async () => {

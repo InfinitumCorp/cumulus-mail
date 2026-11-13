@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { markSendVerified } from "./outbound/safety.ts";
 import { DEV_USER_ID, UnauthorizedError, getSessionUser } from "@/lib/auth/verify.server";
 import {
   createLocalJWKSet,
@@ -72,11 +73,12 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
-): Promise<{ tenantId: string; profile: MailProfile }> {
+): Promise<{ tenantId: string; profile: MailProfile; verified: boolean }> {
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
     const tenantId = await tenantFromCumulusToken(bearerToken);
     assertTenantId(tenantId);
     return {
+      verified: true, // a Cumulus ID token: the identity provider verified the email
       tenantId,
       profile: {
         name: tenantId,
@@ -95,12 +97,14 @@ async function sessionMailbox(
     const address = email.includes("@") ? email : mailboxAddress(session.id);
     const name = address.split("@")[0] || "Cumulus";
     return {
+      verified: session.emailVerified === true,
       tenantId: session.id,
       profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
     };
   }
   if (contextUserId !== DEV_USER_ID) throw new TenantAccessError("Tenant is not verified");
   return {
+    verified: true, // the local development user (sign-in off), never a deployed copy
     tenantId: DEV_USER_ID,
     profile: { name: "Alex Reid", email: mailboxAddress("alex"), cid: "cid:alex", plan: "Free", quotaGb: 15 },
   };
@@ -116,9 +120,10 @@ export async function writeMailboxForSession(
   snapshot: MailboxSnapshot,
   bearerToken?: string,
 ): Promise<MailboxSnapshot> {
-  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const { tenantId, profile, verified } = await sessionMailbox(contextUserId, bearerToken);
   const db = await database();
   await openMailbox(db, tenantId, profile);
+  if (verified) await markSendVerified(db, tenantId);
   return writeSnapshot(db, storageFor, tenantId, snapshot);
 }
 
