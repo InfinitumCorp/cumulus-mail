@@ -206,7 +206,8 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
           Drive file
         </button>
         {/* Opened by the "Drive file" button above. Kept out of the tab order and the accessibility tree
-            (it is the button that is the control), and named in case a tool reaches it anyway. */}
+            (it is the button that is the control), and named after that button in case a tool reaches it anyway:
+            the same words, so the name needs no new translation. */}
         <input
           ref={picker}
           type="file"
@@ -214,7 +215,7 @@ export function Composer({ form, error, assisting, onChange, onSend, onSave, onC
           multiple
           tabIndex={-1}
           aria-hidden="true"
-          aria-label="Attach files"
+          aria-label="Drive file"
           onChange={(event) => void addFiles(event.target.files)}
         />
         <button
