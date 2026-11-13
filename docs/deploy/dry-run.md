@@ -48,7 +48,9 @@ node scripts/smoke.mjs --host http://127.0.0.1:8790 --region us
 - storage answers;
 - the sign-in redirect goes to `id.cumuluscloud.app` with PKCE and a callback on this host.
 
-**What it can't show:** the database. Wrangler's *local* Hyperdrive emulation adds `sslmode=disable` to the connection string, and the app refuses that on purpose (`src/lib/pg-connection.ts`). That makes `pg` over Workers sockets through real Hyperdrive the one part never run before production. Hence step 1 below.
+**The database, through Hyperdrive:** set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` to a scratch Postgres, as above, and health reports `db: ok`, `source: postgres`, schema current. 30 concurrent requests all succeed, with no cross-request socket errors.
+
+**Found and fixed on the second run:** wrangler's Hyperdrive gives the worker `postgres://…@<id>.hyperdrive.local:5432/<db>?sslmode=disable`, the same form a deployed Worker gets in `env.HYPERDRIVE.connectionString`. The app refused any `sslmode=disable` (`src/lib/pg-connection.ts`), so **every database connection on the US copy, API and inbound worker alike, would have been refused**. It now accepts `sslmode=disable` only for `<32 hex>.hyperdrive.local` (Hyperdrive makes the TLS connection to the origin itself) and for loopback. Every other host is still refused. Step 2 below still confirms it on the first real deploy.
 
 ## Russia copy (Yandex Serverless Container)
 
@@ -85,7 +87,7 @@ The SMTP client itself is covered by the outbound unit tests, including STARTTLS
 
 ## First real deploy: checklist
 1. `npm run deploy:dry-run` is green on the commit being deployed.
-2. Run "Deploy US", then `node scripts/smoke.mjs --host https://cumulus-mail-api.<account>.workers.dev --region us`. **Health must say `db: ok`, `source: postgres`**: this is the first time `pg` runs through real Hyperdrive. If it says `unreachable`, read the worker's logs (observability is on) before anything else.
+2. Run "Deploy US", then `node scripts/smoke.mjs --host https://cumulus-mail-api.<account>.workers.dev --region us`. **Health must say `db: ok`, `source: postgres`.** Locally this ran through wrangler's Hyperdrive emulation; this is the first time against real Hyperdrive. If it says `unreachable`, read the worker's logs (observability is on) before anything else.
 3. Run "Deploy RU", then `node scripts/smoke.mjs --host https://<id>.apigw.yandexcloud.net --region ru`, then the same against `ru.mail.cumuluscloud.app` after DNS.
 4. Sign in on each copy and send one message to an outside mailbox. Check the delivery, the DKIM pass and the copy in Sent.
 5. `npm run db:status` against each copy's database: 0 pending.
