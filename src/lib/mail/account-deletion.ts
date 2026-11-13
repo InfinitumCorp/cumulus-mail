@@ -15,6 +15,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { assertTenantId } from "../storage/adapter.ts";
 import type { TenantBlobs } from "../storage/index.ts";
+import type { StripeClient } from "./billing.ts";
 import { withTransaction, type MailQuery } from "./query.ts";
 
 export const GRACE_MS = 7 * 24 * 3_600_000;
@@ -104,15 +105,61 @@ export function subjectHmac(tenantId: string, env: Record<string, string | undef
   return createHmac("sha256", key).update(tenantId).digest("hex");
 }
 
-export type PurgeReport = { rows: number; blobs: number };
+export type PurgeReport = { rows: number; blobs: number; stripeCustomer?: "deleted" | "absent" };
+
+/**
+ * The Stripe client to delete customers with, or null. Off unless `MAIL_DELETE_STRIPE_CUSTOMER=on`
+ * **and** billing is configured: deleting a payment customer is a decision the operator makes once,
+ * not a side effect of turning billing on. With it off, the customer stays in Stripe and has to be
+ * removed there (docs/ops/account-deletion.md).
+ */
+export async function deletionStripe(env: Record<string, string | undefined> = process.env): Promise<StripeClient | null> {
+  if (env.MAIL_DELETE_STRIPE_CUSTOMER?.trim().toLowerCase() !== "on") return null;
+  const { stripeClient, stripeConfig } = await import("./billing.ts");
+  const config = stripeConfig(env);
+  return config ? stripeClient(config.secretKey) : null;
+}
+
+/** Delete the Stripe customer. One that is already gone counts as done, so a retry is safe. */
+async function deleteStripeCustomer(stripe: StripeClient, customerId: string): Promise<void> {
+  if (!/^cus_[A-Za-z0-9]+$/.test(customerId)) throw new Error("Not a Stripe customer id");
+  try {
+    await stripe("DELETE", `/v1/customers/${customerId}`);
+  } catch (error) {
+    if (/no such customer|resource_missing|HTTP 404/i.test(String((error as Error)?.message))) return;
+    throw error;
+  }
+}
 
 /**
  * Delete everything for one mailbox, now. Blobs first (deleting one that is already gone is fine, so a
  * retry after a failure is safe), then every row in one transaction, then the audit record.
  */
-export async function purgeMailbox(db: MailQuery, storage: TenantBlobs, tenantId: string, now = new Date()): Promise<PurgeReport> {
+export async function purgeMailbox(
+  db: MailQuery,
+  storage: TenantBlobs,
+  tenantId: string,
+  now = new Date(),
+  options: { stripe?: StripeClient | null } = {},
+): Promise<PurgeReport> {
   assertTenantId(tenantId);
   const status = await deletionStatus(db, tenantId);
+  // Stripe first: if it fails, nothing has been deleted yet and the next scheduler tick retries, with
+  // the customer id still on file. Doing it after the rows are gone would lose the id.
+  let stripeCustomer: PurgeReport["stripeCustomer"];
+  if (options.stripe) {
+    const box = await db.query<{ stripe_customer_id: string | null }>(
+      `select stripe_customer_id from cumulus_mail.mailboxes where tenant_id = $1`,
+      [tenantId],
+    );
+    const customerId = box[0]?.stripe_customer_id;
+    if (customerId) {
+      await deleteStripeCustomer(options.stripe, customerId);
+      stripeCustomer = "deleted";
+    } else {
+      stripeCustomer = "absent";
+    }
+  }
   const keys = await blobKeys(db, tenantId);
   let blobs = 0;
   for (const key of keys) {
@@ -138,7 +185,7 @@ export async function purgeMailbox(db: MailQuery, storage: TenantBlobs, tenantId
       [randomUUID(), subjectHmac(tenantId), status?.requestedAt ?? now.toISOString(), now.toISOString(), rows, blobs],
     );
   });
-  return { rows, blobs };
+  return { rows, blobs, ...(stripeCustomer ? { stripeCustomer } : {}) };
 }
 
 /** Purge every mailbox whose grace period has ended and was not cancelled. Run from the scheduler. */
@@ -146,6 +193,7 @@ export async function purgeDueDeletions(
   db: MailQuery,
   storageFor: (tenantId: string) => TenantBlobs,
   now = new Date(),
+  options: { stripe?: StripeClient | null } = {},
 ): Promise<{ purged: number }> {
   const due = await db.query<{ tenant_id: string }>(
     `select tenant_id from cumulus_mail.account_deletions
@@ -155,7 +203,7 @@ export async function purgeDueDeletions(
   );
   let purged = 0;
   for (const { tenant_id } of due) {
-    await purgeMailbox(db, storageFor(tenant_id), tenant_id, now);
+    await purgeMailbox(db, storageFor(tenant_id), tenant_id, now, options);
     purged += 1;
   }
   return { purged };

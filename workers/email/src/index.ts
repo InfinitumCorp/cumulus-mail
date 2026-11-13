@@ -151,8 +151,10 @@ export async function handleScheduled(env: EmailEnv, now = Date.now()): Promise<
     const outbound = workerOutbound(env);
     const queue = outbound ? await processOutboundQueue(ingest.db, outbound, { now: new Date(now) }) : null;
     // Account deletions whose 7-day grace period has ended: hard delete, every row and blob.
-    const { purgeDueDeletions } = await import("../../../src/lib/mail/account-deletion.ts");
-    const deletions = await purgeDueDeletions(ingest.db, ingest.storageFor, new Date(now));
+    const { deletionStripe, purgeDueDeletions } = await import("../../../src/lib/mail/account-deletion.ts");
+    const deletions = await purgeDueDeletions(ingest.db, ingest.storageFor, new Date(now), {
+      stripe: await deletionStripe(),
+    });
     const report: ScheduledReport = { ...released, outbound: queue };
     console.log(JSON.stringify({ event: "mail.schedule.ran", ...released, outbound: queue, deletions }));
     return report;
