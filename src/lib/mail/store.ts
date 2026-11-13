@@ -35,6 +35,7 @@ type MailStore = MailboxSnapshot & {
   replaceContacts: (contacts: Contact[]) => void;
   snooze: (id: string, until: string) => void;
   setSignature: (signature: string) => void;
+  setDisplayName: (name: string) => void;
   setSettings: (settings: MailSettings) => void;
   addRule: (rule: MailRule) => void;
   removeRule: (id: string) => void;
@@ -190,6 +191,10 @@ export const useMail = create<MailStore>((set, get) => ({
   },
   setSignature: (signature) => {
     commit(set, get, { signature });
+  },
+  setDisplayName: (name) => {
+    const clean = name.replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+    if (clean) commit(set, get, { me: { ...get().me, name: clean } });
   },
   setSettings: (settings) => {
     commit(set, get, { settings: sanitizeSettings(settings, mailDomain()) });
