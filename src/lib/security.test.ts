@@ -40,7 +40,11 @@ test("CSRF: reads are never refused, and Better Auth's own routes keep their own
 
 test("CSRF: the middleware is installed ahead of every request handler", () => {
   const start = readFileSync(join(root, "src/start.ts"), "utf8");
-  assert.match(start, /requestMiddleware: \[csrfMiddleware, cspMiddleware\]/);
+  // Other middleware may sit in the list too (e.g. TanStack's serverFnCsrfMiddleware, #129); this one
+  // must be in it, ahead of the CSP middleware.
+  const list = start.match(/requestMiddleware: \[([^\]]*)\]/)?.[1].split(",").map((name) => name.trim()) ?? [];
+  assert.ok(list.includes("csrfMiddleware"), `requestMiddleware: [${list.join(", ")}]`);
+  assert.ok(list.indexOf("csrfMiddleware") < list.indexOf("cspMiddleware"));
 });
 
 // --- rate limits ---------------------------------------------------------------------------------
@@ -141,5 +145,6 @@ test("isolation: every *ForSession function resolves the mailbox from the sessio
     }
   }
   // And the resolver refuses a context user that is not the session's.
-  assert.match(source, /if \(session\.id !== contextUserId\) throw new TenantAccessError/);
+  // (As a one-line guard, or a block that also records the failure, #125.)
+  assert.match(source, /if \(session\.id !== contextUserId\) (?:\{[\s\S]{0,300}?)?throw new TenantAccessError/);
 });
