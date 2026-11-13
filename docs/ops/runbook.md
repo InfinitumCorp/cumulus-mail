@@ -236,5 +236,68 @@ This section is a checklist, not legal advice; the operator's lawyer confirms th
 | Every deploy | `db:status` / `db:migrate` per copy, deploy, `smoke --host` both hosts |
 | Weekly | Check 5xx in both log streams; check the outbound queue is not growing |
 | Monthly | `npm run blobs:sweep` (dry run) per copy *(after #105)*; review the report |
-| Quarterly | Rotate `BETTER_AUTH_SECRET` and the S3 keys; restore a database backup into a scratch project and run `db:status` against it |
+| Quarterly | Rotate `BETTER_AUTH_SECRET` and the S3 keys; restore a database backup into a scratch project and run `db:status` against it; `npm run drill:restore` (§9) |
 | Yearly | DKIM key with a new selector |
+
+## 9. Backup and restore
+
+Mail is three things, and a restore needs all three:
+1. **The database:** messages, sealed fields and the blind indexes.
+2. **The blob store:** raw messages and attachments, sealed.
+3. **The key(s):** `MAIL_BLOB_KEY`, plus every key in `MAIL_BLOB_KEYS` that sealed anything in the backup, plus `MAIL_BLIND_KEY` if set.
+
+The keys are **not** in either backup. Keep them in the recovery password manager, and keep a retired key for as long as backups sealed under it exist. Without the keys, a backup is unreadable.
+
+### What to back up, per copy
+| | US (Cloudflare) | Russia (Yandex) |
+|---|---|---|
+| Database | Supabase Postgres: daily backups, plus PITR if the plan has it | Managed PostgreSQL in `ru-central1`: automatic daily backups (set the retention), plus PITR |
+| Blobs | Supabase Storage bucket `cumulus-mail`: a scheduled copy to a second bucket (`rclone sync` or the provider's replication) | Object Storage bucket `cumulus-mail-ru`: versioning on, plus a scheduled copy to a second bucket in `ru-central1` |
+| Keys | password manager (US keys) | password manager (RU keys, never the US ones) |
+
+Back up the blobs **after** the database dump is taken, never before. A blob newer than the dump is harmless (unreferenced). A row that points at a blob the copy missed is a lost attachment.
+
+### RPO / RTO
+**RPO** (how much mail a restore can lose): up to the age of the newest backup.
+- Daily dumps alone: up to 24 h.
+- With PITR: minutes.
+
+Inbound mail that arrives during an outage is retried by the sending servers for days. So the window for losing *inbound* mail is small even with daily dumps, **if the restore happens within that retry window**.
+
+**RTO** (time to readable mail), measured in the drill (2026-11-13, one sandbox machine, Postgres 16):
+- 72,270 messages: a 322 MB dump in 2.6 s, restored into an empty database in 5.8 s (about 12,000 messages/s);
+- the blob copy runs at the store's bandwidth.
+
+Rough RTO for a copy: provisioning the new database and bucket (minutes) + restore (seconds per 10⁵ messages) + blob copy (bytes ÷ bandwidth) + redeploying with `DATABASE_URL` and the storage settings pointed at the restore.
+
+### The drill: `npm run drill:restore`
+Run it quarterly (§8), and after any change to storage or keys.
+
+```sh
+createdb drill_src && createdb drill_dst          # both throwaway
+DATABASE_URL=postgres://…/drill_src node scripts/migrate.mjs
+SOURCE_DATABASE_URL=postgres://…/drill_src TARGET_DATABASE_URL=postgres://…/drill_dst \
+  npm run drill:restore -- --storage s3 --s3-endpoint <a scratch S3 endpoint>   # or --storage fs
+```
+
+What it does:
+1. Seeds a drill mailbox through the app's own code: sealed fields, a raw message and an attachment. One message is sealed under `MAIL_BLOB_KEY`, one under a two-key `MAIL_BLOB_KEYS` ring.
+2. Runs `pg_dump` → `psql` into the empty target.
+3. Copies the referenced blobs **as ciphertext**.
+4. Opens the mail from the target only: subjects decrypt, and the raw message and attachment match byte for byte.
+5. Checks that the message sealed under the old key does **not** open once that key is dropped.
+
+It refuses a target that isn't empty.
+
+**Result on 2026-11-13: PASS** for filesystem storage and for S3 (the US and Russia layouts are both Postgres + S3).
+
+### Restoring a copy for real
+1. Create a new database and bucket in the copy's own region. **Never restore Russian data outside Russia.**
+2. Restore the dump: `psql -v ON_ERROR_STOP=1 "$NEW_DATABASE_URL" < dump.sql`, or use the provider's PITR restore into a new instance.
+3. Copy the blobs back into the new bucket, unchanged.
+4. Deploy with `DATABASE_URL` and the storage settings pointing at the new resources, with **the same keys**.
+5. Check:
+   - `npm run db:status`: 0 pending;
+   - `node scripts/smoke.mjs --host …`: health `ok`;
+   - sign in and open an old message with an attachment.
+
