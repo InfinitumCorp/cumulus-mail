@@ -40,8 +40,12 @@ export function DataExportControls() {
           <button
             key={part}
             type="button"
-            disabled={busy !== null}
-            onClick={() => void download(part)}
+            // aria-disabled, not disabled: disabling the focused button would drop keyboard focus.
+            aria-disabled={busy !== null}
+            aria-busy={busy === part}
+            onClick={() => {
+              if (busy === null) void download(part);
+            }}
             className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink disabled:opacity-60"
           >
             {busy === part ? "Preparing…" : label}
