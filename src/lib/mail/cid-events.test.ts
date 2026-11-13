@@ -95,3 +95,11 @@ test("a paused PIN sign-in tells the owner their password is known", () => {
   assert.match(n.body, /10 wrong PINs/);
   assert.match(n.body, /change it now/);
 });
+
+test("the daily PIN cap says 24 hours, and that a recovery code still works", () => {
+  const n = noticeFor({ cid: "cid_x", type: "signin.paused", detail: { path: "pin-day", failures: 30 }, at: "2026-11-12T00:00:00.000Z" })!;
+  assert.match(n.body, /30 wrong PINs/);
+  assert.match(n.body, /24 hours \(a recovery code still signs in\)/);
+  assert.match(n.body, /change it now/);
+  assert.doesNotMatch(noticeFor({ cid: "cid_x", type: "signin.paused", detail: { path: "pin", failures: 10 }, at: "2026-11-12T00:00:00.000Z" })!.body, /24 hours/);
+});

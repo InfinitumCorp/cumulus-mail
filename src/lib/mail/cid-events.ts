@@ -86,10 +86,13 @@ export function noticeFor(e: CidEvent): { subject: string; body: string } | null
     case "pin.set":
       return { subject: "A PIN was set on your Cumulus://ID", body: `A 4-digit PIN was set at ${when}. Every sign-in now asks for it after your password.\n\n${notYou}` };
     case "signin.paused": {
-      const what = d.path === "pin" ? "wrong PINs" : d.path === "password" ? "wrong passwords" : d.path === "recovery" ? "wrong recovery codes" : "wrong codes";
+      const pin = d.path === "pin" || d.path === "pin-day";
+      const what = pin ? "wrong PINs" : d.path === "password" ? "wrong passwords" : d.path === "recovery" ? "wrong recovery codes" : "wrong codes";
+      // "pin-day": the daily cap on wrong PINs (30 a day), which a correct PIN doesn't clear.
+      const howLong = d.path === "pin-day" ? "for 24 hours (a recovery code still signs in)" : "for 15 minutes";
       return {
         subject: "Sign-in to your Cumulus://ID was paused",
-        body: `Someone entered ${s(d.failures) || "too many"} ${what} for your Cumulus://ID, so that way of signing in is paused for 15 minutes (since ${when}).${d.path === "pin" ? " They had your password: change it now." : ""}\n\n${notYou}`,
+        body: `Someone entered ${s(d.failures) || "too many"} ${what} for your Cumulus://ID, so that way of signing in is paused ${howLong} (since ${when}).${pin ? " They had your password: change it now." : ""}\n\n${notYou}`,
       };
     }
     case "pin.changed":
