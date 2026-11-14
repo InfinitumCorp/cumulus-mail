@@ -464,7 +464,6 @@ export default {
   "Use a passphrase of at least 8 characters.": "Use a passphrase of at least 8 characters.",
   "Use a password of at least 8 characters.": "Use a password of at least 8 characters.",
   "used": "used",
-  "UTC": "UTC",
   "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.",
   "Verified": "Verified",
   "Waiting on you": "Waiting on you",
