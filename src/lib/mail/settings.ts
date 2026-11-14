@@ -3,6 +3,7 @@ import { sanitizeFolders } from "./folders.ts";
 import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
+import { THEMES, type Theme } from "../theme-names.ts";
 
 export type CustomDomain = {
   domain: string;
@@ -53,8 +54,7 @@ export type MailSettings = {
   theme: Theme;
 };
 
-export type Theme = "system" | "light" | "dark";
-export const THEMES: readonly Theme[] = ["system", "light", "dark"];
+export { THEMES, type Theme } from "../theme-names.ts";
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
 

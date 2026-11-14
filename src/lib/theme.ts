@@ -1,4 +1,4 @@
-import { THEMES, type Theme } from "@/lib/mail/settings";
+import { THEMES, type Theme } from "./theme-names.ts";
 
 /**
  * Light / dark / follow the device. The colours themselves are CSS (src/styles.css: dark tokens under
