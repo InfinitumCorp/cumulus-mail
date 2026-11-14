@@ -1,5 +1,5 @@
 import type { CalEvent } from "./model.ts";
-import { describeRule, occurrences, parseRRule } from "./recurrence.ts";
+import { describeRule, occurrences, parseRRule, plural } from "./recurrence.ts";
 
 function label(iso: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
@@ -10,7 +10,7 @@ function label(iso: string): string {
  * occurrences from `now` up to `horizonDays` ahead (at most `perEvent` each).
  * Declined events are left out. Sorted by time.
  */
-export function expandEvents(events: CalEvent[], now = new Date(), horizonDays = 60, perEvent = 8): CalEvent[] {
+export function expandEvents(events: CalEvent[], now = new Date(), horizonDays = 60, perEvent = 8, locale: "en" | "ru" = "en"): CalEvent[] {
   const rows: CalEvent[] = [];
   const from = now.getTime();
   const before = new Date(from + horizonDays * 86_400_000).toISOString();
@@ -31,7 +31,12 @@ export function expandEvents(events: CalEvent[], now = new Date(), horizonDays =
       .sort((a, b) => a - b)
       .slice(0, perEvent)
       .map((ms) => new Date(ms).toISOString());
-    const repeat = rule ? describeRule(rule) : `one of ${new Set([Date.parse(event.sort), ...extra]).size} dates`;
+    const dates = new Set([Date.parse(event.sort), ...extra]).size;
+    const repeat = rule
+      ? describeRule(rule, locale)
+      : locale === "ru"
+        ? `одна из ${dates} ${plural(dates, "даты", "дат", "дат")}`
+        : `one of ${dates} dates`;
     for (const iso of upcoming) {
       rows.push({ ...event, id: `${event.id}@${iso}`, sort: iso, whenLabel: `${label(iso)} · ${repeat}` });
     }

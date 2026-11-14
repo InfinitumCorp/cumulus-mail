@@ -45,6 +45,7 @@ import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { useInterfaceLanguage } from "@/lib/interface-language";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -97,6 +98,8 @@ export function MailApp() {
   const setSignature = useMail((s) => s.setSignature);
   const setSettings = useMail((s) => s.setSettings);
   const settings = useMail((s) => s.settings);
+  // Recurrence rules are put into words by code, in the interface language (src/lib/mail/recurrence.ts).
+  const interfaceLanguageNow = useInterfaceLanguage();
   const saveContact = useMail((s) => s.saveContact);
   const replaceContacts = useMail((s) => s.replaceContacts);
   const addRule = useMail((s) => s.addRule);
@@ -1038,7 +1041,7 @@ export function MailApp() {
         {view === "calendar" ? (
           <CalendarPanel
             feed
-            events={expandEvents([...EVENTS, ...(settings?.events ?? [])]).filter(
+            events={expandEvents([...EVENTS, ...(settings?.events ?? [])], new Date(), 60, 8, interfaceLanguageNow).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
           />
