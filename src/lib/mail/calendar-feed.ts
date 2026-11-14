@@ -126,6 +126,7 @@ export function feedIcs(events: CalEvent[], name: string, now = new Date()): str
       ...(event.with ? [`DESCRIPTION:${icsText(`With ${event.with}`)}`] : []),
       ...(event.rrule && /^[A-Z0-9=;,:+-]+$/i.test(event.rrule) ? [`RRULE:${event.rrule}`] : []),
       ...(event.exdates ?? []).filter((d) => Number.isFinite(Date.parse(d))).map((d) => `EXDATE:${stamp(new Date(d))}`),
+      ...(event.rdates ?? []).filter((d) => Number.isFinite(Date.parse(d))).map((d) => `RDATE:${stamp(new Date(d))}`),
       ...(event.rsvp === "tentative" ? ["STATUS:TENTATIVE"] : ["STATUS:CONFIRMED"]),
       "TRANSP:OPAQUE",
       "END:VEVENT",
