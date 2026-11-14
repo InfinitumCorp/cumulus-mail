@@ -374,7 +374,7 @@ test("snooze time, quoting, transcripts and quota", () => {
   assert.match(transcript([message(), message({ id: "m-2", body: "Second" })]), /See you Thursday\.\n\n----\n\nFrom: Leah/);
   const full = quota([message({ attachments: [{ name: "big", size: 50e9 }] })], 15);
   assert.equal(full.pct, 100);
-  assert.match(quota([], 15).label, /^2\.41 GB of 15 GB$/);
+  assert.match(quota([], 15).label, /^2\.41 \/ 15 GB$/);
 });
 
 // ---- invites -------------------------------------------------------------

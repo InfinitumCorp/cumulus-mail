@@ -28,7 +28,7 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
 import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
 import { expandEvents, withRsvp } from "@/lib/mail/calendar";
@@ -1041,7 +1041,7 @@ export function MailApp() {
         {view === "calendar" ? (
           <CalendarPanel
             feed
-            events={expandEvents([...EVENTS, ...(settings?.events ?? [])], new Date(), 60, 8, interfaceLanguageNow).filter(
+            events={expandEvents(settings?.events ?? [], new Date(), 60, 8, interfaceLanguageNow).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
           />

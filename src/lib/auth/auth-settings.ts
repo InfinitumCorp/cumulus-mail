@@ -67,3 +67,34 @@ export function authIpOptions(env: AuthEnv): { ipAddressHeaders: string[]; trust
   const proxies = list(env.BETTER_AUTH_TRUSTED_PROXIES);
   return proxies.length ? { ipAddressHeaders: headers, trustedProxies: proxies } : { ipAddressHeaders: headers };
 }
+
+/**
+ * Better Auth's rate limiting. Its own default is "on when NODE_ENV=production", which a Worker does
+ * not reliably have, so a deployed copy (BETTER_AUTH_URL set) turns it on explicitly. Sign-in is
+ * limited hardest: 10 starts per minute per client (authIpOptions picks the client address).
+ */
+export function authRateLimit(env: Record<string, string | undefined>) {
+  const deployed = Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
+  return {
+    enabled: deployed,
+    window: 60,
+    max: 100,
+    customRules: {
+      "/sign-in/*": { window: 60, max: 10 },
+      "/oauth2/callback/*": { window: 60, max: 20 },
+      "/callback/*": { window: 60, max: 20 },
+    },
+  };
+}
+
+const LOOPBACK = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
+/**
+ * Origins Better Auth trusts for credentialed POSTs and for callbackURL redirects. A deployed copy
+ * trusts only its own origin. The local development origins are added only when that origin is itself
+ * local, so production never accepts a callbackURL on the user's own machine.
+ */
+export function deployedTrustedOrigins(explicitBaseURL: string, localDevOrigins: readonly string[]): string[] {
+  const own = explicitBaseURL.trim().replace(/\/+$/, "");
+  return LOOPBACK.test(own) ? [own, ...localDevOrigins] : [own];
+}

@@ -9,8 +9,9 @@
  *
  * `MAIL_CSP` stages it:
  *   enforce      Content-Security-Policy (the default for a production build)
- *   report-only  Content-Security-Policy-Report-Only: violations are reported in the console, nothing
- *                is blocked. For checking a copy before turning enforcement on.
+ *   report-only  Content-Security-Policy-Report-Only: violations are reported, nothing is blocked. For
+ *                checking a copy before turning enforcement on.
+ * Either way, browsers send each violation to /api/csp-report, which logs a `csp.violation` metric line.
  *   off          no CSP header
  * The development server never gets one (Vite injects its own inline scripts).
  *
@@ -19,6 +20,11 @@
 export type CspMode = "enforce" | "report-only" | "off";
 
 export const GROK_EXTENSIONS_URL = "https://grok.com/grok-app-builder/extensions.js";
+
+/** Where browsers send violation reports (src/routes/api/csp-report.ts). */
+export const CSP_REPORT_PATH = "/api/csp-report";
+/** The Reporting-Endpoints header value that names `csp` for the report-to directive. */
+export const CSP_REPORTING_ENDPOINTS = `csp="${CSP_REPORT_PATH}"`;
 
 export function cspMode(env: Record<string, string | undefined>, production: boolean): CspMode {
   const value = env.MAIL_CSP?.trim().toLowerCase();
@@ -58,6 +64,10 @@ export function buildCsp(options: { nonce: string; extensionsScript?: boolean })
     ["base-uri", ["'self'"]],
     ["form-action", ["'self'"]],
     ["frame-ancestors", ["'none'"]],
+    // Violations are reported to this origin (src/routes/api/csp-report.ts): report-uri for Firefox and
+    // Safari, report-to (with the Reporting-Endpoints header, CSP_REPORTING_ENDPOINTS) for Chromium.
+    ["report-uri", [CSP_REPORT_PATH]],
+    ["report-to", ["csp"]],
   ];
   return directives.map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
 }
