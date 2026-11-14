@@ -9,7 +9,7 @@
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,45 @@ async function waitFor(url, timeoutMs) {
   throw new Error(`dev server did not answer at ${url} within ${timeoutMs / 1000}s`);
 }
 
+/**
+ * Vite finds most of the client's dependencies only when a browser first loads the app, bundles them,
+ * and then (on a later load, when it finds the lazily imported ones) logs "optimized dependencies
+ * changed. reloading" and reloads every open page. A test that is running at that moment loses its
+ * page mid-step (seen as `waiting for navigation to finish` timeouts, mostly in the first test file and
+ * under load). So before any test runs, load the app in a real browser until a load passes with no new
+ * optimisation, then the dev server is stable for the rest of the run.
+ */
+async function warmUp(url) {
+  const { chromium } = await import("playwright");
+  const path = process.env.E2E_CHROMIUM_PATH;
+  let browser;
+  try {
+    browser = await chromium.launch(path ? { executablePath: path } : {});
+  } catch (error) {
+    if (path || !existsSync("/opt/pw-browsers/chromium")) throw error;
+    browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+  }
+  const optimisations = () => (log.match(/dependencies optimized|optimized dependencies changed/g) ?? []).length;
+  try {
+    for (let round = 1; round <= 5; round += 1) {
+      const before = optimisations();
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 }).catch(() => undefined);
+      await page.locator("[data-row-id]").first().waitFor({ timeout: 60_000 }).catch(() => undefined);
+      // Give the optimiser time to notice anything this load imported lazily.
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+      await page.close();
+      if (optimisations() === before) {
+        console.log(`[e2e] dev server warm after ${round} browser load(s)`);
+        return;
+      }
+    }
+    console.log("[e2e] dev server still optimising after 5 loads; running the tests anyway");
+  } finally {
+    await browser.close();
+  }
+}
+
 const port = Number(process.env.E2E_PORT) || (await freePort());
 const url = `http://127.0.0.1:${port}/`;
 const env = {
@@ -66,8 +105,8 @@ server.stderr.on("data", (chunk) => (log += chunk));
 let code = 1;
 try {
   await waitFor(url, 90_000);
-  // Warm the page once so the first test does not pay for Vite's dependency optimisation.
-  await fetch(url).catch(() => undefined);
+  await warmUp(url);
+  const warmLogLength = log.length;
   const files = readdirSync(join(root, "e2e"))
     .filter((name) => name.endsWith(".e2e.mjs"))
     .map((name) => join("e2e", name));
@@ -77,6 +116,9 @@ try {
     stdio: "inherit",
   });
   code = await new Promise((resolve) => run.on("exit", (exit) => resolve(exit ?? 1)));
+  if (/optimized dependencies changed/.test(log.slice(warmLogLength))) {
+    console.warn("[e2e] warning: the dev server re-optimised dependencies and reloaded pages during the run; a failure above may be that, not the test");
+  }
 } catch (error) {
   console.error(`[e2e] ${error instanceof Error ? error.message : error}`);
   console.error(log.slice(-4000));
