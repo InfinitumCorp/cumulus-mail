@@ -255,12 +255,30 @@ export function draftCount(messages: MailMessage[]): number {
 }
 
 export function rowTitle(message: MailMessage, meEmail: string = ME.email): string {
-  if (message.from.email.toLowerCase() === meEmail.toLowerCase()) {
-    const to = message.to[0]?.name || message.to[0]?.email || "someone";
-    return `To ${to}`;
-  }
-  return message.from.name;
+  const parts = rowTitleParts(message, meEmail);
+  return parts.to ? `To ${parts.name}` : parts.name;
 }
+
+/** The row title in pieces, so the list can render "To" as its own (translatable) text and the name as data. */
+export function rowTitleParts(message: MailMessage, meEmail: string = ME.email): { to: boolean; name: string } {
+  if (message.from.email.toLowerCase() === meEmail.toLowerCase()) {
+    return { to: true, name: message.to[0]?.name || message.to[0]?.email || "—" };
+  }
+  return { to: false, name: message.from.name };
+}
+
+/** System labels shown by their folder's name (which the interface translates); anything else is the owner's own label. */
+export const SYSTEM_LABEL_NAMES: Record<string, string> = {
+  inbox: "Inbox",
+  outbox: "Outbox",
+  sent: "Sent",
+  drafts: "Drafts",
+  archive: "Archive",
+  trash: "Trash",
+  quarantine: "Quarantine",
+  snoozed: "Snoozed",
+  starred: "Starred",
+};
 
 export type QuotaWarning = "near" | "over" | null;
 
