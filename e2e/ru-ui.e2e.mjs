@@ -51,6 +51,17 @@ test("ru: list and reader dates, plan usage, the sign-in note and the calendar f
   assert.match(text, /Свои домены/);
   await page.keyboard.press("Escape");
 
+  // Sent mail's row title: "To" is interface text, so it is Russian; the name stays as written.
+  await page.locator("aside").getByRole("button", { name: /^Отправленные/ }).first().click();
+  await page.locator("[data-row-id]").first().locator("span.truncate", { hasText: /^Кому / }).first().waitFor({ timeout: 10_000 });
+  // A system label is shown by its folder's (translated) name.
+  await page.locator("aside").getByRole("button", { name: /^Карантин/ }).first().click();
+  const quarantined = page.locator("[data-row-id]").first();
+  if (await quarantined.count()) {
+    await quarantined.click();
+    await page.locator("p.uppercase", { hasText: "Карантин" }).first().waitFor({ timeout: 10_000 });
+  }
+
   await page.getByRole("button", { name: "Календарь" }).or(page.getByRole("link", { name: "Календарь" })).first().click();
   await page.getByText("Личный адрес, на который можно подписаться", { exact: false }).waitFor({ timeout: 10_000 });
   assert.deepEqual(errors, []);
