@@ -16,6 +16,10 @@ import { Route as LegalDocRouteImport } from './routes/legal/$doc'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
+import { Route as ApiBridgeAppendRouteImport } from './routes/api/bridge/append'
+import { Route as ApiBridgeIdleRouteImport } from './routes/api/bridge/idle'
+import { Route as ApiBridgeMoveRouteImport } from './routes/api/bridge/move'
+import { Route as ApiBridgeSyncRouteImport } from './routes/api/bridge/sync'
 import { Route as ApiCalendarTokenRouteImport } from './routes/api/calendar/$token'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
 
@@ -54,6 +58,26 @@ const ApiBillingWebhookRoute = ApiBillingWebhookRouteImport.update({
   path: '/api/billing/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBridgeAppendRoute = ApiBridgeAppendRouteImport.update({
+  id: '/api/bridge/append',
+  path: '/api/bridge/append',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBridgeIdleRoute = ApiBridgeIdleRouteImport.update({
+  id: '/api/bridge/idle',
+  path: '/api/bridge/idle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBridgeMoveRoute = ApiBridgeMoveRouteImport.update({
+  id: '/api/bridge/move',
+  path: '/api/bridge/move',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBridgeSyncRoute = ApiBridgeSyncRouteImport.update({
+  id: '/api/bridge/sync',
+  path: '/api/bridge/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCalendarTokenRoute = ApiCalendarTokenRouteImport.update({
   id: '/api/calendar/$token',
   path: '/api/calendar/$token',
@@ -73,6 +97,10 @@ export interface FileRoutesByFullPath {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/append': typeof ApiBridgeAppendRoute
+  '/api/bridge/idle': typeof ApiBridgeIdleRoute
+  '/api/bridge/move': typeof ApiBridgeMoveRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
 }
@@ -84,6 +112,10 @@ export interface FileRoutesByTo {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/append': typeof ApiBridgeAppendRoute
+  '/api/bridge/idle': typeof ApiBridgeIdleRoute
+  '/api/bridge/move': typeof ApiBridgeMoveRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
 }
@@ -96,6 +128,10 @@ export interface FileRoutesById {
   '/p/$token': typeof PTokenRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
+  '/api/bridge/append': typeof ApiBridgeAppendRoute
+  '/api/bridge/idle': typeof ApiBridgeIdleRoute
+  '/api/bridge/move': typeof ApiBridgeMoveRoute
+  '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
 }
@@ -109,6 +145,10 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
+    | '/api/bridge/append'
+    | '/api/bridge/idle'
+    | '/api/bridge/move'
+    | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
   fileRoutesByTo: FileRoutesByTo
@@ -120,6 +160,10 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
+    | '/api/bridge/append'
+    | '/api/bridge/idle'
+    | '/api/bridge/move'
+    | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
   id:
@@ -131,6 +175,10 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/api/auth/$'
     | '/api/billing/webhook'
+    | '/api/bridge/append'
+    | '/api/bridge/idle'
+    | '/api/bridge/move'
+    | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
   fileRoutesById: FileRoutesById
@@ -143,6 +191,10 @@ export interface RootRouteChildren {
   PTokenRoute: typeof PTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
+  ApiBridgeAppendRoute: typeof ApiBridgeAppendRoute
+  ApiBridgeIdleRoute: typeof ApiBridgeIdleRoute
+  ApiBridgeMoveRoute: typeof ApiBridgeMoveRoute
+  ApiBridgeSyncRoute: typeof ApiBridgeSyncRoute
   ApiCalendarTokenRoute: typeof ApiCalendarTokenRoute
   ApiCronTickRoute: typeof ApiCronTickRoute
 }
@@ -198,6 +250,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBillingWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bridge/append': {
+      id: '/api/bridge/append'
+      path: '/api/bridge/append'
+      fullPath: '/api/bridge/append'
+      preLoaderRoute: typeof ApiBridgeAppendRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bridge/idle': {
+      id: '/api/bridge/idle'
+      path: '/api/bridge/idle'
+      fullPath: '/api/bridge/idle'
+      preLoaderRoute: typeof ApiBridgeIdleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bridge/move': {
+      id: '/api/bridge/move'
+      path: '/api/bridge/move'
+      fullPath: '/api/bridge/move'
+      preLoaderRoute: typeof ApiBridgeMoveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bridge/sync': {
+      id: '/api/bridge/sync'
+      path: '/api/bridge/sync'
+      fullPath: '/api/bridge/sync'
+      preLoaderRoute: typeof ApiBridgeSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/calendar/$token': {
       id: '/api/calendar/$token'
       path: '/api/calendar/$token'
@@ -223,6 +303,10 @@ const rootRouteChildren: RootRouteChildren = {
   PTokenRoute: PTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
+  ApiBridgeAppendRoute: ApiBridgeAppendRoute,
+  ApiBridgeIdleRoute: ApiBridgeIdleRoute,
+  ApiBridgeMoveRoute: ApiBridgeMoveRoute,
+  ApiBridgeSyncRoute: ApiBridgeSyncRoute,
   ApiCalendarTokenRoute: ApiCalendarTokenRoute,
   ApiCronTickRoute: ApiCronTickRoute,
 }
