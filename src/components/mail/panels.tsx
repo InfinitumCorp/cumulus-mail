@@ -1,6 +1,7 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { BillingControls } from "./billing-controls";
+import { ContactsTransfer } from "./contacts-transfer";
 import { CalendarFeedControls } from "./calendar-feed-controls";
 import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
@@ -54,11 +55,14 @@ export function ContactsPanel({
   query,
   onWrite,
   onSave,
+  onReplace,
 }: {
   contacts: Contact[];
   query: string;
   onWrite: (contact: Contact) => void;
   onSave?: (contact: Contact) => void;
+  /** Bulk replace, for import. Absent: no import/export controls. */
+  onReplace?: (contacts: Contact[]) => void;
 }) {
   const q = query.trim().toLowerCase();
   const rows = contacts.filter((contact) =>
@@ -69,6 +73,7 @@ export function ContactsPanel({
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
         <p className="font-mono text-xs uppercase tracking-wide text-muted">Contacts</p>
         <h2 className="mt-3 text-4xl tracking-tight">People</h2>
+        {onReplace ? <ContactsTransfer contacts={contacts} onReplace={onReplace} /> : null}
         <ul className="mt-8">
           {rows.length === 0 ? <li className="border-t border-line py-6 text-sm text-muted">No one matches.</li> : null}
           {rows.map((contact) => (
