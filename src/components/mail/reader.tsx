@@ -1,7 +1,8 @@
+import { Fragment } from "react";
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attachment, CalEvent, CustomFolder, FolderId, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
-import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials, isE2E, SYSTEM_LABEL_NAMES } from "@/lib/mail/logic";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -210,7 +211,16 @@ function Opened({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
-          <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">
+            {message.labels.length
+              ? message.labels.map((label, index) => (
+                  <Fragment key={label}>
+                    {index ? " · " : null}
+                    {SYSTEM_LABEL_NAMES[label] ? SYSTEM_LABEL_NAMES[label] : <span translate="no">{label}</span>}
+                  </Fragment>
+                ))
+              : "Mail"}
+          </p>
           <h2 translate="no" className="mt-3 text-2xl leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-3xl md:text-4xl">{message.subject}</h2>
           <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
