@@ -11,6 +11,7 @@ The lines never contain addresses, subjects or message ids; anything that looks 
 | `mail.inbound.result` | `outcome`: `stored` (`folder`: `mailbox` / `quarantine`) / `duplicate` / `rejected` (`reason`) / `no_mailbox` / `other_domain` / `failed` | every inbound message |
 | `mail.inbound.auth` | `spf`, `dkim`, `dmarc` (`pass` / `fail` / `none` / …), `disposition` | every inbound message that reaches a mailbox |
 | `auth.failure` | `reason`: `no_session` / `cross_site` / `tenant_mismatch` | a refused authenticated call |
+| `csp.violation` | `directive`, `blocked` (an origin or a keyword: `inline`, `eval`, `data`, …), `path` (scrubbed: `/p/:token`), `disposition`: `enforce` / `report`; `droppedBefore` when the per-minute cap dropped some | a browser's Content-Security-Policy report (`/api/csp-report`) |
 | request log (`msg: "request"`) | `status`, `ms`, `path` (scrubbed) | every request, when `MAIL_REQUEST_LOG=on` |
 
 ## Alerts and thresholds
@@ -27,6 +28,7 @@ The thresholds are starting points. Set them from the first two weeks of real tr
 | **Spoofing wave** | `mail.inbound.auth` with `dmarc=fail` > **30 %** of inbound over 30 min with ≥ 50 messages, or `disposition=quarantine` > 3× its daily baseline | ticket | quarantine folder of affected mailboxes |
 | **DKIM verification broken** | `dkim=fail` > **50 %** of inbound with ≥ 50 messages (senders don't all break at once; a bug or a DNS resolver problem does) | page | `MAIL_AUTH_DNS`, resolver reachability |
 | **Auth failures** | `auth.failure` with `reason=cross_site` > **20** in 5 min (an attack, or a broken proxy setting); `tenant_mismatch` > **0** (should never happen); `no_session` > 10× baseline | page for `tenant_mismatch`, ticket otherwise | request log for the paths |
+| **CSP blocking something** | `csp.violation` with `disposition=enforce` > **5** in 15 min, or any for a `directive`+`blocked` pair not seen in the last 7 days | ticket | the `path` and `directive`: a page may be broken for users. `docs/deploy/csp.md`; `MAIL_CSP=report-only` is the switch while it is fixed |
 | **Errors** | request log `status` ≥ 500 > **2 %** of requests with ≥ 100 requests | page | `/api/health`, then logs |
 | **Health** | `GET /api/health` not 200 for 3 checks in a row (external check every minute) | page | runbook §2 |
 

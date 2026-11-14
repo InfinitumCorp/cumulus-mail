@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiCspReportRouteImport } from './routes/api/csp-report'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as LegalDocRouteImport } from './routes/legal/$doc'
 import { Route as PTokenRouteImport } from './routes/p.$token'
@@ -21,6 +22,11 @@ import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCspReportRoute = ApiCspReportRouteImport.update({
+  id: '/api/csp-report',
+  path: '/api/csp-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -61,6 +67,7 @@ const ApiCronTickRoute = ApiCronTickRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/legal/$doc': typeof LegalDocRoute
   '/p/$token': typeof PTokenRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/api/csp-report'
     | '/api/health'
     | '/legal/$doc'
     | '/p/$token'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/csp-report'
     | '/api/health'
     | '/legal/$doc'
     | '/p/$token'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/api/csp-report'
     | '/api/health'
     | '/legal/$doc'
     | '/p/$token'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiCspReportRoute: typeof ApiCspReportRoute
   ApiHealthRoute: typeof ApiHealthRoute
   LegalDocRoute: typeof LegalDocRoute
   PTokenRoute: typeof PTokenRoute
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/csp-report': {
+      id: '/api/csp-report'
+      path: '/api/csp-report'
+      fullPath: '/api/csp-report'
+      preLoaderRoute: typeof ApiCspReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -197,6 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiCspReportRoute: ApiCspReportRoute,
   ApiHealthRoute: ApiHealthRoute,
   LegalDocRoute: LegalDocRoute,
   PTokenRoute: PTokenRoute,
