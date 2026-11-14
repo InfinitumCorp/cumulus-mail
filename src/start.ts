@@ -6,7 +6,7 @@ import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/r
  * HTML response it belongs to. Other responses (API, assets) get no CSP: they run no script.
  */
 const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
-  const { buildCsp, cspHeaderName, cspMode, newNonce } = await import("./lib/csp");
+  const { buildCsp, CSP_REPORTING_ENDPOINTS, cspHeaderName, cspMode, newNonce } = await import("./lib/csp");
   const nonce = newNonce();
   const result = await next({ context: { nonce } });
   const mode = cspMode(process.env, import.meta.env.PROD);
@@ -19,6 +19,7 @@ const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
     // Russia copy (the head injector leaves it out there, #116; until then the CSP blocks it).
     const extensionsScript = readGrokExtensionsEnabled() && regionFor(host) !== "ru";
     result.response.headers.set(cspHeaderName(mode), buildCsp({ nonce, extensionsScript }));
+    result.response.headers.set("reporting-endpoints", CSP_REPORTING_ENDPOINTS);
   }
   return result;
 });

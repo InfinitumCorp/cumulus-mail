@@ -16,7 +16,9 @@ export type MetricName =
   /** One per inbound message authenticated: spf, dkim, dmarc results and the disposition. */
   | "mail.inbound.auth"
   /** A refused authenticated call. reason: no_session | cross_site | tenant_mismatch. */
-  | "auth.failure";
+  | "auth.failure"
+  /** A Content-Security-Policy violation a browser reported: directive, blocked (origin or keyword), path, disposition. */
+  | "csp.violation";
 
 export type MetricFields = Record<string, string | number | boolean | null>;
 
