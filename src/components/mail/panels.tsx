@@ -26,8 +26,8 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
 }
 
 
-/** Settings → Appearance. "Device" follows the operating system's light or dark setting. */
-const APPEARANCE_LABELS: Record<Theme, string> = { system: "Device", light: "Light", dark: "Dark" };
+/** Settings → Appearance. Light is the default; "Device" follows the operating system's light or dark setting. */
+const APPEARANCE_LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Device" };
 const APPEARANCE = THEMES.map((value) => [value, APPEARANCE_LABELS[value]] as const);
 
 export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {

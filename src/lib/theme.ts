@@ -1,14 +1,14 @@
-import { THEMES, type Theme } from "./theme-names.ts";
+import { DEFAULT_THEME, type Theme } from "./theme-names.ts";
 
 /**
- * Light / dark / follow the device. The colours themselves are CSS (src/styles.css: dark tokens under
- * `prefers-color-scheme: dark`, overridden by `data-theme` on <html>). The choice is a mail setting, so
- * it follows the owner to every device; it is also kept in this browser's localStorage so the next
- * load can apply it before the mailbox has loaded. "system" stores nothing and sets no attribute.
+ * Light (default) / dark / follow the device. The colours themselves are CSS (src/styles.css): dark
+ * tokens under `data-theme="dark"`, and under `data-theme="system"` when the device is dark. Light sets
+ * no attribute, so the default look is unchanged. The choice is a mail setting, so it follows the owner
+ * to every device; it is also kept in this browser's localStorage so the next load can apply it before
+ * the mailbox has loaded.
  */
 const STORAGE_KEY = "cumulus-mail-theme";
 const BACKGROUND = { light: "#ffffff", dark: "#0f1419" } as const;
-const FOLLOW_DEVICE: Theme = THEMES[0];
 
 function systemPrefersDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
@@ -18,24 +18,24 @@ function systemPrefersDark(): boolean {
 export function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  if (theme === "system") root.removeAttribute("data-theme");
+  if (theme === DEFAULT_THEME) root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", theme);
   const dark = theme === "dark" || (theme === "system" && systemPrefersDark());
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? BACKGROUND.dark : BACKGROUND.light);
   try {
-    if (theme === "system") localStorage.removeItem(STORAGE_KEY);
+    if (theme === DEFAULT_THEME) localStorage.removeItem(STORAGE_KEY);
     else localStorage.setItem(STORAGE_KEY, theme);
   } catch {
     // Storage blocked (private mode): the setting still applies once the mailbox loads.
   }
 }
 
-/** The choice remembered on this device, or "system". */
+/** The choice remembered on this device, or the default. */
 export function storedTheme(): Theme {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : FOLLOW_DEVICE;
+    return value === "dark" || value === "system" ? value : DEFAULT_THEME;
   } catch {
-    return FOLLOW_DEVICE;
+    return DEFAULT_THEME;
   }
 }

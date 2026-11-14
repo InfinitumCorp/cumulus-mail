@@ -12,8 +12,10 @@
 }
 
 /*
- * Dark mode. The app follows the device unless the owner picks Light or Dark in Settings → Appearance,
- * which sets data-theme on <html> (src/lib/theme.ts). Every colour in the app comes from these
+ * Dark mode, opt-in. The shell is light unless the owner picks Dark, or Device (follow the operating
+ * system), in Settings → Appearance; that sets data-theme on <html> (src/lib/theme.ts). Without the
+ * attribute nothing here applies, so the default look is unchanged (the layout rule in
+ * docs/proton-parity.md). Every colour in the app comes from these
  * tokens, so this is the whole of it. Contrast on --color-paper: ink 15.3:1, muted 7.5:1, accent 7.5:1 (light: muted 6.5:1, accent 6.2:1).
  */
 :root {
@@ -22,7 +24,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root[data-theme="system"] {
     color-scheme: dark;
     --color-ink: #e6eaee;
     --color-paper: #0f1419;
@@ -207,12 +209,12 @@ label:has(> input:focus-visible) > input:focus-visible {
  * which would be an invisible ring on the dark theme. In dark mode it takes the theme's colours.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .lang-switch {
+  :root[data-theme="system"] .lang-switch {
     color: var(--color-ink);
     background-color: var(--color-paper);
     border-color: var(--color-muted);
   }
-  :root:not([data-theme="light"]) .lang-switch:focus-visible {
+  :root[data-theme="system"] .lang-switch:focus-visible {
     outline-color: var(--color-ink);
   }
 }

@@ -72,7 +72,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | POP3 | deferred | Proton does not offer POP3. Neither does this app. |
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |
-| Dark mode for the mail shell | deferred | The shell is light. Adding a theme would restyle it, which the layout rule forbids. Sign-in and error pages already ship `dark:` classes; those pages were not restyled. |
+| Dark mode for the mail shell | added (opt-in) | Settings → Appearance: Light (default), Dark, or Device (follow the operating system). The default stays Light so the shell is unchanged for everyone who does not choose otherwise (the layout rule); making Device the default is an owner decision. Every colour comes from the five theme tokens, so dark is a second set of them; contrast on the dark background is 7.5:1 or better for all text. |
 | Phone layout (under 768px) | added | One column: list, then message, with back; folders in a full-screen drawer; Compose as a full-screen sheet; Compose moves into the title row; touch targets at least 44px. The layout rule was waived for small screens only, and the desktop layout is pixel-identical (checked at 1280px and 800px). Screenshots: `docs/screenshots/mobile-390/`. |
 | Keyboard shortcuts | existing, extended | `c r e # j k x u z`, plus `a` reply all, `f` forward, `/` to search (Esc clears, then leaves), `o` or Enter to open, and Esc back to the list with focus on the row that was open. The open row scrolls into view. |
 | Shortcut help | added | `?` |

@@ -3,7 +3,7 @@ import { sanitizeFolders } from "./folders.ts";
 import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
-import { THEMES, type Theme } from "../theme-names.ts";
+import { DEFAULT_THEME, THEMES, type Theme } from "../theme-names.ts";
 
 export type CustomDomain = {
   domain: string;
@@ -50,7 +50,7 @@ export type MailSettings = {
   unsubscribed: Unsubscribed[];
   /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
   setupPending: boolean;
-  /** Colour scheme: follow the device (default), or always light / always dark. */
+  /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
   theme: Theme;
 };
 
@@ -85,7 +85,7 @@ export function defaultSettings(): MailSettings {
     audit: [],
     unsubscribed: [],
     setupPending: false,
-    theme: "system",
+    theme: DEFAULT_THEME,
   };
 }
 
@@ -184,7 +184,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           .slice(-200)
       : [],
     setupPending: row.setupPending === true,
-    theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : "system",
+    theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
   };
 }
 

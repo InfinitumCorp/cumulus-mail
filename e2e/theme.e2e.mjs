@@ -1,5 +1,6 @@
-// Dark mode: follows the device by default, Settings → Appearance overrides it (and survives a reload),
-// and the main screens have no serious WCAG 2.1 AA violations (contrast included) in the dark theme.
+// Dark mode is opt-in: the shell stays light (the layout rule) until Settings → Appearance says Dark or
+// Device; the choice survives a reload; and the main screens have no serious WCAG 2.1 AA violations
+// (contrast included) in the dark theme.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { existsSync } from "node:fs";
@@ -62,30 +63,40 @@ async function choose(page, label) {
   await dialog.waitFor({ state: "detached" });
 }
 
-test("theme: a dark device gets the dark theme, and list, reader, compose and settings pass axe in it", async () => {
+test("theme: a dark device stays light by default; Device follows it, and list, reader, compose and settings pass axe in dark", async () => {
   const { context, page, errors } = await open("dark");
-  assert.equal(await background(page), DARK_BG);
-  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), "dark");
-  assert.deepEqual(await axeBlocking(page), [], "list");
+  assert.equal(await background(page), LIGHT_BG, "unchanged until the owner chooses");
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-theme")), false);
+  try {
+    await choose(page, "Device");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "system");
+    assert.equal(await background(page), DARK_BG);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), "dark");
+    assert.deepEqual(await axeBlocking(page), [], "list");
 
-  await page.locator("[data-row-id]").first().click();
-  await page.getByRole("button", { name: "Reply", exact: true }).waitFor();
-  assert.deepEqual(await axeBlocking(page), [], "reader");
+    await page.locator("[data-row-id]").first().click();
+    await page.getByRole("button", { name: "Reply", exact: true }).waitFor();
+    assert.deepEqual(await axeBlocking(page), [], "reader");
 
-  await page.getByRole("button", { name: "Compose" }).first().click();
-  const compose = page.getByRole("dialog", { name: "Compose" });
-  await compose.waitFor();
-  assert.deepEqual(await axeBlocking(page), [], "compose");
-  await compose.getByRole("button", { name: "Close composer" }).click();
-  await compose.waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Compose" }).first().click();
+    const compose = page.getByRole("dialog", { name: "Compose" });
+    await compose.waitFor();
+    assert.deepEqual(await axeBlocking(page), [], "compose");
+    await compose.getByRole("button", { name: "Close composer" }).click();
+    await compose.waitFor({ state: "detached" });
 
-  await openSettings(page);
-  assert.deepEqual(await axeBlocking(page), [], "settings");
+    await openSettings(page);
+    assert.deepEqual(await axeBlocking(page), [], "settings");
+    await page.keyboard.press("Escape");
+  } finally {
+    await choose(page, "Light");
+  }
+  assert.equal(await background(page), LIGHT_BG);
   assert.deepEqual(errors, []);
   await context.close();
 });
 
-test("theme: a light device stays light until Appearance says Dark; the choice survives a reload; Device puts it back", async () => {
+test("theme: Appearance → Dark on a light device; the choice survives a reload; Light puts it back", async () => {
   const { context, page, errors } = await open("light");
   assert.equal(await background(page), LIGHT_BG);
   try {
@@ -98,7 +109,7 @@ test("theme: a light device stays light until Appearance says Dark; the choice s
     await page.locator("[data-row-id]").first().waitFor();
     assert.equal(await background(page), DARK_BG, "kept after a reload");
   } finally {
-    await choose(page, "Device");
+    await choose(page, "Light");
   }
   assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-theme")), false);
   assert.equal(await background(page), LIGHT_BG);
@@ -106,14 +117,15 @@ test("theme: a light device stays light until Appearance says Dark; the choice s
   await context.close();
 });
 
-test("theme: Light on a dark device, in Russian", async () => {
+test("theme: Device on a dark device, in Russian", async () => {
   const { context, page } = await open("dark", "ru-RU");
+  assert.equal(await background(page), LIGHT_BG);
   try {
-    await choose(page, "Светлое");
-    assert.equal(await background(page), LIGHT_BG);
-  } finally {
     await choose(page, "Как на устройстве");
+    assert.equal(await background(page), DARK_BG);
+  } finally {
+    await choose(page, "Светлое");
   }
-  assert.equal(await background(page), DARK_BG);
+  assert.equal(await background(page), LIGHT_BG);
   await context.close();
 });
