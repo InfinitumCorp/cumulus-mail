@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { takeAction } from "@/lib/rate-limit";
 import { markSendVerified } from "./outbound/safety.ts";
 import { DEV_USER_ID, UnauthorizedError, getSessionUser } from "@/lib/auth/verify.server";
 import {
@@ -197,6 +198,7 @@ export async function calendarFeedResponse(token: string): Promise<Response> {
 
 export async function exportMailboxForSession(contextUserId: string, bearerToken?: string): Promise<MailboxBackup> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "export");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return exportMailbox(db, storageFor(tenantId), tenantId);
@@ -208,6 +210,7 @@ export async function importMailboxForSession(
   bearerToken?: string,
 ): Promise<MailboxSnapshot> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "import");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return importMailbox(db, storageFor, tenantId, backup);
@@ -219,6 +222,7 @@ export async function unsubscribeForSession(
   bearerToken?: string,
 ): Promise<import("./unsubscribe.ts").UnsubscribeResult> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "unsubscribe");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const { unsubscribeMessage } = await import("./unsubscribe.ts");
@@ -231,6 +235,7 @@ export async function submitAbuseForSession(
   bearerToken?: string,
 ): Promise<{ id: string; suppressed: true }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "abuseReport");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return createAbuseIntake(db, tenantId).submit(report);
@@ -244,6 +249,7 @@ export async function issueShareForSession(
   bearerToken?: string,
 ): Promise<{ token: string; exp: number }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "share");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const rows = await db.query<{ object_key: string }>(
@@ -298,6 +304,7 @@ export async function checkDomainForSession(
   bearerToken?: string,
 ): Promise<{ verified: boolean; txtName: string; txtValue: string }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "domainCheck");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const settings = await readSettings(db, tenantId);

@@ -24,6 +24,22 @@ const cspMiddleware = createMiddleware().server(async ({ next, request }) => {
 });
 
 /**
+ * Refuse a state-changing request that the browser says came from another site (src/lib/csrf.ts).
+ * Covers server functions and API routes alike; Better Auth checks its own routes.
+ */
+const csrfMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const { csrfRefusal } = await import("./lib/csrf");
+  const refusal = csrfRefusal({ method: request.method, path: new URL(request.url).pathname, headers: request.headers });
+  if (refusal) {
+    return new Response("Forbidden: cross-site request", {
+      status: 403,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-csrf-refused": refusal },
+    });
+  }
+  return next();
+});
+
+/**
  * Server functions are same-origin RPC. TanStack Start protects them with this middleware by default,
  * but only while the app has no start instance: once `createStart` exists (for the CSP above), the
  * default is dropped and it has to be listed here. A browser request from another site is refused
@@ -36,4 +52,4 @@ export const serverFnCsrfMiddleware = createCsrfMiddleware({
   allowRequestsWithoutOriginCheck: true,
 });
 
-export const startInstance = createStart(() => ({ requestMiddleware: [serverFnCsrfMiddleware, cspMiddleware] }));
+export const startInstance = createStart(() => ({ requestMiddleware: [serverFnCsrfMiddleware, csrfMiddleware, cspMiddleware] }));
