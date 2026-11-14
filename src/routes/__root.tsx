@@ -3,6 +3,7 @@ import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { Language } from "@/components/language";
 import { ServiceWorker } from "@/components/service-worker";
+import { ThemeBoot } from "@/components/theme";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Cumulus://Mail";
@@ -38,6 +39,7 @@ export const Route = createRootRoute({
         <PreviewHostBridge />
         <Language />
         <ServiceWorker />
+        <ThemeBoot />
         <AuthProvider>
           <Outlet />
         </AuthProvider>
