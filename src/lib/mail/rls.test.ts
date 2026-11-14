@@ -27,6 +27,8 @@ const TABLES = [
   "bridge_tokens",
   "message_uids",
   "bridge_folders",
+  "sender_reputation",
+  "spam_lists",
 ];
 
 test("row level security is enabled on every mail table and no policies are added", async () => {
