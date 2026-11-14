@@ -53,6 +53,8 @@ type Props = {
   inviteRsvp?: "accepted" | "tentative" | "declined";
   onReceipt?: (accept: boolean) => void;
   onReport?: () => void;
+  /** "Report spam" (moves to Quarantine) or, in Quarantine, "Not spam" (back to the Inbox). */
+  onSpam?: (verdict: "spam" | "ham") => void;
 };
 
 export function Reader(props: Props) {
@@ -122,6 +124,7 @@ function Opened({
   inviteRsvp,
   onReceipt,
   onReport,
+  onSpam,
 }: Props & { message: MailMessage }) {
   const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
@@ -202,6 +205,17 @@ function Opened({
           <ListTodo className="size-4" />
           Architect
         </button>
+        {onSpam && message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
+          message.folder === "quarantine" ? (
+            <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={() => onSpam("ham")}>
+              Not spam
+            </button>
+          ) : (
+            <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={() => onSpam("spam")}>
+              Report spam
+            </button>
+          )
+        ) : null}
         {onReport ? (
           <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onReport}>
             Report
