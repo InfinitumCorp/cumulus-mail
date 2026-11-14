@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   PutObjectCommand,
   S3Client,
@@ -29,7 +30,14 @@ export type StorageDriver = {
   get(tenantId: string, blobId: string): Promise<Uint8Array>;
   delete(tenantId: string, blobId: string): Promise<void>;
   probe(): Promise<boolean>;
+  /**
+   * Every stored blob, for maintenance (the orphan sweeper). Optional: a driver that cannot list
+   * simply has none, and the sweeper says so instead of guessing.
+   */
+  list?(): AsyncIterable<StoredBlob>;
 };
+
+export type StoredBlob = { tenantId: string; blobId: string; size: number; modifiedAt: Date };
 
 export class BlobNotFoundError extends Error {
   readonly code = "ENOENT";
@@ -82,6 +90,23 @@ export function createFilesystemDriver(root: string): StorageDriver {
     },
     async delete(tenantId, blobId) {
       await rm(location(root, tenantId, blobId), { force: true });
+    },
+    async *list() {
+      const base = join(resolve(root), "tenants");
+      let tenants: string[] = [];
+      try {
+        tenants = await readdir(base);
+      } catch {
+        return; // nothing stored yet
+      }
+      for (const tenantId of tenants) {
+        if (!TENANT_ID.test(tenantId)) continue;
+        for (const blobId of await readdir(join(base, tenantId)).catch(() => [] as string[])) {
+          if (!BLOB_ID.test(blobId)) continue; // skips half-written ".partial" files
+          const info = await stat(location(root, tenantId, blobId)).catch(() => null);
+          if (info?.isFile()) yield { tenantId, blobId, size: info.size, modifiedAt: info.mtime };
+        }
+      }
     },
     async probe() {
       const blobId = "aa".padEnd(32, "0");
@@ -206,6 +231,18 @@ export function createS3Driver(options: S3DriverOptions): S3StorageDriver {
           Key: keyFor(tenantId, blobId),
         }),
       );
+    },
+    async *list() {
+      let ContinuationToken: string | undefined;
+      do {
+        const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: "tenants/", ContinuationToken }));
+        for (const object of page.Contents ?? []) {
+          const match = /^tenants\/([^/]+)\/([^/]+)$/.exec(object.Key ?? "");
+          if (!match || !TENANT_ID.test(match[1]!) || !BLOB_ID.test(match[2]!)) continue;
+          yield { tenantId: match[1]!, blobId: match[2]!, size: object.Size ?? 0, modifiedAt: object.LastModified ?? new Date(0) };
+        }
+        ContinuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (ContinuationToken);
     },
     async probe() {
       await this.ensureBucket();
