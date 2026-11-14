@@ -6,6 +6,7 @@ import { CATEGORIES, type Category, type Subscription } from "@/lib/mail/categor
 
 export type InboxTab = "all" | Category | "subscriptions";
 import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 type Props = {
   box: BoxId;
@@ -81,6 +82,7 @@ export function MessageList({
   query = "",
   setup = null,
 }: Props) {
+  const timeZone = useViewerTimeZone();
   const title = isCustomFolderId(box) ? (folders.find((folder) => folder.id === box)?.name ?? "Folder") : TITLES[box];
   const showTabs = box === "inbox" && Boolean(onTab);
   const visible = rows.map((row) => row.threadId);
@@ -249,7 +251,7 @@ export function MessageList({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
                       <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}>{rowTitle(message, meEmail)}</span>
-                      <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at)}</span>
+                      <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at, timeZone)}</span>
                     </span>
                     <span className={`mt-1 flex items-baseline gap-2 text-sm ${unread ? "text-ink" : "text-muted"}`}>
                       <span translate="no" className="truncate">{message.subject}</span>

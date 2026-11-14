@@ -10,6 +10,8 @@ import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
 import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
+import { localWhenLabel } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
 import { planUsage } from "@/lib/mail/plans";
@@ -26,6 +28,7 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
 }
 
 export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {
+  const timeZone = useViewerTimeZone();
   return (
     <div className="aux-pane overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
@@ -36,7 +39,7 @@ export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; fe
         <ol className="mt-8">
           {events.map((event) => (
             <li key={event.id} className="grid gap-2 border-t border-line py-6 md:grid-cols-[200px_1fr] md:gap-8">
-              <p className="font-mono text-xs text-accent">{event.whenLabel}</p>
+              <p className="font-mono text-xs text-accent">{localWhenLabel(event.whenLabel, event.sort, timeZone)}</p>
               <div>
                 <h3 className="text-2xl tracking-tight">{event.title}</h3>
                 <p className="mt-2 text-sm">{event.with}</p>
