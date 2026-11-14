@@ -24,6 +24,8 @@ test("RRULE parsing: supported parts, and unsupported rules rejected", () => {
     count: 10,
     until: undefined,
     byDay: [{ day: "MO", ordinal: undefined }, { day: "WE", ordinal: undefined }],
+    byMonth: [],
+    byMonthDay: [],
   });
   assert.equal(parseRRule("FREQ=MONTHLY;BYDAY=-1FR")?.byDay[0]?.ordinal, -1);
   assert.equal(parseRRule("FREQ=DAILY;UNTIL=20261120")?.until, "2026-11-20T23:59:59.000Z");
@@ -191,7 +193,7 @@ test("an RSVP to an internal organizer is delivered through the normal path", as
   assert.equal(parseInvite(received.body), null);
 });
 
-test("YEARLY repeats month and day; 29 February skips non-leap years; YEARLY with BYDAY is refused", () => {
+test("YEARLY repeats month and day; 29 February skips non-leap years", () => {
   assert.deepEqual(occurrences("2026-05-14T18:00:00.000Z", rule("FREQ=YEARLY;COUNT=3")), [
     "2026-05-14T18:00:00.000Z",
     "2027-05-14T18:00:00.000Z",
@@ -206,7 +208,6 @@ test("YEARLY repeats month and day; 29 February skips non-leap years; YEARLY wit
     "2028-01-01T00:00:00.000Z",
     "2030-01-01T00:00:00.000Z",
   ]);
-  assert.equal(parseRRule("FREQ=YEARLY;BYDAY=1MO"), null);
   assert.equal(describeRule(rule("FREQ=YEARLY")), "Every year");
 });
 

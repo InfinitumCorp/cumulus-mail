@@ -17,16 +17,21 @@ export function expandEvents(events: CalEvent[], now = new Date(), horizonDays =
   for (const event of events) {
     if (event.rsvp === "declined") continue;
     const rule = event.rrule ? parseRRule(event.rrule) : null;
-    if (!rule) {
+    const extra = (event.rdates ?? []).map((iso) => Date.parse(iso)).filter(Number.isFinite);
+    if (!rule && !extra.length) {
       rows.push(event);
       continue;
     }
-    // EXDATE is applied after COUNT, as RFC 5545 says: an excluded date still uses up a count.
+    // The set is the RRULE's dates (COUNT counts only those) plus RDATE, minus EXDATE, as RFC 5545 says:
+    // an excluded date still uses up a count.
     const skipped = new Set((event.exdates ?? []).map((iso) => Date.parse(iso)));
-    const upcoming = occurrences(event.sort, rule, { before })
-      .filter((iso) => Date.parse(iso) >= from && !skipped.has(Date.parse(iso)))
-      .slice(0, perEvent);
-    const repeat = describeRule(rule);
+    const ruled = rule ? occurrences(event.sort, rule, { before }).map((iso) => Date.parse(iso)) : [Date.parse(event.sort)];
+    const upcoming = [...new Set([...ruled, ...extra.filter((ms) => ms <= Date.parse(before))])]
+      .filter((ms) => Number.isFinite(ms) && ms >= from && !skipped.has(ms))
+      .sort((a, b) => a - b)
+      .slice(0, perEvent)
+      .map((ms) => new Date(ms).toISOString());
+    const repeat = rule ? describeRule(rule) : `one of ${new Set([Date.parse(event.sort), ...extra]).size} dates`;
     for (const iso of upcoming) {
       rows.push({ ...event, id: `${event.id}@${iso}`, sort: iso, whenLabel: `${label(iso)} · ${repeat}` });
     }
