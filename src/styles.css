@@ -169,3 +169,13 @@ label:has(> input:focus-visible) > input:focus-visible {
     animation-duration: 0.01ms !important;
   }
 }
+
+/*
+ * The floating language menu (src/i18n/start.js mounts it bottom-left when the page has no
+ * #lang-switch slot) sits above everything, so on a phone it covered text inside open dialogs (the
+ * account dialog, compose). While a modal dialog is open it is hidden; it comes back when the dialog
+ * closes. The vendored src/i18n/i18n.css is unchanged.
+ */
+body:has([role="dialog"][aria-modal="true"]) .lang-float {
+  display: none;
+}
