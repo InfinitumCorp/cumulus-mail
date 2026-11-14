@@ -22,6 +22,7 @@ import { Route as ApiBridgeMoveRouteImport } from './routes/api/bridge/move'
 import { Route as ApiBridgeSyncRouteImport } from './routes/api/bridge/sync'
 import { Route as ApiCalendarTokenRouteImport } from './routes/api/calendar/$token'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
+import { Route as ApiAccountExportTokenRouteImport } from './routes/api/account/export/$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -88,6 +89,11 @@ const ApiCronTickRoute = ApiCronTickRouteImport.update({
   path: '/api/cron/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAccountExportTokenRoute = ApiAccountExportTokenRouteImport.update({
+  id: '/api/account/export/$token',
+  path: '/api/account/export/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/account/export/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/account/export/$token'
   id:
     | '__root__'
     | '/'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/account/export/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -197,6 +209,7 @@ export interface RootRouteChildren {
   ApiBridgeSyncRoute: typeof ApiBridgeSyncRoute
   ApiCalendarTokenRoute: typeof ApiCalendarTokenRoute
   ApiCronTickRoute: typeof ApiCronTickRoute
+  ApiAccountExportTokenRoute: typeof ApiAccountExportTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -292,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/account/export/$token': {
+      id: '/api/account/export/$token'
+      path: '/api/account/export/$token'
+      fullPath: '/api/account/export/$token'
+      preLoaderRoute: typeof ApiAccountExportTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -309,6 +329,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBridgeSyncRoute: ApiBridgeSyncRoute,
   ApiCalendarTokenRoute: ApiCalendarTokenRoute,
   ApiCronTickRoute: ApiCronTickRoute,
+  ApiAccountExportTokenRoute: ApiAccountExportTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
