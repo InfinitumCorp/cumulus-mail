@@ -33,6 +33,7 @@ export default {
   "Also yours:": "Also yours:",
   "An unexpected error occurred. Try reloading the page.": "An unexpected error occurred. Try reloading the page.",
   "Answer this invite": "Answer this invite",
+  "Appearance": "Appearance",
   "Architect": "Architect",
   "Architect already has this.": "Architect already has this.",
   "Architect keeps the task. It does not send the mail.": "Architect keeps the task. It does not send the mail.",
@@ -103,6 +104,7 @@ export default {
   "Cumulus://Mail — private email with every Cumulus://ID. Encrypted at rest. Never scanned for ads.": "Cumulus://Mail — private email with every Cumulus://ID. Encrypted at rest. Never scanned for ads.",
   "Custom domain": "Custom domain",
   "custom domains. Remove one to add another.": "custom domains. Remove one to add another.",
+  "Dark": "Dark",
   "Decline": "Decline",
   "declined": "declined",
   "Declined": "Declined",
@@ -112,6 +114,7 @@ export default {
   "Delete everything in Trash? This can be undone.": "Delete everything in Trash? This can be undone.",
   "Delete the folder “{0}”?{1}": "Delete the folder “{0}”?{1}",
   "Deleted.": "Deleted.",
+  "Device": "Device",
   "Display name": "Display name",
   "Disposable alias": "Disposable alias",
   "DNS check failed.": "DNS check failed.",
@@ -163,6 +166,7 @@ export default {
   "Its message goes": "Its message goes",
   "Label": "Label",
   "Language": "Language",
+  "Light": "Light",
   "Loading…": "Loading…",
   "Mail": "Mail",
   "Mail from {0} will be archived.": "Mail from {0} will be archived.",
@@ -734,6 +738,10 @@ export default {
   "Import contacts": "Импорт контактов",
   "Imported: {0}.": "Импортировано: {0}.",
   "That file is over 5 MB. Split it and import the parts.": "Файл больше 5 МБ. Разделите его и импортируйте по частям.",
-  "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) или CSV из Google Контактов, Outlook или Apple. Существующие данные сохраняются."
+  "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) или CSV из Google Контактов, Outlook или Apple. Существующие данные сохраняются.",
+  "Appearance": "Оформление",
+  "Device": "Как на устройстве",
+  "Light": "Светлое",
+  "Dark": "Тёмное"
  }
 };

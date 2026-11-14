@@ -49,7 +49,12 @@ export type MailSettings = {
   unsubscribed: Unsubscribed[];
   /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
   setupPending: boolean;
+  /** Colour scheme: follow the device (default), or always light / always dark. */
+  theme: Theme;
 };
+
+export type Theme = "system" | "light" | "dark";
+export const THEMES: readonly Theme[] = ["system", "light", "dark"];
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
 
@@ -80,6 +85,7 @@ export function defaultSettings(): MailSettings {
     audit: [],
     unsubscribed: [],
     setupPending: false,
+    theme: "system",
   };
 }
 
@@ -178,6 +184,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           .slice(-200)
       : [],
     setupPending: row.setupPending === true,
+    theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : "system",
   };
 }
 

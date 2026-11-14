@@ -11,6 +11,38 @@
   --radius: 0px;
 }
 
+/*
+ * Dark mode. The app follows the device unless the owner picks Light or Dark in Settings → Appearance,
+ * which sets data-theme on <html> (src/lib/theme.ts). Every colour in the app comes from these
+ * tokens, so this is the whole of it. Contrast on --color-paper: ink 15.3:1, muted 7.5:1, accent 7.5:1 (light: muted 6.5:1, accent 6.2:1).
+ */
+:root {
+  color-scheme: light;
+  --color-scrim: color-mix(in srgb, #111820 42%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-ink: #e6eaee;
+    --color-paper: #0f1419;
+    --color-muted: #9aa7b2;
+    --color-line: #2c353d;
+    --color-accent: #7ea2ff;
+    --color-scrim: rgb(0 0 0 / 0.62);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-ink: #e6eaee;
+  --color-paper: #0f1419;
+  --color-muted: #9aa7b2;
+  --color-line: #2c353d;
+  --color-accent: #7ea2ff;
+  --color-scrim: rgb(0 0 0 / 0.62);
+}
+
 @layer base {
   html,
   body {
@@ -32,7 +64,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-accent) 22%, white);
+    background: color-mix(in srgb, var(--color-accent) 30%, var(--color-paper));
   }
 }
 
@@ -101,7 +133,7 @@
   }
 
   .scrim {
-    background: color-mix(in srgb, var(--color-ink) 42%, transparent);
+    background: var(--color-scrim);
   }
 
   @media (min-width: 768px) {
@@ -168,4 +200,27 @@ label:has(> input:focus-visible) > input:focus-visible {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/*
+ * The vendored language switcher (src/i18n/i18n.css, kept unchanged) is white with a black focus ring,
+ * which would be an invisible ring on the dark theme. In dark mode it takes the theme's colours.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lang-switch {
+    color: var(--color-ink);
+    background-color: var(--color-paper);
+    border-color: var(--color-muted);
+  }
+  :root:not([data-theme="light"]) .lang-switch:focus-visible {
+    outline-color: var(--color-ink);
+  }
+}
+:root[data-theme="dark"] .lang-switch {
+  color: var(--color-ink);
+  background-color: var(--color-paper);
+  border-color: var(--color-muted);
+}
+:root[data-theme="dark"] .lang-switch:focus-visible {
+  outline-color: var(--color-ink);
 }

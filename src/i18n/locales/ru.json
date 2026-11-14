@@ -364,5 +364,9 @@
  "Import contacts": "Импорт контактов",
  "Imported: {0}.": "Импортировано: {0}.",
  "That file is over 5 MB. Split it and import the parts.": "Файл больше 5 МБ. Разделите его и импортируйте по частям.",
- "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) или CSV из Google Контактов, Outlook или Apple. Существующие данные сохраняются."
+ "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) или CSV из Google Контактов, Outlook или Apple. Существующие данные сохраняются.",
+ "Appearance": "Оформление",
+ "Device": "Как на устройстве",
+ "Light": "Светлое",
+ "Dark": "Тёмное"
 }
