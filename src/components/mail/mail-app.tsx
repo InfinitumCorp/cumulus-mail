@@ -45,6 +45,7 @@ import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { applyTheme } from "@/lib/theme";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -97,6 +98,11 @@ export function MailApp() {
   const setSignature = useMail((s) => s.setSignature);
   const setSettings = useMail((s) => s.setSettings);
   const settings = useMail((s) => s.settings);
+  const theme = settings?.theme;
+  // The mailbox's Appearance setting wins over this device's remembered choice once it has loaded.
+  useEffect(() => {
+    if (theme) applyTheme(theme);
+  }, [theme]);
   const saveContact = useMail((s) => s.saveContact);
   const replaceContacts = useMail((s) => s.replaceContacts);
   const addRule = useMail((s) => s.addRule);

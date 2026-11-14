@@ -8,7 +8,7 @@ import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
-import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
+import { addressAllowed, expectedTxt, MAX_DOMAINS, THEMES, type MailSettings, type Theme } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
@@ -24,6 +24,11 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
     return error instanceof Error ? error.message : "The filter could not be read.";
   }
 }
+
+
+/** Settings → Appearance. Light is the default; "Device" follows the operating system's light or dark setting. */
+const APPEARANCE_LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Device" };
+const APPEARANCE = THEMES.map((value) => [value, APPEARANCE_LABELS[value]] as const);
 
 export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {
   return (
@@ -447,6 +452,29 @@ export function AccountPanel({
                 </form>
                 )}
                 {domainNote ? <p className="text-sm text-muted">{domainNote}</p> : null}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted" id="appearance-label">Appearance</dt>
+              <dd>
+                <div role="radiogroup" aria-labelledby="appearance-label" className="flex flex-wrap gap-2">
+                  {APPEARANCE.map(([value, label]) => (
+                    <label
+                      key={value}
+                      className={`inline-flex h-11 cursor-pointer items-center gap-2 border px-3 text-sm ${settings.theme === value ? "border-ink" : "border-line"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="appearance"
+                        value={value}
+                        checked={settings.theme === value}
+                        onChange={() => onSettings({ ...settings, theme: value })}
+                        className="accent-accent"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </dd>
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
