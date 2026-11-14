@@ -23,6 +23,7 @@
     "keys:rekey": "node --experimental-strip-types --no-warnings scripts/rekey.mjs",
     "drill:restore": "node --experimental-strip-types --no-warnings scripts/drill-restore.mjs",
     "deploy:dry-run": "node scripts/deploy-dry-run.mjs",
+    "keys:rekey": "node --experimental-strip-types --no-warnings scripts/rekey.mjs",
     "build:workers": "NITRO_PRESET=cloudflare-module node scripts/with-app-env.mjs vite build",
     "build:inbound": "node scripts/build-inbound.mjs",
     "build:node": "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build",
