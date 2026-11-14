@@ -1,5 +1,6 @@
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
+import { metric } from "../observability/metrics.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { createBounceHandler } from "./dsn.ts";
@@ -29,7 +30,10 @@ export async function ingestInboundEmail(
 ): Promise<{ stored: string[]; rejected?: "mailbox_full" }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
-  if (!tenantId) return { stored: [] };
+  if (!tenantId) {
+    metric("mail.inbound.result", { outcome: "no_mailbox" });
+    return { stored: [] };
+  }
 
   const digest = await sha256Hex(message.raw);
   const id = `in-${digest.slice(0, 32)}`;
@@ -37,12 +41,16 @@ export async function ingestInboundEmail(
     `select id from cumulus_mail.messages where tenant_id = $1 and id = $2 limit 1`,
     [tenantId, id],
   );
-  if (existing.length > 0) return { stored: [id] };
+  if (existing.length > 0) {
+    metric("mail.inbound.result", { outcome: "duplicate" });
+    return { stored: [id] };
+  }
 
   // Storage enforcement (docs/plans.md step 7) is off unless the operator turns it on. When on, a
   // message that would take the mailbox over its plan's quota is refused before anything is stored,
   // so the sender gets a "mailbox full" bounce instead of the mail being lost silently.
   if (options.enforceStorage && (await overQuotaWith(db, tenantId, message.raw.byteLength))) {
+    metric("mail.inbound.result", { outcome: "rejected", reason: "mailbox_full" });
     return { stored: [], rejected: "mailbox_full" };
   }
 
@@ -78,6 +86,7 @@ export async function ingestInboundEmail(
     { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
     resolver,
   );
+  metric("mail.inbound.auth", { spf: auth.spf, dkim: auth.dkim, dmarc: auth.dmarc, disposition: auth.disposition });
   const draft: MailMessage = {
     id,
     threadId: id,
@@ -107,8 +116,10 @@ export async function ingestInboundEmail(
       action: row.action as MailRule["action"],
       label: row.label ?? undefined,
     }));
-  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  const filed = applyRules(draft, rules);
+  await insertMessage(db, tenantId, filed, rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
+  metric("mail.inbound.result", { outcome: "stored", folder: filed.folder === "quarantine" ? "quarantine" : "mailbox" });
   return { stored: [id] };
 }
 

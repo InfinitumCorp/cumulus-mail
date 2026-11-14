@@ -91,7 +91,11 @@ async function sessionMailbox(
   }
   const session = await getSessionUser();
   if (session) {
-    if (session.id !== contextUserId) throw new TenantAccessError("Session does not match");
+    if (session.id !== contextUserId) {
+      const { metric } = await import("@/lib/observability/metrics");
+      metric("auth.failure", { reason: "tenant_mismatch" });
+      throw new TenantAccessError("Session does not match");
+    }
     assertTenantId(session.id);
     const email = (session.email ?? "").trim().toLowerCase();
     const address = email.includes("@") ? email : mailboxAddress(session.id);
