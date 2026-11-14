@@ -113,18 +113,18 @@ test("planUsage lists what a mailbox uses against its plan and marks reached lim
   assert.deepEqual(
     rows.map((row) => [row.key, row.text, row.full]),
     [
-      ["storage", "1.00 of 1 GB", true],
-      ["aliases", "1 of 1", true],
-      ["domains", "0 of 0", true],
-      ["folders", "3 of 10", false],
-      ["messages", "4,999 of 5,000", false],
+      ["storage", "1.00 / 1 GB", true],
+      ["aliases", "1 / 1", true],
+      ["domains", "0 / 0", true],
+      ["folders", "3 / 10", false],
+      ["messages", "4,999 / 5,000", false],
     ],
   );
   // No measured storage: the storage row is left out rather than guessed.
   const plus = planUsage(plans.plus, { aliases: 2, domains: 1, folders: 0, messages: 10 });
   assert.equal(plus.some((row) => row.key === "storage"), false);
   assert.equal(plus.every((row) => !row.full), true);
-  assert.equal(planUsage(plans.plus, { aliases: 0, domains: 0, folders: 0, messages: 0, usedBytes: 5_000_000 })[0]!.text, "<0.01 of 15 GB");
+  assert.equal(planUsage(plans.plus, { aliases: 0, domains: 0, folders: 0, messages: 0, usedBytes: 5_000_000 })[0]!.text, "<0.01 / 15 GB");
 });
 
 test("the plan name always matches the limits in force", async () => {

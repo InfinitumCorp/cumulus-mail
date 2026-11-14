@@ -287,7 +287,8 @@ export function quota(
   const pct = Math.min(100, ratio * 100);
   const warning: QuotaWarning = ratio >= 1 ? "over" : ratio >= 0.9 ? "near" : null;
   const shown = gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2);
-  return { label: `${shown} GB of ${quotaGb} GB`, pct, warning, measured };
+  // "2.41 / 15 GB" reads the same in every language (the catalog translates "GB").
+  return { label: `${shown} / ${quotaGb} GB`, pct, warning, measured };
 }
 
 export function parsePeople(value: string): Person[] {
