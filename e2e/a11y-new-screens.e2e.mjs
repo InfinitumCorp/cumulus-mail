@@ -100,6 +100,9 @@ test("Russian: the new screens are translated, named, and pass axe", async () =>
   await dialog.getByRole("button", { name: "Удалить ящик…" }).waitFor({ timeout: 10_000 });
   await dialog.getByRole("button", { name: "Письма (mbox)" }).waitFor();
   assert.deepEqual(await axeBlocking(page), [], "Russian account dialog");
+  // The language menu hides while a modal dialog is open (see #141), so check it once the dialog is closed.
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
   const menu = page.locator("select.lang-switch");
   assert.equal(await menu.getAttribute("aria-label"), "Язык", "the language menu has a name");
   await menu.focus();
