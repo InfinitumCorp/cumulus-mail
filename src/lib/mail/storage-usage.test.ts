@@ -31,17 +31,17 @@ const message = (id: string, body: string): MailMessage => ({
 
 test("quota: the server's count when there is one, the old estimate otherwise, soft warnings at 90%", () => {
   const measured = quota([], 15, 1_500_000_000);
-  assert.equal(measured.label, "1.50 GB of 15 GB");
+  assert.equal(measured.label, "1.50 / 15 GB");
   assert.equal(measured.measured, true);
   assert.equal(measured.warning, null);
   assert.equal(quota([], 1, 900_000_000).warning, "near");
   assert.equal(quota([], 1, 1_200_000_000).warning, "over");
   assert.equal(quota([], 1, 1_200_000_000).pct, 100);
-  assert.equal(quota([], 15, 1234).label, "<0.01 GB of 15 GB");
-  assert.equal(quota([], 15, 0).label, "0.00 GB of 15 GB");
+  assert.equal(quota([], 15, 1234).label, "<0.01 / 15 GB");
+  assert.equal(quota([], 15, 0).label, "0.00 / 15 GB");
   const estimate = quota([], 15);
   assert.equal(estimate.measured, false);
-  assert.equal(estimate.label, "2.41 GB of 15 GB");
+  assert.equal(estimate.label, "2.41 / 15 GB");
   assert.equal(quota([], 0, 10).warning, "over");
 });
 

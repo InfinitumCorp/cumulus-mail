@@ -26,7 +26,9 @@ export function isUiText(text) {
   if (text === "true" || text === "false") return false;
   if (!text || text.length < 2 || text.length > 300 || !LETTER.test(text)) return false;
   const bare = text.replace(/\{\d+\}/g, "");
-  if (!LETTER.test(bare) || /[{}<>=;`]|=>|\$\{|&&|\|\||\?\?/.test(bare)) return false;
+  // Code punctuation means code. A semicolon followed by a space and a word is prose
+  // ("keep it to yourself; make a new one"), so only other semicolons count.
+  if (!LETTER.test(bare) || /[{}<>=`]|;(?!\s\p{L})|=>|\$\{|&&|\|\||\?\?/u.test(bare)) return false;
   if (/^[a-z0-9:_/.\-[\]#%]+( [a-z0-9:_/.\-[\]#%]+)+$/.test(text)) return false; // tailwind class lists
   if (/^[a-z][a-zA-Z0-9]*$/.test(text) && /[A-Z]/.test(text)) return false; // camelCase identifiers
   if (/^(https?:|mailto:|\/)/.test(text)) return false;
@@ -47,7 +49,7 @@ function walkFiles(dir, out = []) {
 const SENTENCE = /^(\{0\} )?[\p{Lu}\p{Ll}][^]*(\s|[.!?…:])/u;
 const WORDS = /^[\p{Lu}][\p{L} '’-]*$/u;
 /** Object keys whose string values are shown in the UI (labels in data modules such as model.ts). */
-export const UI_KEYS = new Set(["label", "title", "description", "hint", "empty", "placeholder", "heading", "message", "text", "summary"]);
+export const UI_KEYS = new Set(["label", "title", "description", "hint", "empty", "placeholder", "heading", "message", "text", "summary", "note", "reason"]);
 
 /** A word-only string chosen by `?:` in a component (`busy ? "Saving" : "Save"`, `measured ? "used" : …`). */
 function isBranchWord(node) {
@@ -132,8 +134,20 @@ export function extractFrom(source, fileName = "file.tsx") {
   return found;
 }
 
-/** Strings the runtime asks for by name (src/i18n/i18n.js labels the language menu "Language"). */
-export const RUNTIME_KEYS = ["Language"];
+/**
+ * Dates. src/lib/mail/logic.ts formats them in English on the server and in the browser alike (so the
+ * hydrated page matches the server's), as "03 Nov" (formatShort) and "Tue 03 Nov, 16:48" (formatWhen).
+ * These patterns let a catalog translate them like any other text. Both "Sep" and "Sept": ICU versions differ.
+ */
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec"];
+export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const DATE_KEYS = [
+  ...MONTHS.map((month) => `{0} ${month}`),
+  ...WEEKDAYS.flatMap((day) => MONTHS.map((month) => `${day} {0} ${month}, {1}`)),
+];
+
+/** Strings the runtime asks for by name (src/i18n/i18n.js labels the language menu "Language"), and the date patterns. */
+export const RUNTIME_KEYS = ["Language", "{0} / {1} GB", ...DATE_KEYS];
 
 export function extractAll(root = projectRoot()) {
   const all = new Set(RUNTIME_KEYS);
