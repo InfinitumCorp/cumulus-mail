@@ -141,6 +141,8 @@ jobs:
       - run: npm run perf
       # No server code (database adapter, migrator, storage, secret names) in the public client assets.
       - run: npm run bundle:check
+      # The post-deploy smoke (npm run smoke -- --url) passes against this production build.
+      - run: npm run smoke:local
       # The Content-Security-Policy, enforced, on the same production build: no violation on any screen.
       - run: npm run csp:check
 
