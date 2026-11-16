@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCsp, CSP_REPORTING_ENDPOINTS } from "./csp.ts";
-import { createReportBudget, MAX_REPORT_BYTES, MAX_REPORTS_PER_REQUEST, parseCspReports, scrubPath } from "./csp-report.ts";
+import { createReportBudget, MAX_REPORT_BYTES, MAX_REPORTS_PER_REQUEST, parseCspReports, readCappedText, scrubPath } from "./csp-report.ts";
 import { metricLine } from "./observability/metrics.ts";
 
 test("the policy reports violations to this origin, both ways browsers do it", () => {
@@ -61,4 +61,21 @@ test("the per-minute budget drops the excess and says how many it dropped", () =
   clock = 60_000;
   assert.deepEqual(budget.take(), { ok: true, droppedBefore: 2 });
   assert.deepEqual(budget.take(), { ok: true, droppedBefore: 0 });
+});
+
+test("a chunked body with no Content-Length is read only up to the cap, never buffered whole", async () => {
+  let pulled = 0;
+  const chunk = new Uint8Array(4096).fill(65);
+  const endless = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulled += 1;
+      controller.enqueue(chunk);
+    },
+  });
+  const request = new Request("http://localhost/api/csp-report", { method: "POST", body: endless, duplex: "half" } as RequestInit);
+  assert.equal(await readCappedText(request, MAX_REPORT_BYTES), null, "over the cap");
+  assert.ok(pulled <= MAX_REPORT_BYTES / chunk.byteLength + 2, `stopped reading after ${pulled} chunks`);
+  const small = new Request("http://localhost/", { method: "POST", body: '{"csp-report":{}}' });
+  assert.equal(await readCappedText(small), '{"csp-report":{}}');
+  assert.equal(await readCappedText(new Request("http://localhost/", { method: "POST" })), "");
 });

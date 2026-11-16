@@ -155,6 +155,7 @@ export async function reportSpamForSession(
 ): Promise<{ ok: true }> {
   const { messageSender, reportNotSpam, reportSpam } = await import("./spam.ts");
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "spamReport");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const sender = await messageSender(db, tenantId, messageId);
@@ -172,6 +173,7 @@ export async function accountDeletionForSession(
 ): Promise<{ status: { purgeAfter: string } | null }> {
   const { cancelDeletion, deletionStatus, requestDeletion } = await import("./account-deletion.ts");
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  if (action !== "status") takeAction(tenantId, "deletion");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   if (action === "request") await requestDeletion(db, tenantId);

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createReportBudget, MAX_REPORT_BYTES, parseCspReports } from "@/lib/csp-report";
+import { createReportBudget, MAX_REPORT_BYTES, parseCspReports, readCappedText } from "@/lib/csp-report";
 import { metric } from "@/lib/observability/metrics";
 
 const budget = createReportBudget();
@@ -15,7 +15,9 @@ export const Route = createFileRoute("/api/csp-report")({
       POST: async ({ request }) => {
         const declared = Number(request.headers.get("content-length") ?? 0);
         if (declared > MAX_REPORT_BYTES) return new Response(null, { status: 413 });
-        const text = (await request.text()).slice(0, MAX_REPORT_BYTES + 1);
+        // Read at most MAX_REPORT_BYTES even without a Content-Length (a chunked body): never buffer more.
+        const text = await readCappedText(request, MAX_REPORT_BYTES);
+        if (text === null) return new Response(null, { status: 413 });
         for (const violation of parseCspReports(text, request.headers.get("content-type"))) {
           const { ok, droppedBefore } = budget.take();
           if (!ok) continue;

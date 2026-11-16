@@ -2,7 +2,7 @@
  * The security pass on auth, sessions and the public endpoints: one test per finding.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, test } from "node:test";
 import { betterAuth } from "better-auth";
@@ -69,6 +69,8 @@ test("rate limits: every limited action is applied in the session functions that
     ["checkDomainForSession", "domainCheck"],
     ["submitAbuseForSession", "abuseReport"],
     ["unsubscribeForSession", "unsubscribe"],
+    ["reportSpamForSession", "spamReport"],
+    ["accountDeletionForSession", "deletion"],
   ]) {
     const body = source.slice(source.indexOf(`export async function ${fn}(`)).split("\nexport ")[0]!;
     assert.match(body, new RegExp(`takeAction\\(tenantId, "${action}"\\)`), fn);
@@ -147,4 +149,57 @@ test("isolation: every *ForSession function resolves the mailbox from the sessio
   // And the resolver refuses a context user that is not the session's.
   // (As a one-line guard, or a block that also records the failure, #125.)
   assert.match(source, /if \(session\.id !== contextUserId\) (?:\{[\s\S]{0,300}?)?throw new TenantAccessError/);
+});
+
+// --- every server function needs a session, unless it is public on purpose -------------------------
+
+/** Server functions that are public by design, and why. Anything else must use authMiddleware. */
+const PUBLIC_SERVER_FNS = new Map([
+  ["openShareLink", "a share link is its own capability; it rejects any tenant from the caller"],
+  ["fetchProtectedLink", "a protected link is its own capability, opened with its password"],
+  ["burnProtectedLink", "the same protected link, read once"],
+  ["getConnectorReadiness", "a boolean: is the connector token configured; no data"],
+]);
+
+test("authz: every server function outside the public list requires a session (authMiddleware)", () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(ts|tsx)$/.test(name) && !/\.test\./.test(name)) files.push(path);
+    }
+  };
+  walk(join(root, "src"));
+  const found: string[] = [];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/export const (\w+) = createServerFn\([^)]*\)([\s\S]*?)\.handler/g)) {
+      const [, name, chain] = match as unknown as [string, string, string];
+      found.push(name);
+      if (PUBLIC_SERVER_FNS.has(name)) continue;
+      assert.match(chain, /\.middleware\(\[authMiddleware\]\)/, `${name} (${file.slice(root.length + 1)}) has no session check`);
+    }
+  }
+  assert.ok(found.length >= 25, `found ${found.length} server functions`);
+  assert.ok(found.includes("briefThread"), "the SCALVS brief is one of them, and needs a session");
+});
+
+test("rate limits: SCALVS briefs are limited per user", () => {
+  const source = readFileSync(join(root, "src/lib/mail/brief.ts"), "utf8");
+  assert.match(source, /takeAction\(context\.userId, "brief"\)/);
+  const [limit] = ACTION_LIMITS.brief;
+  for (let i = 0; i < limit; i += 1) takeAction("brief-user", "brief", 0);
+  assert.throws(() => takeAction("brief-user", "brief", 1), RateLimitedError);
+});
+
+test("SCALVS drafts are written for the signed-in person, never a hard-coded name", async () => {
+  const source = readFileSync(join(root, "src/lib/mail/brief.ts"), "utf8");
+  assert.doesNotMatch(source, /Alex Reid/);
+  const { draftSigner } = await import("./mail/brief.ts").catch(() => ({ draftSigner: null }));
+  if (draftSigner) {
+    assert.equal(draftSigner("  Ada\nLovelace  "), "Ada Lovelace");
+    assert.equal(draftSigner(""), "the mailbox owner");
+    assert.equal(draftSigner("x".repeat(200)).length, 80);
+  }
 });
