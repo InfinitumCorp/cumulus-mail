@@ -17,6 +17,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "i18n": "node scripts/i18n-extract.mjs",
     "perf": "node scripts/perf-budget.mjs",
+    "bundle:check": "node scripts/client-bundle-guard.mjs",
     "csp:check": "node scripts/csp-check.mjs",
     "db:status": "node scripts/migrate.mjs --status",
     "load:inbound": "node --experimental-strip-types --no-warnings scripts/load/inbound-load.mjs",
