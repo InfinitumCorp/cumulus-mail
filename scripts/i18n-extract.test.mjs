@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { catalogsModule, extractAll, extractFrom, isUiText, missingKeys } from "./i18n-extract.mjs";
+import { catalogsModule, DATE_KEYS, extractAll, extractFrom, isUiText, missingKeys } from "./i18n-extract.mjs";
 import { projectRoot } from "./nitro-preset.mjs";
 import { initialLocale } from "../src/i18n/initial-locale.js";
 
@@ -101,4 +101,33 @@ test("extractor: a lowercase id handed to a call is not UI text; a capitalised l
     "a.tsx",
   )].sort();
   assert.deepEqual(found, ["Moved", "Not moved", "clean", "spam"]);
+});
+
+test("extractor: a semicolon in prose is still UI text; a semicolon in code is not", () => {
+  assert.equal(isUiText("Anyone with it can read these events, so keep it to yourself; make a new one if it leaks."), true);
+  assert.equal(isUiText("Nothing is blocked yet; delete mail or upgrade."), true);
+  for (const code of ["a;b", "color: red;", "x = 1; y = 2", "a; 2"]) assert.equal(isUiText(code), false, code);
+});
+
+test("extractor: note and reason values in data modules are UI text (sign-in note, bridge status, outbox holds)", () => {
+  const found = extractFrom(
+    `export const a = { note: "This mailbox trusts that sign-in.", reason: "Held in the outbox. Verify your email.", id: "Not this" };`,
+    "lib.ts",
+  );
+  assert.deepEqual([...found].sort(), ["Held in the outbox. Verify your email.", "This mailbox trusts that sign-in."]);
+});
+
+test("dates: every month and weekday the formatters print has a pattern, and ru translates each", () => {
+  const ru = JSON.parse(readFileSync(join(projectRoot(), "src/i18n/locales/ru.json"), "utf8"));
+  const short = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "2-digit", month: "short" });
+  const when = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const toKey = (text) => text.replace(/^(\w+ )?\d{2} /, (m, day) => `${day ?? ""}{0} `).replace(/, \d{2}:\d{2}$/, ", {1}");
+  for (let day = 0; day < 365; day += 1) {
+    const date = new Date(Date.UTC(2026, 0, 1 + day, 9, 30));
+    for (const text of [short.format(date), when.format(date)]) {
+      const key = toKey(text);
+      assert.ok(DATE_KEYS.includes(key), `${text} → ${key}`);
+      assert.ok(ru[key] && !/[A-Za-z]/.test(ru[key].replace(/\{\d\}/g, "")), `ru for ${key}: ${ru[key]}`);
+    }
+  }
 });

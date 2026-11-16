@@ -287,7 +287,7 @@ test("formatting helpers: sizes, initials, row titles", () => {
   assert.equal(initials("   "), "•");
   assert.equal(rowTitle(message()), "Leah");
   assert.equal(rowTitle(message({ from: { name: "Alex", email: "ALEX@cumuluscloud.app" } }), "alex@cumuluscloud.app"), "To Alex");
-  assert.equal(rowTitle(message({ from: { name: "Alex", email: "alex@cumuluscloud.app" }, to: [] }), "alex@cumuluscloud.app"), "To someone");
+  assert.equal(rowTitle(message({ from: { name: "Alex", email: "alex@cumuluscloud.app" }, to: [] }), "alex@cumuluscloud.app"), "To —");
 });
 
 test("recipient fields parse and print back", () => {
@@ -374,7 +374,7 @@ test("snooze time, quoting, transcripts and quota", () => {
   assert.match(transcript([message(), message({ id: "m-2", body: "Second" })]), /See you Thursday\.\n\n----\n\nFrom: Leah/);
   const full = quota([message({ attachments: [{ name: "big", size: 50e9 }] })], 15);
   assert.equal(full.pct, 100);
-  assert.match(quota([], 15).label, /^2\.41 GB of 15 GB$/);
+  assert.match(quota([], 15).label, /^2\.41 \/ 15 GB$/);
 });
 
 // ---- invites -------------------------------------------------------------

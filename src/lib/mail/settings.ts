@@ -117,6 +117,9 @@ function asEvent(value: unknown): CalEvent | null {
     ...(Array.isArray(row.exdates)
       ? { exdates: row.exdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
       : {}),
+    ...(Array.isArray(row.rdates)
+      ? { rdates: row.rdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
+      : {}),
     ...(typeof row.uid === "string" && row.uid ? { uid: row.uid.slice(0, 300) } : {}),
     ...(typeof row.organizer === "string" && validEmail(row.organizer) ? { organizer: row.organizer.toLowerCase().slice(0, 320) } : {}),
     ...(row.rsvp === "accepted" || row.rsvp === "tentative" || row.rsvp === "declined" ? { rsvp: row.rsvp } : {}),

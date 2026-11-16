@@ -5,7 +5,7 @@ import { isCustomFolderId } from "@/lib/mail/folders";
 import { CATEGORIES, type Category, type Subscription } from "@/lib/mail/categories";
 
 export type InboxTab = "all" | Category | "subscriptions";
-import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
+import { formatShort, initials, messageSnippet, rowTitleParts } from "@/lib/mail/logic";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 type Props = {
@@ -250,7 +250,7 @@ export function MessageList({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}>{rowTitle(message, meEmail)}</span>
+                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}><RowTitle message={message} meEmail={meEmail} /></span>
                       <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at, timeZone)}</span>
                     </span>
                     <span className={`mt-1 flex items-baseline gap-2 text-sm ${unread ? "text-ink" : "text-muted"}`}>
@@ -310,5 +310,17 @@ function EmptyState({ box, title, query, unreadOnly }: { box: string; title: str
     <div className="px-4 py-10" role="status">
       <p className="text-sm text-muted">Nothing in {title.toLowerCase()}.</p>
     </div>
+  );
+}
+
+/** "To Mira Chen" for mail you sent ("To" is interface text; the name is data), else the sender's name. */
+function RowTitle({ message, meEmail }: { message: MailMessage; meEmail?: string }) {
+  const { to, name } = rowTitleParts(message, meEmail);
+  return to ? (
+    <>
+      To <span translate="no">{name}</span>
+    </>
+  ) : (
+    <span translate="no">{name}</span>
   );
 }

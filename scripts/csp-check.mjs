@@ -7,7 +7,8 @@
  *
  * The e2e suite runs on the development server, which has no CSP (Vite injects its own inline
  * scripts), so this is where the policy is exercised: the mail list, a message, compose, the account
- * dialog, calendar and contacts, with the policy *enforced*.
+ * dialog, calendar and contacts, with the policy *enforced*. It also checks that every page names the
+ * report endpoint and that reports posted there become `csp.violation` metric lines.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -93,6 +94,7 @@ export async function checkCsp(base) {
       });
       const response = await page.goto(base + step.path, { waitUntil: "networkidle" });
       const header = response?.headers()["content-security-policy"] ?? "";
+      const reporting = response?.headers()["reporting-endpoints"] ?? "";
       if (step.act) {
         await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
         await step.act(page);
@@ -105,7 +107,13 @@ export async function checkCsp(base) {
       }
       await page.waitForTimeout(500);
       const violations = await page.evaluate(() => window.__cspViolations);
-      results.push({ name: step.name, enforced: header.includes("script-src"), reached, violations });
+      results.push({
+        name: step.name,
+        enforced: header.includes("script-src"),
+        reports: header.includes("report-uri /api/csp-report") && header.includes("report-to csp") && reporting === 'csp="/api/csp-report"',
+        reached,
+        violations,
+      });
       await context.close();
     }
   } finally {
@@ -124,19 +132,40 @@ async function main() {
   const port = await freePort();
   const child = spawn(process.execPath, [server], {
     env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", MAIL_CSP: "enforce", MAIL_BLOB_KEY: randomBytes(32).toString("hex"), DATABASE_URL: "" },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "ignore"],
   });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
   let failed = false;
   try {
     const base = `http://127.0.0.1:${port}`;
     await waitFor(`${base}/api/health`, 60_000);
     for (const r of await checkCsp(base)) {
-      const bad = !r.enforced || !r.reached || r.violations.length > 0;
+      const bad = !r.enforced || !r.reports || !r.reached || r.violations.length > 0;
       failed ||= bad;
-      const why = !r.enforced ? "no enforced CSP header" : !r.reached ? "screen did not open" : `${r.violations.length} violation(s)`;
+      const why = !r.enforced
+        ? "no enforced CSP header"
+        : !r.reports
+          ? "no report-uri / report-to / Reporting-Endpoints"
+          : !r.reached
+            ? "screen did not open"
+            : `${r.violations.length} violation(s)`;
       console.log(`[csp] ${bad ? "FAIL" : "ok  "} ${r.name}: ${why}`);
       for (const v of r.violations.slice(0, 5)) console.log(`[csp]        ${v}`);
     }
+    // Reports reach the server and become metric lines, in both formats browsers send.
+    const before = stdout.split("\n").filter((line) => line.includes('"metric":"csp.violation"')).length;
+    const legacy = { "csp-report": { "document-uri": `${base}/`, "effective-directive": "script-src-elem", "blocked-uri": "inline", disposition: "enforce" } };
+    const modern = [{ type: "csp-violation", body: { documentURL: `${base}/`, effectiveDirective: "img-src", blockedURL: "https://example.org/x.png", disposition: "enforce" } }];
+    const posted = await Promise.all([
+      fetch(`${base}/api/csp-report`, { method: "POST", headers: { "content-type": "application/csp-report" }, body: JSON.stringify(legacy) }),
+      fetch(`${base}/api/csp-report`, { method: "POST", headers: { "content-type": "application/reports+json" }, body: JSON.stringify(modern) }),
+    ]);
+    await new Promise((r) => setTimeout(r, 500));
+    const lines = stdout.split("\n").filter((line) => line.includes('"metric":"csp.violation"')).length - before;
+    const reportsOk = posted.every((res) => res.status === 204) && lines === 2;
+    failed ||= !reportsOk;
+    console.log(`[csp] ${reportsOk ? "ok  " : "FAIL"} violation reports: ${posted.map((r) => r.status).join(", ")}, ${lines} csp.violation line(s)`);
   } finally {
     child.kill();
   }

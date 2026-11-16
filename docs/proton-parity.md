@@ -46,8 +46,9 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Encrypted contact fields (phone, postal address, OpenPGP key) | added | Sealed with the tenant key. The ciphertext does not contain the phone number. |
 | Calendar list | existing | |
 | Calendar invite view | added | A `VCALENDAR` body can be added to this mailbox’s calendar. |
-| Calendar recurrence and RSVP | added | Invites with an RRULE (DAILY, WEEKLY, MONTHLY, YEARLY; INTERVAL, COUNT, UNTIL, BYDAY including ordinals like `2TU` or `-1FR`) and EXDATE show the rule, and the calendar list shows the next occurrences up to 60 days ahead. Accept, Maybe and Decline save the answer and send an RFC 5546 iTIP REPLY to the organizer through the normal send path. Internal organizers get it right away; outside ones wait in the Outbox like other outside mail. A REPLY is not shown as a new invite. |
-| Calendar sharing, YEARLY with BYDAY/BYMONTH, RDATE | deferred | The calendar page stays a list. Proton Calendar is a separate app. |
+| Calendar recurrence and RSVP | added | Invites with an RRULE (DAILY, WEEKLY, MONTHLY, YEARLY; INTERVAL, COUNT, UNTIL, BYDAY including ordinals like `2TU` or `-1FR`, BYMONTH, BYMONTHDAY), EXDATE and RDATE show the rule, and the calendar list shows the next occurrences up to 60 days ahead. Accept, Maybe and Decline save the answer and send an RFC 5546 iTIP REPLY to the organizer through the normal send path. Internal organizers get it right away; outside ones wait in the Outbox like other outside mail. A REPLY is not shown as a new invite. |
+| Recurrence: BYMONTH, BYMONTHDAY, YEARLY with BYDAY, RDATE | added | "4th Thursday of November" (`FREQ=YEARLY;BYMONTH=11;BYDAY=4TH`), "the 1st and 15th" (`BYMONTHDAY=1,15`), the last day of the month (`BYMONTHDAY=-1`), Friday the 13th, and extra dates (RDATE, also without an RRULE) show their repeats; RDATE is kept and published in the calendar feed. |
+| Calendar sharing | deferred | The calendar page stays a list. Proton Calendar is a separate app. |
 | Search over decrypted mail | existing | Runs in the client after the mailbox is opened. |
 | Server blind index (subject, from, to, snippet equality) | existing | HMAC under the tenant key. |
 | `label:`, `in:`, `is:encrypted` | added | |

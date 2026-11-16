@@ -5,7 +5,7 @@ import { mailboxAddress } from "./domain.ts";
 import { addressBlind, publishAddress } from "./directory.ts";
 import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
-import { SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
+import { EVENTS, SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { insertMessage } from "./records.ts";
 
@@ -79,6 +79,12 @@ export async function seedPreviewContents(db: MailQuery, tenantId: string): Prom
   await db.query(`update cumulus_mail.mailboxes set signature = $2 where tenant_id = $1`, [
     tenantId,
     sealText(tenantId, "Alex Reid\nalex@cumuluscloud.app"),
+  ]);
+  // The sample calendar belongs to the preview mailbox like the sample mail does. (It used to be added
+  // by the client to every mailbox's calendar, so real users saw demo meetings.)
+  await db.query(`update cumulus_mail.mailboxes set settings_enc = $2 where tenant_id = $1 and settings_enc is null`, [
+    tenantId,
+    sealText(tenantId, JSON.stringify({ ...defaultSettings(), events: EVENTS })),
   ]);
 }
 

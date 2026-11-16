@@ -31,3 +31,13 @@ Locally:
 VITE_AUTH_ENABLED=false npm run build:node
 npm run csp:check
 ```
+
+## Violation reports
+Every page names a report endpoint: `report-uri /api/csp-report` (Firefox, Safari) and `report-to csp` with a `Reporting-Endpoints: csp="/api/csp-report"` header (Chromium, which batches reports and may send them up to a minute later). Each report becomes one `csp.violation` metric line: the directive, where the blocked thing came from (an origin or a keyword such as `inline`, never a full URL), the page path with tokens and ids replaced, and `enforce` or `report`. No query strings, no addresses. A request carries at most 10 reports, and each copy writes at most 120 lines a minute; the next line after a drop says how many were dropped.
+
+So both stages are visible in the logs:
+- under `MAIL_CSP=report-only`, the lines show what *would* be blocked, before you turn enforcement on;
+- under `enforce`, they show what *is* blocked, with an alert (`docs/ops/alerts.md`, "CSP blocking something").
+
+`npm run csp:check` checks that every page names the endpoint and that reports posted there become lines.
+

@@ -5,6 +5,7 @@ import type { TenantStorage } from "./delivery.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { createBounceHandler } from "./dsn.ts";
 import { applyRules } from "./logic.ts";
+import { noteNewMessage } from "./bridge/uids.ts";
 import { parseMime } from "./mime.ts";
 import type { MailMessage, MailRule } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -120,6 +121,9 @@ export async function ingestInboundEmail(
   await insertMessage(db, tenantId, filed, rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
   metric("mail.inbound.result", { outcome: "stored", folder: filed.folder === "quarantine" ? "quarantine" : "mailbox" });
+  // New mail gets its IMAP UID now, so a bridge sees it (and an IDLE wakes) without waiting for the
+  // next snapshot write. A no-op unless MAIL_BRIDGE=on.
+  await noteNewMessage(db, tenantId, filed.folder, id);
   return { stored: [id] };
 }
 

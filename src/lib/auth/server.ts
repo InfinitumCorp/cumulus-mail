@@ -38,7 +38,7 @@ import { SIGN_IN_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
 import { PREVIEW_ALLOWED_HOSTS } from "./preview";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
-import { authIpOptions, authSettingsKey, resolveAuthSecret } from "./auth-settings.ts";
+import { authIpOptions, authRateLimit, authSettingsKey, deployedTrustedOrigins, resolveAuthSecret } from "./auth-settings.ts";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -116,7 +116,7 @@ function buildAuth(region: Region) {
   // listed. They are identity, Drive, and mailbox hosts, not this app's cookie origin, and
   // a wildcard would collapse cookie separation across those hosts.
   const trustedOrigins: string[] = explicitBaseURL
-    ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
+    ? deployedTrustedOrigins(explicitBaseURL, LOCAL_DEV_ORIGINS)
     : [
         // Host wildcards (matched against Origin's host)
         ...previewAllowedHosts,
@@ -171,6 +171,9 @@ function buildAuth(region: Region) {
     // See `trustedOrigins` construction above — must cover live preview hosts AND
     // local loopback variants, or clients get "Invalid origin".
     trustedOrigins,
+
+    // Explicit, because Better Auth's own default depends on NODE_ENV (auth-settings.ts).
+    rateLimit: authRateLimit(process.env),
 
     // Encrypt Cumulus ID tokens at rest, and treat Cumulus ID as the trusted
     // first-party identity: "sign in" and "create" are the same CID, so they link
