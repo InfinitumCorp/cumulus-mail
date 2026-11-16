@@ -11,6 +11,7 @@ import {
   tenantTables,
 } from "./account-deletion.ts";
 import { openMailbox } from "./mailbox.ts";
+import { runScheduledJobsOn } from "./scheduled-jobs.ts";
 import type { MailMessage } from "./model.ts";
 import { insertAttachment, insertMessage } from "./records.ts";
 import { createSuppressionList } from "./suppression.ts";
@@ -122,7 +123,7 @@ test("nothing happens before the grace period ends", async () => {
   await populate("del-early");
   const now = new Date("2026-11-13T10:00:00Z");
   await requestDeletion(db, "del-early", now);
-  assert.deepEqual(await purgeDueDeletions(db, harness.storageFor, new Date(now.getTime() + GRACE_MS - 1)), { purged: 0 });
+  assert.equal((await purgeDueDeletions(db, harness.storageFor, new Date(now.getTime() + GRACE_MS - 1))).purged, 0);
   assert.ok(Object.keys(await leftovers("del-early")).length > 1);
 });
 
@@ -184,4 +185,39 @@ test("tables added later are found from the schema, so they are deleted too", as
   await purgeMailbox(db, harness.storageFor("del-future"), "del-future");
   assert.deepEqual(await leftovers("del-future"), {});
   await db.query(`drop table cumulus_mail.future_feature`);
+});
+
+test("one mailbox that fails to purge does not hold up the others; it is retried next time", async () => {
+  const { db, storageFor } = harness;
+  await populate("del-stuck");
+  await populate("del-after");
+  const now = new Date("2030-01-01T00:00:00Z");
+  // The stuck one asked first, so it comes first in every batch.
+  await requestDeletion(db, "del-stuck", now);
+  await requestDeletion(db, "del-after", new Date(now.getTime() + 1000));
+  const brokenStorage = (tenant: string) =>
+    tenant === "del-stuck"
+      ? { ...storageFor(tenant), delete: async () => Promise.reject(Object.assign(new Error("storage is down"), { code: "EIO" })) }
+      : storageFor(tenant);
+  const lines: string[] = [];
+  const result = await purgeDueDeletions(db, brokenStorage, new Date(now.getTime() + GRACE_MS + 2000), { log: (line) => lines.push(line) });
+  assert.ok(result.failed >= 1 && result.purged >= 1, JSON.stringify(result));
+  assert.deepEqual(await leftovers("del-after"), {}, "the mailbox behind the stuck one was still deleted");
+  assert.ok(Object.keys(await leftovers("del-stuck")).length > 1, "the stuck one is kept, still marked for deletion");
+  assert.equal(lines.some((line) => line.includes("mail.deletion.failed") && line.includes("storage is down")), true);
+  assert.equal(lines.some((line) => line.includes("del-stuck")), false, "the log line does not name the mailbox");
+  // Once storage is back, the next run deletes it.
+  await purgeDueDeletions(db, storageFor, new Date(now.getTime() + GRACE_MS + 60_000));
+  assert.deepEqual(await leftovers("del-stuck"), {});
+});
+
+test("the shared scheduled jobs (also run by POST /api/cron/tick on the Russia copy) purge due deletions", async () => {
+  const { db, storageFor } = harness;
+  await populate("del-via-cron");
+  const now = new Date("2031-01-01T00:00:00Z");
+  await requestDeletion(db, "del-via-cron", now);
+  const report = await runScheduledJobsOn(db, storageFor, now.getTime() + GRACE_MS, { outbound: null });
+  assert.ok(report.deletions.purged >= 1, JSON.stringify(report.deletions));
+  assert.equal(report.outbound, null);
+  assert.deepEqual(await leftovers("del-via-cron"), {});
 });

@@ -1,21 +1,20 @@
 import { getSql } from "@/lib/db";
 import { createStorageDriver, openTenantStorage } from "@/lib/storage";
 import { currentOutbound } from "./outbound/config.ts";
-import { processOutboundQueue, type QueueReport } from "./outbound/queue.ts";
 import type { MailQuery } from "./query.ts";
-import { releaseScheduledMail, type ReleaseReport } from "./release.ts";
+import { runScheduledJobsOn, type ScheduledJobsReport } from "./scheduled-jobs.ts";
 
 /**
- * The scheduled jobs the US copy runs from its Cloudflare cron (workers/email handleScheduled): release
- * due scheduled drafts and expired undo holds, then send due outbound queue rows when SMTP is configured.
- * Safe to overlap: the queue claims rows atomically and releases skip drafts edited meanwhile.
+ * The scheduled jobs, for POST /api/cron/tick (the Russia copy's scheduler). The same jobs the US copy
+ * runs from its Cloudflare cron (workers/email handleScheduled); see src/lib/mail/scheduled-jobs.ts.
  */
-export async function runScheduledJobs(now = Date.now()): Promise<ReleaseReport & { outbound: QueueReport | null }> {
+export async function runScheduledJobs(now = Date.now()): Promise<ScheduledJobsReport> {
   const sql = await getSql();
   const db: MailQuery = { query: (text, params) => sql.query(text, params ?? []) };
   const driver = createStorageDriver();
-  const released = await releaseScheduledMail(db, (tenantId) => openTenantStorage(tenantId, driver), now);
-  const outbound = currentOutbound();
-  const queue = outbound ? await processOutboundQueue(db, outbound, { now: new Date(now) }) : null;
-  return { ...released, outbound: queue };
+  const { deletionStripe } = await import("./account-deletion.ts");
+  return runScheduledJobsOn(db, (tenantId) => openTenantStorage(tenantId, driver), now, {
+    outbound: currentOutbound(),
+    stripe: await deletionStripe(),
+  });
 }
