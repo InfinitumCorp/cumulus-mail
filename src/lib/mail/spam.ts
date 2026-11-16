@@ -177,7 +177,8 @@ export function dohResolver(env: Record<string, string | undefined> = process.en
 const passed = (auth?: MailAuth) => Boolean(auth && auth.disposition === "deliver" && (auth.dmarc === "pass" || auth.dkim === "pass" || auth.spf === "pass"));
 
 /**
- * Where an arriving message goes. Also counts it toward the sender domain's `received` total.
+ * Where an arriving message goes. Also counts it toward the sender domain's `received` total when it
+ * authenticated as that domain.
  * `auth.disposition === "quarantine"` (DMARC said so) is respected first: no list or reputation
  * overrides the sending domain's own policy.
  */
@@ -190,7 +191,9 @@ export async function inboundVerdict(
 ): Promise<SpamVerdict> {
   assertTenantId(tenantId);
   const domain = senderDomain(from);
-  if (domain) await bump(db, domain, "received");
+  // Only mail that authenticated as the domain counts toward its volume, like votes: forged mail must not
+  // be able to pad a domain's `received` count and so dilute its spam votes (RECEIVED_SHARE).
+  if (domain && authenticatedForDomain(auth)) await bump(db, domain, "received");
   if (auth?.disposition === "quarantine") return { folder: "quarantine", reason: "authentication" };
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };

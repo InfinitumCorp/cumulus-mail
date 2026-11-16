@@ -57,6 +57,9 @@ test("clean mail goes to the Inbox and is counted for its domain", async () => {
   const tenant = await mailbox("spam-clean");
   assert.deepEqual(await inboundVerdict(harness.db, tenant, "hi@clean.example", PASS), { folder: "inbox", reason: "clean" });
   assert.equal((await reputation(harness.db, "clean.example")).received, 1);
+  // Forged mail (no authentication) is delivered by the same rules but not counted for the domain.
+  await inboundVerdict(harness.db, tenant, "hi@clean.example", NONE);
+  assert.equal((await reputation(harness.db, "clean.example")).received, 1);
 });
 
 test("Report spam blocks the sender for that mailbox only", async () => {
