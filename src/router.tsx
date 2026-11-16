@@ -1,7 +1,7 @@
 import "@/lib/zod-config";
 import { createRouter } from "@tanstack/react-router";
 import { createIsomorphicFn, getGlobalStartContext } from "@tanstack/react-start";
-import { AppErrorComponent } from "@/lib/error-component";
+import { AppErrorComponent, AppNotFoundComponent } from "@/lib/error-component";
 import { previewPathRewrite } from "@/lib/preview-path-prefix";
 import { routeTree } from "./routeTree.gen";
 
@@ -23,5 +23,6 @@ export function getRouter() {
     ...(nonce ? { ssr: { nonce } } : {}),
     rewrite: previewPathRewrite(),
     defaultErrorComponent: AppErrorComponent,
+    defaultNotFoundComponent: AppNotFoundComponent,
   });
 }
