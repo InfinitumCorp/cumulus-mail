@@ -2,7 +2,8 @@ import { Fragment } from "react";
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attachment, CalEvent, CustomFolder, FolderId, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
-import { formatSize, formatWhen, initials, isE2E, SYSTEM_LABEL_NAMES } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials, isE2E, SYSTEM_LABEL_NAMES, zoneLabel } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -124,6 +125,7 @@ function Opened({
   onReceipt,
   onReport,
 }: Props & { message: MailMessage }) {
+  const timeZone = useViewerTimeZone();
   const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
   return (
@@ -323,7 +325,7 @@ function Opened({
                         {item.from.name} <span className="text-muted">{`<${item.from.email}>`}</span>
                       </p>
                       <time className="font-mono text-xs text-muted" dateTime={item.at}>
-                        {formatWhen(item.at)} UTC
+                        {formatWhen(item.at, timeZone)} {zoneLabel(item.at, timeZone)}
                       </time>
                     </div>
                     <p className="mt-1 text-sm text-muted">
