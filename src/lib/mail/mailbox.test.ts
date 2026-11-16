@@ -4,7 +4,7 @@ import { TenantAccessError } from "../storage/adapter.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
 import { rejectCallerTenant } from "./snapshot.ts";
-import { readSnapshot, replaceMailboxContents } from "./records.ts";
+import { insertAttachment, insertMessage, readSnapshot, replaceMailboxContents } from "./records.ts";
 import { createHarness, profile } from "./test-support.ts";
 import type { MailMessage } from "./model.ts";
 import { bytesToBase64 } from "./bytes.ts";
@@ -167,4 +167,53 @@ test("the server refuses a fourth custom domain instead of silently dropping it"
   } finally {
     await harness.close();
   }
+});
+
+test("a save never deletes mail the client did not know about (it arrived after the tab loaded)", async () => {
+  const { db, storageFor } = harness;
+  const tenant = "save-keeps-new";
+  await openMailbox(db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Ada"));
+  await writeSnapshot(db, storageFor, tenant, { ...(await readSnapshot(db, tenant)), messages: [letter({ id: "old-1", folder: "inbox" }), letter({ id: "old-2", folder: "inbox" })] });
+
+  // The tab loads the mailbox...
+  const loaded = await readSnapshot(db, tenant);
+  const knownIds = loaded.messages.map((m) => m.id);
+
+  // ...then new mail arrives on the server, with its raw message and an attachment.
+  const storage = storageFor(tenant);
+  const raw = await storage.put(new TextEncoder().encode("From: x@example.com\r\n\r\nnew mail"));
+  const file = await storage.put(new TextEncoder().encode("attached"));
+  await insertMessage(db, tenant, letter({ id: "arrived", folder: "inbox", subject: "Arrived meanwhile", unread: true }), raw.blobId);
+  await insertAttachment(db, tenant, "arrived", { id: "att-arrived", name: "a.txt", size: 8, contentType: "text/plain", sha256: file.sha256, objectKey: file.blobId });
+
+  // The person stars a message in the stale tab: the save keeps the new mail, its raw message and file.
+  const starred = loaded.messages.map((m) => (m.id === "old-1" ? { ...m, starred: true } : m));
+  const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, messages: starred, knownIds });
+  const ids = saved.messages.map((m) => m.id).sort();
+  assert.deepEqual(ids, ["arrived", "old-1", "old-2"]);
+  assert.equal(saved.messages.find((m) => m.id === "old-1")?.starred, true);
+  const arrived = saved.messages.find((m) => m.id === "arrived");
+  assert.equal(arrived?.subject, "Arrived meanwhile");
+  assert.equal(arrived?.attachments?.[0]?.name, "a.txt");
+  assert.ok(await storage.get(raw.blobId), "the raw message is still stored");
+  assert.ok(await readAttachment(db, storage, tenant, "arrived", "att-arrived"), "the attachment still opens");
+
+  // Deleting a message the client knew about still deletes it.
+  const after = saved.messages.filter((m) => m.id !== "old-2");
+  const again = await writeSnapshot(db, storageFor, tenant, { ...saved, messages: after, knownIds: saved.messages.map((m) => m.id) });
+  assert.deepEqual(again.messages.map((m) => m.id).sort(), ["arrived", "old-1"]);
+
+  // A client that has not loaded yet (knownIds empty) cannot delete anything.
+  const blindSave = await writeSnapshot(db, storageFor, tenant, { ...again, messages: [], knownIds: [] });
+  assert.deepEqual(blindSave.messages.map((m) => m.id).sort(), ["arrived", "old-1"]);
+});
+
+test("an older client without knownIds still replaces the mailbox (unchanged behaviour)", async () => {
+  const { db, storageFor } = harness;
+  const tenant = "save-legacy";
+  await openMailbox(db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Ada"));
+  await writeSnapshot(db, storageFor, tenant, { ...(await readSnapshot(db, tenant)), messages: [letter({ id: "keep", folder: "inbox" }), letter({ id: "drop", folder: "inbox" })] });
+  const loaded = await readSnapshot(db, tenant);
+  const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, messages: loaded.messages.filter((m) => m.id !== "drop") });
+  assert.deepEqual(saved.messages.map((m) => m.id), ["keep"]);
 });

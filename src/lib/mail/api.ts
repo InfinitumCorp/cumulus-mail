@@ -8,6 +8,10 @@ function asSnapshot(input: unknown): MailboxSnapshot {
   if (!input || typeof input !== "object" || !Array.isArray((input as MailboxSnapshot).messages)) {
     throw new Error("Missing mailbox");
   }
+  const known = (input as MailboxSnapshot).knownIds;
+  if (known !== undefined && (!Array.isArray(known) || known.length > 100_000 || known.some((id) => typeof id !== "string"))) {
+    throw new Error("Invalid knownIds");
+  }
   return input as MailboxSnapshot;
 }
 
