@@ -46,6 +46,7 @@ import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
 import { useInterfaceLanguage } from "@/lib/interface-language";
+import { LanguageSlot } from "@/components/language";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -784,7 +785,8 @@ export function MailApp() {
   return (
     <div className="mail-shell">
       <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
-        <div className="flex items-center gap-2">
+        {/* md:contents: on wider screens the title row's items join the header row, so the language slot can sit at its right end. */}
+        <div className="flex items-center gap-2 md:contents">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">
             <Menu className="size-5" />
           </button>
@@ -795,11 +797,14 @@ export function MailApp() {
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
+          {/* The language menu (src/i18n/start.js): right of the wordmark on phones, the header's right end on
+              wider screens. It used to float bottom-left over the sidebar; moved here by owner waiver (2026-11-16). */}
+          <LanguageSlot className="ml-auto flex shrink-0 items-center md:order-last" />
           {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
           <button
             type="button"
             onClick={() => writeNew()}
-            className="ml-auto grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
+            className="grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
             aria-label="Compose"
           >
             <SquarePen className="size-5" />
