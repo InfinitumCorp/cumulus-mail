@@ -8,7 +8,8 @@
  * The e2e suite runs on the development server, which has no CSP (Vite injects its own inline
  * scripts), so this is where the policy is exercised: the mail list, a message, compose, the account
  * dialog, calendar and contacts, with the policy *enforced*. It also checks that every page names the
- * report endpoint and that reports posted there become `csp.violation` metric lines.
+ * report endpoint and that reports posted there become `csp.violation` metric lines, and that no page
+ * carries the grok.com platform script or a CSP allowance for it (VITE_GROK_EXTENSIONS is off by default).
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -107,11 +108,16 @@ export async function checkCsp(base) {
       }
       await page.waitForTimeout(500);
       const violations = await page.evaluate(() => window.__cspViolations);
+      // No third-party platform script on any page, and no CSP allowance for one (owner decision 2026-11-16:
+      // VITE_GROK_EXTENSIONS is off by default, scripts/grok-pwa-shared.mjs).
+      const html = await page.content();
+      const grokFree = !header.includes("grok.com") && !html.includes("grok.com");
       results.push({
         name: step.name,
         enforced: header.includes("script-src"),
         reports: header.includes("report-uri /api/csp-report") && header.includes("report-to csp") && reporting === 'csp="/api/csp-report"',
         reached,
+        grokFree,
         violations,
       });
       await context.close();
@@ -141,7 +147,7 @@ async function main() {
     const base = `http://127.0.0.1:${port}`;
     await waitFor(`${base}/api/health`, 60_000);
     for (const r of await checkCsp(base)) {
-      const bad = !r.enforced || !r.reports || !r.reached || r.violations.length > 0;
+      const bad = !r.enforced || !r.reports || !r.reached || !r.grokFree || r.violations.length > 0;
       failed ||= bad;
       const why = !r.enforced
         ? "no enforced CSP header"
@@ -149,7 +155,9 @@ async function main() {
           ? "no report-uri / report-to / Reporting-Endpoints"
           : !r.reached
             ? "screen did not open"
-            : `${r.violations.length} violation(s)`;
+            : !r.grokFree
+              ? "a grok.com script or CSP allowance is on the page (VITE_GROK_EXTENSIONS must stay off)"
+              : `${r.violations.length} violation(s)`;
       console.log(`[csp] ${bad ? "FAIL" : "ok  "} ${r.name}: ${why}`);
       for (const v of r.violations.slice(0, 5)) console.log(`[csp]        ${v}`);
     }
