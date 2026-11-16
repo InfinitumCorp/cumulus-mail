@@ -287,7 +287,7 @@ test("formatting helpers: sizes, initials, row titles", () => {
   assert.equal(initials("   "), "•");
   assert.equal(rowTitle(message()), "Leah");
   assert.equal(rowTitle(message({ from: { name: "Alex", email: "ALEX@cumuluscloud.app" } }), "alex@cumuluscloud.app"), "To Alex");
-  assert.equal(rowTitle(message({ from: { name: "Alex", email: "alex@cumuluscloud.app" }, to: [] }), "alex@cumuluscloud.app"), "To someone");
+  assert.equal(rowTitle(message({ from: { name: "Alex", email: "alex@cumuluscloud.app" }, to: [] }), "alex@cumuluscloud.app"), "To —");
 });
 
 test("recipient fields parse and print back", () => {
