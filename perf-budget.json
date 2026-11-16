@@ -1,9 +1,9 @@
 {
-  "//": "Gzip bytes and milliseconds for the production build (scripts/perf-budget.mjs). Set about 10% above the numbers measured on 2026-11-13; raise them only in the change that needs it, and say why. Timings fail only past 2x, because CI machines vary.",
+  "//": "Gzip bytes and milliseconds for the production build (scripts/perf-budget.mjs). Set about 10% above the numbers measured on 2026-11-13; raise them only in the change that needs it, and say why. Timings fail only past 2x, because CI machines vary. Raised 2026-11-14 in the follow-up to #135: / 216000 to 221000 and /p 161000 to 165000 bytes, for the Russian interface (about 110 date patterns and 20 strings that never reached the catalog, ~3.6 kB per route); with every open PR merged, / measured 213.5 KiB against 210.9.",
   "totalJsGzip": 353000,
   "largestChunkGzip": 137000,
   "routes": {
-    "/": { "jsGzip": 216000, "fcp": 1500, "load": 3000, "forbid": ["openpgp"] },
-    "/p/00000000000000000000000000000000": { "jsGzip": 161000, "fcp": 1500, "load": 3000 }
+    "/": { "jsGzip": 221000, "fcp": 1500, "load": 3000, "forbid": ["openpgp"] },
+    "/p/00000000000000000000000000000000": { "jsGzip": 165000, "fcp": 1500, "load": 3000 }
   }
 }

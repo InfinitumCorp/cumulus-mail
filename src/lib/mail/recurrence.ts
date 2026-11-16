@@ -240,7 +240,8 @@ function position(n: number): string {
 }
 
 /** Short human text, e.g. "Every 2 weeks on Mon, Wed · 10 times" or "Every year on 4th Thu in Nov". */
-export function describeRule(rule: RRule): string {
+export function describeRule(rule: RRule, locale: "en" | "ru" = "en"): string {
+  if (locale === "ru") return describeRuleRu(rule);
   const unit = rule.freq === "DAILY" ? "day" : rule.freq === "WEEKLY" ? "week" : rule.freq === "MONTHLY" ? "month" : "year";
   let text = rule.interval === 1 ? `Every ${unit}` : `Every ${rule.interval} ${unit}s`;
   const on: string[] = [];
@@ -254,5 +255,62 @@ export function describeRule(rule: RRule): string {
   if (rule.byMonth.length) text += ` in ${rule.byMonth.map((m) => MONTH_NAMES[m - 1]).join(", ")}`;
   if (rule.count) text += ` · ${rule.count} times`;
   if (rule.until) text += ` · until ${rule.until.slice(0, 10)}`;
+  return text;
+}
+
+/** Russian plural: 1 день, 2 дня, 5 дней, 21 день, 11 дней. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const ten = n % 10;
+  const hundred = n % 100;
+  if (ten === 1 && hundred !== 11) return one;
+  if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return few;
+  return many;
+}
+
+const RU_DAYS: Record<Weekday, string> = { MO: "пн", TU: "вт", WE: "ср", TH: "чт", FR: "пт", SA: "сб", SU: "вс" };
+/** Month names after "в" (prepositional): в январе … в декабре. */
+const RU_IN_MONTH = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"];
+/** Units: every-one form, then the plural forms for 1 / 2–4 / 5+ ("каждый день", "каждые 2 дня", "каждые 5 дней"). */
+const RU_UNITS: Record<RRule["freq"], { every: string; forms: [string, string, string] }> = {
+  DAILY: { every: "Каждый день", forms: ["день", "дня", "дней"] },
+  WEEKLY: { every: "Каждую неделю", forms: ["неделю", "недели", "недель"] },
+  MONTHLY: { every: "Каждый месяц", forms: ["месяц", "месяца", "месяцев"] },
+  YEARLY: { every: "Каждый год", forms: ["год", "года", "лет"] },
+};
+
+/** "4-й", "последний", "2-й с конца". */
+function positionRu(n: number): string {
+  return n === -1 ? "последний" : n < 0 ? `${-n}-й с конца` : `${n}-й`;
+}
+
+/** The same rule in Russian: "Каждые 2 недели, по пн, ср · 10 раз", "Каждый год, 4-й чт в ноябре". */
+function describeRuleRu(rule: RRule): string {
+  const unit = RU_UNITS[rule.freq];
+  const n = rule.interval;
+  let text: string;
+  if (n === 1) text = unit.every;
+  else {
+    const word = plural(n, ...unit.forms);
+    // "каждый 21 день", "каждую 21 неделю", but "каждые 2 дня", "каждые 5 недель".
+    const every = plural(n, rule.freq === "WEEKLY" ? "Каждую" : "Каждый", "Каждые", "Каждые");
+    text = `${every} ${n} ${word}`;
+  }
+  const parts: string[] = [];
+  if (rule.byMonthDay.length) {
+    const days = rule.byMonthDay.map((d) => (d === -1 ? "в последний день" : d < 0 ? `в ${-d}-й с конца день` : `${d}-го`));
+    const plain = days.filter((d) => !d.startsWith("в "));
+    const ends = days.filter((d) => d.startsWith("в "));
+    const and = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(", ")} и ${items.at(-1)}` : items.join(""));
+    parts.push([...(plain.length ? [`${and(plain)} числа`] : []), ...ends].join(", "));
+  }
+  if (rule.byDay.length) {
+    const withOrdinal = rule.byDay.some((item) => item.ordinal !== undefined);
+    const days = rule.byDay.map((item) => `${item.ordinal !== undefined ? `${positionRu(item.ordinal)} ` : ""}${RU_DAYS[item.day]}`).join(", ");
+    parts.push(rule.byMonthDay.length ? `если это ${days}` : withOrdinal ? days : `по ${days}`);
+  }
+  if (parts.length) text += `, ${parts.join(", ")}`;
+  if (rule.byMonth.length) text += ` в ${rule.byMonth.map((m) => RU_IN_MONTH[m - 1]).join(", ")}`;
+  if (rule.count) text += ` · ${rule.count} ${plural(rule.count, "раз", "раза", "раз")}`;
+  if (rule.until) text += ` · до ${rule.until.slice(0, 10)}`;
   return text;
 }
