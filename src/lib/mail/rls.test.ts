@@ -27,6 +27,8 @@ const TABLES = [
   "bridge_tokens",
   "message_uids",
   "bridge_folders",
+  "sender_reputation",
+  "spam_lists",
   "data_exports",
   "account_deletions",
   "deletion_audit",
