@@ -78,9 +78,10 @@ test("first session: setup, send to self, receive, reply, search, delete", async
   await message.type("Replying to myself. ");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByText("Message sent.").first().waitFor();
+  // The reply and, after the undo window, its delivered copy: 4 messages in the conversation.
   await page.waitForFunction(
     (subject) =>
-      [...document.querySelectorAll("[data-row-id]")].some((el) => el.innerText.includes(subject) && /\n[34]\n/.test(el.innerText)),
+      [...document.querySelectorAll("[data-row-id]")].some((el) => el.innerText.includes(subject) && /\n4\n/.test(el.innerText)),
     subject,
     { timeout: 40_000 },
   );
@@ -92,13 +93,17 @@ test("first session: setup, send to self, receive, reply, search, delete", async
   assert.ok((await row(page, subject).count()) >= 1, "search finds the conversation");
   await search.fill("");
 
-  // 6. Delete: Trash takes it out of the Inbox, and it stays out after a reload (saved on the server).
+  // 6. Delete from the reader (its Trash button, not the sidebar's Trash folder): the conversation leaves
+  //    the Inbox, is in Trash, and both are still true after a reload (saved on the server).
   await row(page, subject).first().click();
-  await page.getByRole("button", { name: "Trash", exact: true }).first().click();
+  await page.locator('button[aria-label="Trash"]').first().click();
+  await page.getByText("Moved to Trash.").first().waitFor();
   await row(page, subject).first().waitFor({ state: "detached", timeout: 15_000 });
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
   assert.equal(await row(page, subject).count(), 0, "still gone from the Inbox after a reload");
+  await page.locator("aside.nav-pane").getByRole("button", { name: /^Trash/ }).first().click();
+  await row(page, subject).first().waitFor({ timeout: 15_000 });
 
   assert.deepEqual(errors, []);
   await context.close();
