@@ -135,6 +135,13 @@ Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today
 
 ## 7. Before turning things on
 
+- [ ] `npm run preflight -- --region us` (and `--region ru`) with the deploy's environment exported: checks every
+      setting above that has no default, the Hyperdrive id, and the DNS records in `docs/deploy/dns-records.md`
+      (with `--selector <dkim selector>`; it compares the published DKIM key with `MAIL_DKIM_PRIVATE_KEY` when that
+      is set), and prints a numbered list of exactly what is still missing. It never prints a value. Exit 1 means
+      something required is missing; warnings (for example `MAIL_AUTH_DNS` not yet `live`) do not fail it.
+      `--no-dns` skips the DNS part.
+
 - [ ] `npm run test:e2e` on `main` (browser smoke tests, local mode); CI runs it and the Docker image check.
 - [ ] `npm run drill:restore` once against a staging copy (runbook §9), and keep the timings as the measured RTO.
 - [ ] Send one message to an outside address after the first deploy and check it arrives with SPF, DKIM and DMARC
