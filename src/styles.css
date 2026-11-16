@@ -179,3 +179,13 @@ label:has(> input:focus-visible) > input:focus-visible {
 body:has([role="dialog"][aria-modal="true"]) .lang-float {
   display: none;
 }
+
+/*
+ * The language menu in the mail header (#lang-switch, src/components/language.tsx). On phones it gets
+ * the same 44px touch height as the header's other controls; wider screens keep the vendored size.
+ */
+@media (max-width: 767px) {
+  #lang-switch .lang-switch {
+    min-height: 44px;
+  }
+}
