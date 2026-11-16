@@ -20,7 +20,8 @@ this repository.
 - [ ] Production database: apply the migrations on `main` that it does not have yet, **before** deploying code that
       uses them: `0011_message_words.sql` (server-side search, #84), `0012_bridge.sql` (IMAP bridge, #115),
       `0013_data_exports.sql` and `0014_account_deletion.sql` (Download my data and Delete mailbox, via #109),
-      `0016_calendar_feeds.sql` (#108), `0017_outbound_safety.sql` (#126). `0015_spam_controls.sql` arrives with #106.
+      `0016_calendar_feeds.sql` (#108), `0017_outbound_safety.sql` (#126), `0015_spam_controls.sql` (#106) and `0018_spam_votes.sql` (one shared spam
+      vote per mailbox per domain).
       `npm run db:status` lists what is pending and exits 3 if anything is. Files apply by name, so applying them out
       of number order is fine; each is recorded in `public._migrations`.
 

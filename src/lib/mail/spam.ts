@@ -20,10 +20,18 @@ export type SpamVerdict =
   | { folder: "inbox"; reason: "allowlisted" | "clean" }
   | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" };
 
-/** A domain needs this many reports before its reputation counts, so one person cannot sink it. */
+/**
+ * A domain needs this many votes before its reputation counts. A vote is one mailbox's verdict on one
+ * domain (spam_votes), so this is the number of different mailboxes, and one person cannot sink a domain.
+ */
 export const MIN_REPORTS = 5;
-/** And this share of its reports must be "spam" rather than "not spam". */
+/** And this share of its votes must be "spam" rather than "not spam". */
 export const SPAM_SHARE = 0.8;
+/**
+ * And the spam votes must be at least this share of the mail received from the domain, so a big
+ * provider (thousands of messages a day) is not sunk by the same handful of votes as a tiny sender.
+ */
+export const RECEIVED_SHARE = 0.001;
 
 const listKey = (tenantId: string, address: string) => blindIndex(tenantId, "spam-list", address);
 
@@ -77,9 +85,41 @@ export async function reputation(db: MailQuery, domain: string): Promise<{ recei
   return { received: Number(row?.received ?? 0), spam: Number(row?.spam_reports ?? 0), ham: Number(row?.ham_reports ?? 0) };
 }
 
-export function badReputation(rep: { spam: number; ham: number }): boolean {
+export function badReputation(rep: { spam: number; ham: number; received?: number }): boolean {
   const reports = rep.spam + rep.ham;
-  return reports >= MIN_REPORTS && rep.spam / reports >= SPAM_SHARE;
+  return reports >= MIN_REPORTS && rep.spam / reports >= SPAM_SHARE && rep.spam >= (rep.received ?? 0) * RECEIVED_SHARE;
+}
+
+/** Did this message authenticate as its From: domain? Only such mail can vote on that domain's reputation. */
+export function authenticatedForDomain(auth?: MailAuth): boolean {
+  return auth?.dmarc === "pass";
+}
+
+/**
+ * Record one mailbox's vote on a domain. At most one vote per mailbox per domain: the same vote again
+ * changes nothing, and a different one moves it (spam -> ham takes one off spam and adds one to ham).
+ */
+async function vote(db: MailQuery, tenantId: string, domain: string, kind: "spam" | "ham"): Promise<void> {
+  const voter = blindIndex(tenantId, "spam-vote", domain);
+  const rows = await db.query<{ kind: "spam" | "ham" }>(
+    `select kind from cumulus_mail.spam_votes where domain = $1 and voter = $2`,
+    [domain, voter],
+  );
+  const before = rows[0]?.kind;
+  if (before === kind) return;
+  await db.query(
+    `insert into cumulus_mail.spam_votes (domain, voter, kind) values ($1, $2, $3)
+     on conflict (domain, voter) do update set kind = excluded.kind, updated_at = now()`,
+    [domain, voter, kind],
+  );
+  await bump(db, domain, kind === "spam" ? "spam_reports" : "ham_reports");
+  if (before) {
+    const column = before === "spam" ? "spam_reports" : "ham_reports";
+    await db.query(
+      `update cumulus_mail.sender_reputation set ${column} = greatest(${column} - 1, 0), updated_at = now() where domain = $1`,
+      [domain],
+    );
+  }
 }
 
 /* ---------------- RBL ---------------- */
@@ -137,7 +177,8 @@ export function dohResolver(env: Record<string, string | undefined> = process.en
 const passed = (auth?: MailAuth) => Boolean(auth && auth.disposition === "deliver" && (auth.dmarc === "pass" || auth.dkim === "pass" || auth.spf === "pass"));
 
 /**
- * Where an arriving message goes. Also counts it toward the sender domain's `received` total.
+ * Where an arriving message goes. Also counts it toward the sender domain's `received` total when it
+ * authenticated as that domain.
  * `auth.disposition === "quarantine"` (DMARC said so) is respected first: no list or reputation
  * overrides the sending domain's own policy.
  */
@@ -150,7 +191,9 @@ export async function inboundVerdict(
 ): Promise<SpamVerdict> {
   assertTenantId(tenantId);
   const domain = senderDomain(from);
-  if (domain) await bump(db, domain, "received");
+  // Only mail that authenticated as the domain counts toward its volume, like votes: forged mail must not
+  // be able to pad a domain's `received` count and so dilute its spam votes (RECEIVED_SHARE).
+  if (domain && authenticatedForDomain(auth)) await bump(db, domain, "received");
   if (auth?.disposition === "quarantine") return { folder: "quarantine", reason: "authentication" };
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };
@@ -166,34 +209,58 @@ export async function inboundVerdict(
 /* ---------------- what the person does ---------------- */
 
 /*
- * The shared reputation is a vote, so it is guarded: a mailbox's report counts once per sender (pressing
- * Report spam ten times is one vote), and only for a sender that actually mailed it — the caller passes
- * the sender of a message it found in this mailbox, never an address the client typed.
+ * The shared reputation is a vote, so it is guarded:
+ *   - one vote per mailbox per DOMAIN (spam_votes): reporting five addresses at one domain, or pressing
+ *     Report spam ten times, is still one vote;
+ *   - only for mail that passed DMARC for that domain, so forged mail ("From: someone@bigprovider") can
+ *     neither sink the real domain nor be used to sink it on purpose;
+ *   - only for a sender that actually mailed this mailbox: the caller passes the sender and the stored
+ *     authentication result of a message it found here, never an address the client typed.
+ * The mailbox's own block / allow list is set either way: that only affects this mailbox.
  */
 
-/** "Report spam": block this sender for this mailbox; the first time, count a spam vote for its domain. */
-export async function reportSpam(db: MailQuery, tenantId: string, from: string): Promise<void> {
+/** "Report spam": block this sender for this mailbox, and vote "spam" for its domain if the mail authenticated. */
+export async function reportSpam(db: MailQuery, tenantId: string, from: string, auth?: MailAuth): Promise<void> {
   assertTenantId(tenantId);
-  const changed = await setList(db, tenantId, from, "block");
+  await setList(db, tenantId, from, "block");
   const domain = senderDomain(from);
-  if (changed && domain) await bump(db, domain, "spam_reports");
+  if (domain && authenticatedForDomain(auth)) await vote(db, tenantId, domain, "spam");
 }
 
-/** "Not spam": allow this sender for this mailbox; the first time, count a "not spam" vote. */
-export async function reportNotSpam(db: MailQuery, tenantId: string, from: string): Promise<void> {
+/** "Not spam": allow this sender for this mailbox, and vote "not spam" for its domain if the mail authenticated. */
+export async function reportNotSpam(db: MailQuery, tenantId: string, from: string, auth?: MailAuth): Promise<void> {
   assertTenantId(tenantId);
-  const changed = await setList(db, tenantId, from, "allow");
+  await setList(db, tenantId, from, "allow");
   const domain = senderDomain(from);
-  if (changed && domain) await bump(db, domain, "ham_reports");
+  if (domain && authenticatedForDomain(auth)) await vote(db, tenantId, domain, "ham");
 }
 
-/** The sender of a message in this mailbox, or null. What reportSpam / reportNotSpam are called with. */
+/** The sender of a message in this mailbox, or null. */
 export async function messageSender(db: MailQuery, tenantId: string, messageId: string): Promise<string | null> {
+  return (await reportedMessage(db, tenantId, messageId))?.from ?? null;
+}
+
+/** The sender and the stored authentication result of a message in this mailbox: what a report is made from. */
+export async function reportedMessage(
+  db: MailQuery,
+  tenantId: string,
+  messageId: string,
+): Promise<{ from: string; auth?: MailAuth } | null> {
   assertTenantId(tenantId);
   const { openText } = await import("./field-crypto.ts");
-  const rows = await db.query<{ from_email: string }>(
-    `select from_email from cumulus_mail.messages where tenant_id = $1 and id = $2`,
+  const rows = await db.query<{ from_email: string; auth_json: string | null }>(
+    `select from_email, auth_json from cumulus_mail.messages where tenant_id = $1 and id = $2`,
     [tenantId, messageId],
   );
-  return rows[0] ? openText(tenantId, rows[0].from_email).trim().toLowerCase() || null : null;
+  const row = rows[0];
+  if (!row) return null;
+  const from = openText(tenantId, row.from_email).trim().toLowerCase();
+  if (!from) return null;
+  let auth: MailAuth | undefined;
+  try {
+    auth = row.auth_json ? (JSON.parse(openText(tenantId, row.auth_json)) as MailAuth) : undefined;
+  } catch {
+    auth = undefined;
+  }
+  return { from, auth };
 }

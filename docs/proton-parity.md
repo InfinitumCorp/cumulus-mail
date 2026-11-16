@@ -63,7 +63,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Link confirmation | added | Links in a message open only after a confirm dialog. Suspicious hosts are called out. |
 | Phishing heuristics | added | Lookalike Cumulus domains, punycode, quarantine auth, urgent off-site links. Report uses the existing abuse intake. |
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
-| Provider-scale spam and phishing reputation | deferred | No external reputation feed. |
+| Provider-scale spam and phishing reputation | partial | No external reputation feed. Report spam / Not spam train each mailbox's own lists, and a shared per-domain reputation catches a domain many people report: one vote per mailbox per domain, only for mail that passed DMARC for that domain, and a big sender needs votes in proportion to its volume (`src/lib/mail/spam.ts`). An RBL is optional (`MAIL_RBL_ZONES`). The shared reputation only starts counting once `MAIL_AUTH_DNS=live`, since until then no mail passes DMARC. |
 | 2FA, passkeys, security keys | deferred | Enrolled on Cumulus://ID (`https://id.cumuluscloud.app`). Mail does not store a second factor. The account dialog says so. |
 | Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Hidden when sign-in is off. Sessions on the identity provider itself (Cumulus ID) are not listed: this repo has no session API for that issuer. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
