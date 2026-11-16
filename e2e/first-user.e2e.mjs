@@ -1,5 +1,5 @@
 // A first user's whole first session, in one browser: finish setup, write to yourself, receive it,
-// reply, find it with search, and delete it. Each step checks what a person would see, and the page
+// reply, find it with search, and delete it (it leaves the Inbox, and stays out after a reload). Each step checks what a person would see, and the page
 // raises no error. (Sign-up itself happens at Cumulus ID, outside this app; local mode signs in as the
 // development mailbox, which is where a new account lands after its first sign-in.)
 import assert from "node:assert/strict";
@@ -92,12 +92,13 @@ test("first session: setup, send to self, receive, reply, search, delete", async
   assert.ok((await row(page, subject).count()) >= 1, "search finds the conversation");
   await search.fill("");
 
-  // 6. Delete: Trash removes it from the Inbox; it is in Trash.
+  // 6. Delete: Trash takes it out of the Inbox, and it stays out after a reload (saved on the server).
   await row(page, subject).first().click();
   await page.getByRole("button", { name: "Trash", exact: true }).first().click();
   await row(page, subject).first().waitFor({ state: "detached", timeout: 15_000 });
-  await page.getByRole("button", { name: /^Trash/ }).first().click();
-  await row(page, subject).first().waitFor({ timeout: 15_000 });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+  assert.equal(await row(page, subject).count(), 0, "still gone from the Inbox after a reload");
 
   assert.deepEqual(errors, []);
   await context.close();
