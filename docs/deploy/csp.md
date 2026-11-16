@@ -8,7 +8,7 @@ Every HTML page from a production build carries a strict, nonce-based policy (`s
 - **`frame-ancestors 'none'`.**
 - **Alongside it** (#87): HSTS on https, `Referrer-Policy` and `Permissions-Policy`.
 
-**The one exception:** while the platform extensions script is on (`VITE_GROK_EXTENSIONS`, not `0`), `script-src` also allows exactly `https://grok.com/grok-app-builder/extensions.js`. Nothing else on that host, and **never on the Russia copy**.
+**The platform extensions script is off.** It is off unless a deployer sets `VITE_GROK_EXTENSIONS=1`, and both deploy workflows and the Dockerfile set `0` (owner decision, 2026-11-16), so no page loads a script from grok.com and `script-src` has no allowance for it. `npm run csp:check` fails if a page or its CSP header mentions grok.com. If it were ever switched on, `script-src` would allow exactly `https://grok.com/grok-app-builder/extensions.js`, nothing else on that host, and **never on the Russia copy**.
 
 ## Staging it: `MAIL_CSP`
 | Value | Effect |

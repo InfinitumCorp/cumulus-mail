@@ -42,6 +42,9 @@ jobs:
     environment: production-us
     timeout-minutes: 30
     env:
+      # No third-party grok.com script on any page (owner decision 2026-11-16). Off is also the code
+      # default; set here so the build and the CSP say so explicitly.
+      VITE_GROK_EXTENSIONS: "0"
       WRANGLER: npx --yes wrangler@4.157.0
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

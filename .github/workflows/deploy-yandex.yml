@@ -32,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production-ru
     timeout-minutes: 30
+    env:
+      # No third-party grok.com script (owner decision 2026-11-16; the Russia copy never had it).
+      VITE_GROK_EXTENSIONS: "0"
     steps:
       - name: Check the confirmation phrase
         if: inputs.confirm != 'deploy ru'

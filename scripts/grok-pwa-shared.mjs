@@ -207,9 +207,14 @@ export function readGrokProjectId() {
   return String(fromProcess ?? "").trim();
 }
 
+/**
+ * The platform extensions script (grok.com) is OFF unless the deployer sets VITE_GROK_EXTENSIONS=1.
+ * Off by default because it is a third-party script on every page; the owner decided (2026-11-16) that
+ * none ships on either copy. Unset, empty, "0" or anything else all mean off.
+ */
 export function readGrokExtensionsEnabled() {
   const fromProcess = typeof process !== "undefined" ? process.env?.VITE_GROK_EXTENSIONS : "";
-  return String(fromProcess ?? "").trim() !== "0";
+  return String(fromProcess ?? "").trim() === "1";
 }
 
 /**
@@ -225,7 +230,7 @@ export function isRussiaCopy(host = "") {
 /**
  * Whether a page gets the third-party extensions script. Never on the Russia copy: it would make every
  * page there load a script from a US host, which the Russian privacy policy (152-ФЗ, data localisation)
- * does not cover. Elsewhere, on unless VITE_GROK_EXTENSIONS=0.
+ * does not cover. Elsewhere, only with VITE_GROK_EXTENSIONS=1.
  */
 export function grokExtensionsFor(host = "") {
   return readGrokExtensionsEnabled() && !isRussiaCopy(host);

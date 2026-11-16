@@ -4,8 +4,9 @@
  * Strict and nonce-based: scripts run only from this origin or with this response's nonce, which
  * TanStack Router puts on its own inline bootstrap (router `ssr.nonce`, read back on the client from
  * `<meta property="csp-nonce">`). No third-party origin is allowed, with one explicit exception: while
- * the platform extensions script is on (VITE_GROK_EXTENSIONS, never on the Russia copy, see
- * scripts/grok-pwa-shared.mjs), its single script URL is allowed, and nothing else on that host.
+ * the platform extensions script is switched on (VITE_GROK_EXTENSIONS=1; off by default and in every
+ * deploy, never on the Russia copy, see scripts/grok-pwa-shared.mjs), its single script URL is allowed,
+ * and nothing else on that host.
  *
  * `MAIL_CSP` stages it:
  *   enforce      Content-Security-Policy (the default for a production build)
