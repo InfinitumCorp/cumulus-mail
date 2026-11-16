@@ -24,6 +24,7 @@ The thresholds are starting points. Set them from the first two weeks of real tr
 | **Retries climbing** | `retry` > **25 %** of attempts over 30 min | ticket | relay rate limits (4.x.x) |
 | **Inbound failing** | `mail.inbound.result.outcome = failed` > **0** in 5 min, or more than 10 in an hour | page | worker logs: `mail.inbound.failed` carries the error class |
 | **Inbound silent** | no `mail.inbound.result` lines for **60 min** in working hours (once there is steady traffic) | ticket | MX records, Email Routing catch-all → `cumulus-mail-inbound` |
+| **Deletion overdue** | any `mail.deletion.failed` line; page if the same `subject` repeats for **24 h** (that mailbox is past its 7-day erasure date) | ticket, then page | the `error` field (storage credentials? Stripe?), `docs/ops/account-deletion.md` |
 | **Mailboxes full** | `rejected` with `reason=mailbox_full` > 20 per hour | ticket | storage enforcement (`MAIL_ENFORCE_STORAGE`), plans |
 | **Spoofing wave** | `mail.inbound.auth` with `dmarc=fail` > **30 %** of inbound over 30 min with ≥ 50 messages, or `disposition=quarantine` > 3× its daily baseline | ticket | quarantine folder of affected mailboxes |
 | **DKIM verification broken** | `dkim=fail` > **50 %** of inbound with ≥ 50 messages (senders don't all break at once; a bug or a DNS resolver problem does) | page | `MAIL_AUTH_DNS`, resolver reachability |

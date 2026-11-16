@@ -188,23 +188,43 @@ export async function purgeMailbox(
   return { rows, blobs, ...(stripeCustomer ? { stripeCustomer } : {}) };
 }
 
-/** Purge every mailbox whose grace period has ended and was not cancelled. Run from the scheduler. */
+/**
+ * Purge every mailbox whose grace period has ended and was not cancelled. Run from the scheduler on both
+ * copies (workers/email for the US copy, POST /api/cron/tick for the Russia copy).
+ *
+ * One mailbox that fails (storage down, Stripe refusing) is counted and left for the next run, and the
+ * others in the batch still go: the oldest request comes first every time, so stopping at it would hold
+ * up every deletion behind it. The failure is logged without the mailbox id (its audit HMAC instead).
+ */
 export async function purgeDueDeletions(
   db: MailQuery,
   storageFor: (tenantId: string) => TenantBlobs,
   now = new Date(),
-  options: { stripe?: StripeClient | null } = {},
-): Promise<{ purged: number }> {
+  options: { stripe?: StripeClient | null; log?: (line: string) => void } = {},
+): Promise<{ purged: number; failed: number }> {
   const due = await db.query<{ tenant_id: string }>(
     `select tenant_id from cumulus_mail.account_deletions
      where cancelled_at is null and purge_after <= $1
      order by purge_after limit 20`,
     [now.toISOString()],
   );
+  const log = options.log ?? ((line: string) => console.error(line));
   let purged = 0;
+  let failed = 0;
   for (const { tenant_id } of due) {
-    await purgeMailbox(db, storageFor(tenant_id), tenant_id, now, options);
-    purged += 1;
+    try {
+      await purgeMailbox(db, storageFor(tenant_id), tenant_id, now, options);
+      purged += 1;
+    } catch (error) {
+      failed += 1;
+      let subject = "unknown";
+      try {
+        subject = subjectHmac(tenant_id);
+      } catch {
+        // no MAIL_BLOB_KEY: leave the subject out rather than log the mailbox id
+      }
+      log(JSON.stringify({ event: "mail.deletion.failed", subject, error: String((error as Error)?.message ?? error).slice(0, 200) }));
+    }
   }
-  return { purged };
+  return { purged, failed };
 }

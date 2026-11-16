@@ -64,3 +64,15 @@ happened, which the operator may need to show.
 
 The US and Russia copies each run their own purge against their own database and storage. A Russian
 mailbox's data, its audit row and the sweeper's report all stay in `ru-central1`.
+
+- **US:** the inbound worker's cron (`workers/email`).
+- **Russia:** `POST /api/cron/tick` (`src/lib/mail/scheduled-jobs.ts`), so the Yandex timer trigger
+  (`docs/deploy/yandex-ru.md`, D4) **must be set up**: without it no Russian mailbox is ever purged.
+
+## When a purge fails
+
+A purge that fails (storage unreachable, Stripe refusing) leaves that mailbox untouched and still marked
+for deletion; the next scheduler run tries again. The other mailboxes due in the same run are still
+deleted. Each failure is a `mail.deletion.failed` log line with the mailbox's audit HMAC (never its id)
+and the error. A line that keeps repeating for the same HMAC means a mailbox is overdue for erasure:
+fix the cause (usually storage credentials), and it goes on the next run.
