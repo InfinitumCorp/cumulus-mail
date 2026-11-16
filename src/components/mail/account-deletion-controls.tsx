@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { accountDeletion } from "@/lib/mail/api";
 
 /**
@@ -10,6 +10,19 @@ export function AccountDeletionControls() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Each step replaces the button that was pressed, so focus is moved on purpose: otherwise it falls to
+  // <body>, outside the modal dialog, and the next Tab starts from the top of the page.
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const [focusNext, setFocusNext] = useState<"keep" | "cancel" | "start" | null>(null);
+
+  useEffect(() => {
+    if (!focusNext) return;
+    const target = { keep: keepRef, cancel: cancelRef, start: startRef }[focusNext].current;
+    target?.focus();
+    setFocusNext(null);
+  }, [focusNext, confirming, purgeAfter]);
 
   useEffect(() => {
     let live = true;
@@ -28,6 +41,7 @@ export function AccountDeletionControls() {
       const result = await accountDeletion({ data: { action } });
       setPurgeAfter(result.status?.purgeAfter ?? null);
       setConfirming(false);
+      setFocusNext(action === "request" ? "cancel" : "start");
     } catch {
       setError("Could not change the deletion request.");
     } finally {
@@ -43,6 +57,7 @@ export function AccountDeletionControls() {
           This mailbox will be deleted on {when}. Until then you can cancel.
         </p>
         <button
+          ref={cancelRef}
           type="button"
           disabled={busy}
           onClick={() => void run("cancel")}
@@ -73,9 +88,13 @@ export function AccountDeletionControls() {
               Delete in 7 days
             </button>
             <button
+              ref={keepRef}
               type="button"
               disabled={busy}
-              onClick={() => setConfirming(false)}
+              onClick={() => {
+                setConfirming(false);
+                setFocusNext("start");
+              }}
               className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink"
             >
               Keep my mailbox
@@ -84,8 +103,13 @@ export function AccountDeletionControls() {
         </>
       ) : (
         <button
+          ref={startRef}
           type="button"
-          onClick={() => setConfirming(true)}
+          onClick={() => {
+            setConfirming(true);
+            // The safe choice gets focus first, so Enter pressed twice does not delete anything.
+            setFocusNext("keep");
+          }}
           className="inline-flex h-11 items-center self-start border border-line px-3 text-sm hover:border-ink"
         >
           Delete mailbox…

@@ -2,6 +2,7 @@ import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { AccountDeletionControls } from "./account-deletion-controls";
 import { BillingControls } from "./billing-controls";
+import { DataExportControls } from "./data-export-controls";
 import { ContactsTransfer } from "./contacts-transfer";
 import { CalendarFeedControls } from "./calendar-feed-controls";
 import { SignedInDevices } from "./signed-in-devices";
@@ -257,6 +258,12 @@ export function AccountPanel({
               </dd>
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Your data</dt>
+              <dd>
+                <DataExportControls />
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Delete</dt>
               <dd>
                 <AccountDeletionControls />
@@ -474,10 +481,15 @@ export function AccountPanel({
             <div className="border-b border-line py-4">
               <dt className="text-muted">Sign-in</dt>
               <dd className="mt-2 text-sm text-muted">
-                {posture.note} Factors: {posture.methods.join(", ")}.{" "}
-                <a className="text-accent" href={posture.issuer}>
-                  {posture.issuer}
-                </a>
+                {posture.note} Factors: {posture.methods.join(", ")}.
+                {/* The issuer is a machine endpoint (OIDC discovery), not a page: shown as text, not a link, so a
+                    screen reader does not read a long URL as link text and nobody lands on a JSON document. */}
+                <span className="mt-1 block">
+                  Identity provider:{" "}
+                  <code translate="no" className="break-all font-mono text-xs">
+                    {posture.issuer}
+                  </code>
+                </span>
               </dd>
             </div>
             <div className="border-b border-line py-4">
