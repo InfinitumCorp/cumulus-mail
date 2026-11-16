@@ -18,10 +18,11 @@ this repository.
       `public._migrations` (2026-11-12). The mail tables were empty.
 - [ ] Vercel auto-deploy off: merge #75 (`git.deploymentEnabled: false`).
 - [ ] Production database: apply the migrations on `main` that it does not have yet, **before** deploying code that
-      uses them: `0011_message_words.sql` (server-side search, #84), `0016_calendar_feeds.sql` (#108),
-      `0017_outbound_safety.sql` (#126). `npm run db:status` lists what is pending and exits 3 if anything is.
-      `0012`–`0015` arrive with #96, #100, #101 and #106. Files apply by name, so applying them after `0016`/`0017`
-      is fine; each is recorded in `public._migrations`.
+      uses them: `0011_message_words.sql` (server-side search, #84), `0012_bridge.sql` (IMAP bridge, #115),
+      `0013_data_exports.sql` and `0014_account_deletion.sql` (Download my data and Delete mailbox, via #109),
+      `0016_calendar_feeds.sql` (#108), `0017_outbound_safety.sql` (#126). `0015_spam_controls.sql` arrives with #106.
+      `npm run db:status` lists what is pending and exits 3 if anything is. Files apply by name, so applying them out
+      of number order is fine; each is recorded in `public._migrations`.
 
 ## 1. Both regions
 
@@ -134,6 +135,13 @@ Setup details: `docs/deploy/outbound-smtp.md`.
 Without `MAIL_SMTP_HOST`, outside mail stays held in the Outbox as it does today.
 
 ## 7. Before turning things on
+
+- [ ] `npm run preflight -- --region us` (and `--region ru`) with the deploy's environment exported: checks every
+      setting above that has no default, the Hyperdrive id, and the DNS records in `docs/deploy/dns-records.md`
+      (with `--selector <dkim selector>`; it compares the published DKIM key with `MAIL_DKIM_PRIVATE_KEY` when that
+      is set), and prints a numbered list of exactly what is still missing. It never prints a value. Exit 1 means
+      something required is missing; warnings (for example `MAIL_AUTH_DNS` not yet `live`) do not fail it.
+      `--no-dns` skips the DNS part.
 
 - [ ] `npm run test:e2e` on `main` (browser smoke tests, local mode); CI runs it and the Docker image check.
 - [ ] `npm run drill:restore` once against a staging copy (runbook §9), and keep the timings as the measured RTO.
