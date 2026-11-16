@@ -138,6 +138,8 @@ export type CalEvent = {
   rrule?: string;
   /** Occurrences removed from the series (EXDATE), as ISO instants. */
   exdates?: string[];
+  /** Extra occurrences added to the series (RDATE), as ISO instants. With no rrule they are the series. */
+  rdates?: string[];
   /** The invite's UID, needed to answer it. */
   uid?: string;
   /** Organizer address, needed to answer it. */

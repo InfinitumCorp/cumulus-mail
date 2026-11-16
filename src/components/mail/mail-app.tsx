@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { lookupRecipientKeys, withdrawMailKey } from "@/lib/auth/cid-api";
 import { recipientKeys } from "@/lib/auth/cid-account";
@@ -30,7 +30,7 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { EVENTS, type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
 import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
 import { expandEvents, withRsvp } from "@/lib/mail/calendar";
@@ -42,11 +42,15 @@ import type { MailboxBackup } from "@/lib/mail/backup";
 import { defaultSettings, noteUnsubscribed, recordAudit } from "@/lib/mail/settings";
 import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
+import { SetupCard, SetupDialog } from "./setup";
 import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
 import { CumulusBar } from "@/components/cumulus-bar";
+import { applyTheme } from "@/lib/theme";
+import { useInterfaceLanguage } from "@/lib/interface-language";
+import { LanguageSlot } from "@/components/language";
 
 function localInput(iso?: string): string {
   if (!iso) return "";
@@ -84,6 +88,13 @@ export function MailApp() {
   const remove = useMail((s) => s.remove);
   const saveMessage = useMail((s) => s.saveMessage);
   const addAlias = useMail((s) => s.addAlias);
+  const setDisplayName = useMail((s) => s.setDisplayName);
+  const [setupOpen, setSetupOpen] = useState(false);
+  // `?setup=1` shows the card on demand (it is otherwise only on a new mailbox).
+  const [setupForced, setSetupForced] = useState(false);
+  useEffect(() => {
+    setSetupForced(new URLSearchParams(window.location.search).get("setup") === "1");
+  }, []);
   const saveBrief = useMail((s) => s.saveBrief);
   const addTask = useMail((s) => s.addTask);
   const toggleTask = useMail((s) => s.toggleTask);
@@ -92,7 +103,15 @@ export function MailApp() {
   const setSignature = useMail((s) => s.setSignature);
   const setSettings = useMail((s) => s.setSettings);
   const settings = useMail((s) => s.settings);
+  const theme = settings?.theme;
+  // The mailbox's Appearance setting wins over this device's remembered choice once it has loaded.
+  useEffect(() => {
+    if (theme) applyTheme(theme);
+  }, [theme]);
+  // Recurrence rules are put into words by code, in the interface language (src/lib/mail/recurrence.ts).
+  const interfaceLanguageNow = useInterfaceLanguage();
   const saveContact = useMail((s) => s.saveContact);
+  const replaceContacts = useMail((s) => s.replaceContacts);
   const addRule = useMail((s) => s.addRule);
   const removeRule = useMail((s) => s.removeRule);
   const replaceMessages = useMail((s) => s.replaceMessages);
@@ -782,22 +801,29 @@ export function MailApp() {
 
   return (
     <div className="mail-shell">
-      <header className="relative flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
-        <div className="flex items-center gap-2 pr-12 md:pr-0">
+      <header className="flex flex-col gap-3 border-b border-line px-3 py-3 md:flex-row md:items-center md:gap-5 md:px-5">
+        {/* md:contents: on wider screens the title row's items join the header row, so the language slot can sit at its right end. */}
+        <div className="flex items-center gap-2 md:contents">
           <button type="button" className="grid size-11 place-items-center md:hidden" onClick={() => setNavOpen(true)} aria-label="Open folders">
             <Menu className="size-5" />
           </button>
           <div className="min-w-0">
-            <p className="truncate text-xl tracking-tight">
+            {/* The wordmark is a name, not UI text: translate="no" keeps it out of the interface translator. */}
+            <p className="truncate text-xl tracking-tight" translate="no">
               Cumulus<span className="font-mono text-accent">://</span>Mail
             </p>
             <p className="truncate font-mono text-xs text-muted">{me.email}</p>
           </div>
+          {/* The language menu (src/i18n/start.js): right of the wordmark on phones, the header's right end on
+              wider screens. It used to float bottom-left over the sidebar; moved here by owner waiver (2026-11-16). */}
+          <LanguageSlot className="ml-auto flex shrink-0 items-center md:order-last" />
+          {/* Cumulus://ID account bar: next to the language menu, in the title row on phones and at the header's right end on wider screens. */}
+          <CumulusBar client="cumulus-mail" className="flex shrink-0 items-center md:order-last" />
           {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
           <button
             type="button"
             onClick={() => writeNew()}
-            className="ml-auto grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
+            className="grid size-11 shrink-0 place-items-center bg-ink text-paper md:hidden"
             aria-label="Compose"
           >
             <SquarePen className="size-5" />
@@ -831,8 +857,6 @@ export function MailApp() {
           <SquarePen className="size-4" />
           Compose
         </button>
-        {/* Cumulus://ID account bar: top right of the first row on phones, the header's right end on desktop. */}
-        <CumulusBar client="cumulus-mail" className="absolute right-3 top-[16px] flex md:static md:ml-auto" />
       </header>
       {syncError ? <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p> : null}
       <div className="mail-body">
@@ -884,6 +908,18 @@ export function MailApp() {
               onUnreadPicked={() => actOnPicked("unread")}
               onClearPick={() => setPicked([])}
               folders={settings?.folders ?? []}
+              query={query}
+              setup={
+                settings?.setupPending || setupForced ? (
+                  <SetupCard
+                    onOpen={() => setSetupOpen(true)}
+                    onDismiss={() => {
+                      setSetupForced(false);
+                      if (settings) setSettings({ ...settings, setupPending: false });
+                    }}
+                  />
+                ) : null
+              }
               tab={inboxTab}
               onTab={(next) => {
                 setInboxTab(next);
@@ -1016,6 +1052,14 @@ export function MailApp() {
                   extra: { autoReply: true },
                 });
               }}
+              onSpam={(verdict) => {
+                if (!reading) return;
+                const id = reading.id;
+                // Move first, so the list reacts at once; the server trains the lists from the stored message.
+                moveToFolder(id, verdict === "spam" ? "quarantine" : "inbox");
+                remember(verdict === "spam" ? "Reported as spam. Mail from this sender will go to Quarantine." : "Marked as not spam. Mail from this sender will go to the Inbox.");
+                void reportSpamMessage({ data: { messageId: id, verdict } }).catch(() => setNotice("Could not report."));
+              }}
               onReport={() => {
                 if (!reading) return;
                 const reasons = assessPhishing(reading).reasons.join("; ") || "Reported from the reader.";
@@ -1028,13 +1072,14 @@ export function MailApp() {
         ) : null}
         {view === "calendar" ? (
           <CalendarPanel
-            events={expandEvents([...EVENTS, ...(settings?.events ?? [])]).filter(
+            feed
+            events={expandEvents(settings?.events ?? [], new Date(), 60, 8, interfaceLanguageNow).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
           />
         ) : null}
         {view === "contacts" ? (
-          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} onSave={saveContact} />
+          <ContactsPanel contacts={contacts} query={query} onWrite={(contact) => writeNew(peopleToField([contact]))} onSave={saveContact} onReplace={replaceContacts} />
         ) : null}
         {view === "tasks" ? <TasksPanel tasks={tasks} onToggle={toggleTask} /> : null}
       </div>
@@ -1053,6 +1098,27 @@ export function MailApp() {
             />
           </div>
         </div>
+      ) : null}
+      {setupOpen ? (
+        <SetupDialog
+          address={me.email}
+          aliases={aliases}
+          name={me.name}
+          signature={signature}
+          onClose={() => setSetupOpen(false)}
+          onImportContacts={() => {
+            setSetupOpen(false);
+            setView("contacts");
+          }}
+          onDone={(result) => {
+            if (result.name) setDisplayName(result.name);
+            setSignature(result.signature);
+            if (result.alias) addAlias(`${result.alias}@${me.email.split("@")[1] ?? ""}`);
+            if (settings) setSettings({ ...settings, setupPending: false });
+            setSetupForced(false);
+            setSetupOpen(false);
+          }}
+        />
       ) : null}
       {accountOpen ? (
         <AccountPanel

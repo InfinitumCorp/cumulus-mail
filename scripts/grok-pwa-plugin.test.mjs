@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  grokExtensionsFor,
+  isRussiaCopy,
   appNameFromHost,
   createHeadInjector,
   grokXCreatorHeadTags,
@@ -21,33 +23,68 @@ import { renderInstallPage } from "./grok-pwa-plugin.mjs";
 
 const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("injects before </head>", () => {
-  const out = injectGrokPwaHead("<html><head><title>x</title></head><body></body></html>");
-  assert.match(out, /rel="manifest"/);
-  assert.match(out, /apple-touch-icon/);
-  assert.match(out, /grok-app-builder\/extensions\.js/);
-  assert.ok(out.indexOf("manifest") < out.indexOf("</head>"));
+/** Runs `fn` with the extensions script switched on (VITE_GROK_EXTENSIONS=1), as a deployer would opt in. */
+function withExtensions(fn) {
+  const previous = process.env.VITE_GROK_EXTENSIONS;
+  process.env.VITE_GROK_EXTENSIONS = "1";
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env.VITE_GROK_EXTENSIONS;
+    else process.env.VITE_GROK_EXTENSIONS = previous;
+  }
+}
+
+test("the extensions script is off by default: unset, empty or 0 ships no grok.com script", () => {
+  const previous = process.env.VITE_GROK_EXTENSIONS;
+  try {
+    for (const value of [undefined, "", "0", "true", "yes"]) {
+      if (value === undefined) delete process.env.VITE_GROK_EXTENSIONS;
+      else process.env.VITE_GROK_EXTENSIONS = value;
+      const out = injectGrokPwaHead("<html><head></head></html>", { appName: "Demo", projectId: "proj-123" });
+      assert.doesNotMatch(out, /grok\.com/, `VITE_GROK_EXTENSIONS=${value}`);
+      assert.match(out, /rel="manifest"/, "the same-origin PWA tags stay");
+      assert.equal(grokExtensionsFor("mail.cumuluscloud.app"), false);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.VITE_GROK_EXTENSIONS;
+    else process.env.VITE_GROK_EXTENSIONS = previous;
+  }
 });
 
-test("injects the extensions script without a project id", () => {
-  const out = injectGrokPwaHead("<html><head></head></html>", {
-    appName: "Demo",
-    projectId: "",
+test("injects before </head> (when switched on)", () => {
+  withExtensions(() => {
+    const out = injectGrokPwaHead("<html><head><title>x</title></head><body></body></html>");
+    assert.match(out, /rel="manifest"/);
+    assert.match(out, /apple-touch-icon/);
+    assert.match(out, /grok-app-builder\/extensions\.js/);
+    assert.ok(out.indexOf("manifest") < out.indexOf("</head>"));
   });
-  assert.match(out, /src="https:\/\/grok\.com\/grok-app-builder\/extensions\.js" defer/);
-  assert.doesNotMatch(out, /grok-project-id/);
-  assert.doesNotMatch(out, /data-project-id/);
-  assert.doesNotMatch(out, /property="grok:app_id"/);
 });
 
-test("injects project id on the script and meta when provided", () => {
-  const out = injectGrokPwaHead("<html><head></head></html>", {
-    appName: "Demo",
-    projectId: "proj-123",
+test("injects the extensions script without a project id (when switched on)", () => {
+  withExtensions(() => {
+    const out = injectGrokPwaHead("<html><head></head></html>", {
+      appName: "Demo",
+      projectId: "",
+    });
+    assert.match(out, /src="https:\/\/grok\.com\/grok-app-builder\/extensions\.js" defer/);
+    assert.doesNotMatch(out, /grok-project-id/);
+    assert.doesNotMatch(out, /data-project-id/);
+    assert.doesNotMatch(out, /property="grok:app_id"/);
   });
-  assert.match(out, /name="grok-project-id" content="proj-123"/);
-  assert.match(out, /data-project-id="proj-123"/);
-  assert.match(out, /property="grok:app_id" content="proj-123"/);
+});
+
+test("injects project id on the script and meta when provided (when switched on)", () => {
+  withExtensions(() => {
+    const out = injectGrokPwaHead("<html><head></head></html>", {
+      appName: "Demo",
+      projectId: "proj-123",
+    });
+    assert.match(out, /name="grok-project-id" content="proj-123"/);
+    assert.match(out, /data-project-id="proj-123"/);
+    assert.match(out, /property="grok:app_id" content="proj-123"/);
+  });
 });
 
 test("does not duplicate grok:app_id", () => {
@@ -462,12 +499,14 @@ test("keeps the extensions script on commercial when the deployer enables it", (
   }
 });
 
-test("does not duplicate the extensions script", () => {
-  const ctx = { appName: "Demo", projectId: "proj-123" };
-  const once = injectGrokPwaHead("<html><head></head></html>", ctx);
-  const twice = injectGrokPwaHead(once, ctx);
-  assert.equal(once, twice);
-  assert.equal(twice.split("extensions.js").length - 1, 1);
+test("does not duplicate the extensions script (when switched on)", () => {
+  withExtensions(() => {
+    const ctx = { appName: "Demo", projectId: "proj-123" };
+    const once = injectGrokPwaHead("<html><head></head></html>", ctx);
+    const twice = injectGrokPwaHead(once, ctx);
+    assert.equal(once, twice);
+    assert.equal(twice.split("extensions.js").length - 1, 1);
+  });
 });
 
 test("is idempotent", () => {
@@ -594,3 +633,48 @@ test("vite plugin bakes og identity as a virtual module", () => {
   assert.match(plugin, /snapshotOgIdentity/);
 });
 
+
+test("the Russia copy never gets the third-party extensions script (ru.* host or MAIL_REGION=ru)", () => {
+  const saved = { region: process.env.MAIL_REGION, ext: process.env.VITE_GROK_EXTENSIONS };
+  try {
+    delete process.env.MAIL_REGION;
+    process.env.VITE_GROK_EXTENSIONS = "1";
+    assert.equal(isRussiaCopy("ru.mail.cumuluscloud.app"), true);
+    assert.equal(isRussiaCopy("RU.mail.cumuluscloud.app:443"), true);
+    assert.equal(isRussiaCopy("mail.cumuluscloud.app"), false);
+    assert.equal(grokExtensionsFor("mail.cumuluscloud.app"), true);
+    const baked = '<html><head><script src="https://grok.com/grok-app-builder/extensions.js" defer></script></head></html>';
+    for (const host of ["ru.mail.cumuluscloud.app", "ru.localhost:8080"]) {
+      const out = injectGrokPwaHead(baked, { appName: "Demo", projectId: "proj-123", host });
+      assert.doesNotMatch(out, /grok-app-builder\/extensions\.js/, host);
+      assert.match(out, /rel="manifest"/, "the same-origin PWA tags stay");
+    }
+    // MAIL_REGION wins over the host, both ways, as in src/lib/region.ts.
+    process.env.MAIL_REGION = "ru";
+    assert.equal(grokExtensionsFor("container-abc.yandexcloud.net"), false);
+    process.env.MAIL_REGION = "us";
+    assert.equal(grokExtensionsFor("ru.mail.cumuluscloud.app"), true);
+  } finally {
+    if (saved.region === undefined) delete process.env.MAIL_REGION;
+    else process.env.MAIL_REGION = saved.region;
+    if (saved.ext === undefined) delete process.env.VITE_GROK_EXTENSIONS;
+    else process.env.VITE_GROK_EXTENSIONS = saved.ext;
+  }
+});
+
+test("isRussiaCopy matches src/lib/region.ts on the same inputs", async () => {
+  const { regionFor } = await import("../src/lib/region.ts");
+  for (const host of ["ru.mail.cumuluscloud.app", "RU.x:1", "mail.cumuluscloud.app", "", "rux.example", "ru."]) {
+    for (const region of [undefined, "ru", "us", "eu"]) {
+      const saved = process.env.MAIL_REGION;
+      if (region === undefined) delete process.env.MAIL_REGION;
+      else process.env.MAIL_REGION = region;
+      try {
+        assert.equal(isRussiaCopy(host), regionFor(host, { MAIL_REGION: region }) === "ru", `${host} / ${region}`);
+      } finally {
+        if (saved === undefined) delete process.env.MAIL_REGION;
+        else process.env.MAIL_REGION = saved;
+      }
+    }
+  }
+});

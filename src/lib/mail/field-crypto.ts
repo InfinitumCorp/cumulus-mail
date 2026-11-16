@@ -1,17 +1,17 @@
-import { masterKeyFromEnv, openSeal, seal } from "../storage/crypto.ts";
+import { masterKeyFromEnv, openSeal, seal, sealingKeysFromEnv, type Keys } from "../storage/crypto.ts";
 import { tenantKey } from "../storage/crypto.ts";
 import { createHmac } from "node:crypto";
 
 const PREFIX = "cm1.";
 
 /** AES-256-GCM for one Postgres field. The key is the tenant's meta key. */
-export function sealText(tenantId: string, value: string, master: Uint8Array = masterKeyFromEnv()): string {
+export function sealText(tenantId: string, value: string, master: Keys = sealingKeysFromEnv()): string {
   const sealed = seal(master, tenantId, new TextEncoder().encode(value), "meta");
   return PREFIX + Buffer.from(sealed).toString("base64url");
 }
 
 /** Open a field. Legacy plaintext (no prefix) is returned unchanged. */
-export function openText(tenantId: string, stored: string | null, master: Uint8Array = masterKeyFromEnv()): string {
+export function openText(tenantId: string, stored: string | null, master: Keys = sealingKeysFromEnv()): string {
   if (!stored) return "";
   if (!stored.startsWith(PREFIX)) return stored;
   const sealed = Buffer.from(stored.slice(PREFIX.length), "base64url");

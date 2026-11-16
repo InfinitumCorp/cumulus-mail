@@ -73,16 +73,17 @@ export function planUsage(
       label: "Storage",
       used: used.usedBytes,
       limit: limits.quotaGb * 1e9,
-      text: `${gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2)} of ${limits.quotaGb} GB`,
+      text: `${gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2)} / ${limits.quotaGb} GB`,
       full: gb >= limits.quotaGb,
     });
   }
-  const add = (key: UsageRow["key"], label: string, n: number, limit: number) =>
-    rows.push({ key, label, used: n, limit, text: `${count(n)} of ${count(limit)}`, full: n >= limit });
-  add("aliases", "Addresses", used.aliases, limits.aliases);
-  add("domains", "Custom domains", used.domains, limits.domains);
-  add("folders", "Folders", used.folders, limits.folders);
-  add("messages", "Messages", used.messages, limits.messages);
+  // "5 / 25" reads the same in every language; the labels are `label:` values so the catalog has them.
+  const add = (row: { key: UsageRow["key"]; label: string }, n: number, limit: number) =>
+    rows.push({ ...row, used: n, limit, text: `${count(n)} / ${count(limit)}`, full: n >= limit });
+  add({ key: "aliases", label: "Addresses" }, used.aliases, limits.aliases);
+  add({ key: "domains", label: "Custom domains" }, used.domains, limits.domains);
+  add({ key: "folders", label: "Folders" }, used.folders, limits.folders);
+  add({ key: "messages", label: "Messages" }, used.messages, limits.messages);
   return rows;
 }
 

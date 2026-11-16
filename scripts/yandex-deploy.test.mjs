@@ -54,6 +54,10 @@ test("the deploy script asks before acting and takes secrets only as Lockbox ref
   assert.match(script, /--environment "MAIL_REGION=ru"/);
   assert.match(script, /--secret "environment-variable=\$\{key\},id=\$\{LOCKBOX_ID\},key=\$\{key\}"/);
   assert.equal(/wrangler|api\.cloudflare\.com/.test(script), false);
+  // Optional Lockbox keys (key rotation) are an allowlist; anything else stops the deploy.
+  assert.match(script, /for key in \$\{LOCKBOX_OPTIONAL_KEYS:-\}; do/);
+  assert.match(script, /MAIL_BLOB_KEYS\|MAIL_BLIND_KEY\) secret_args\+=/);
+  assert.match(script, /is not an optional key" >&2; exit 1/);
 });
 
 test("the RU deploy workflow is manual, main-only, reviewed, and keeps app secrets in Lockbox", () => {

@@ -1,9 +1,11 @@
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, MessageExtra, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
+import { syncUidsForMailbox } from "./bridge/uids.ts";
 import { mailDomain } from "./domain.ts";
 import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
 import { messageSnippet } from "./logic.ts";
+import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
 import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
@@ -313,14 +315,19 @@ export async function insertMessage(
     ["snippet", snippet],
   ];
   for (const person of [...message.to, ...message.cc]) indexed.push(["to", person.email]);
-  for (const [field, value] of indexed) {
-    if (!value.trim()) continue;
+  // One statement for every index row (subject, sender, snippet, each recipient): a message with many
+  // recipients was one round trip per row, which on Workers is one Hyperdrive trip each.
+  const rows = indexed.filter(([, value]) => value.trim());
+  if (rows.length) {
     await db.query(
       `insert into cumulus_mail.message_blind (tenant_id, message_id, field, bidx)
-       values ($1, $2, $3, $4) on conflict do nothing`,
-      [tenantId, message.id, field, blindIndex(tenantId, field, value)],
+       select $1, $2, field, bidx from unnest($3::text[], $4::text[]) as row(field, bidx)
+       on conflict do nothing`,
+      [tenantId, message.id, rows.map(([field]) => field), rows.map(([field, value]) => blindIndex(tenantId, field, value))],
     );
   }
+  // Encrypted word index for server-side search (search.ts): one upsert into message_words.
+  await indexMessageWords(db, tenantId, message);
 }
 
 export async function readMessages(db: MailQuery, tenantId: string): Promise<MailMessage[]> {
@@ -402,9 +409,18 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.tasks where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.rules where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
+    // The display name is the owner's to change (first-run setup, settings); the address never is.
+    const displayName = (snapshot.me?.name ?? "").replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
     await db.query(
-      `update cumulus_mail.mailboxes set signature = $2, settings_enc = $3 where tenant_id = $1`,
-      [tenantId, sealText(tenantId, snapshot.signature.slice(0, 4000)), sealText(tenantId, JSON.stringify(settings))],
+      `update cumulus_mail.mailboxes
+          set signature = $2, settings_enc = $3, display_name = coalesce($4, display_name)
+        where tenant_id = $1`,
+      [
+        tenantId,
+        sealText(tenantId, snapshot.signature.slice(0, 4000)),
+        sealText(tenantId, JSON.stringify(settings)),
+        displayName ? sealText(tenantId, displayName) : null,
+      ],
     );
     for (const message of snapshot.messages) {
       await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);
@@ -449,6 +465,8 @@ export async function replaceMailboxContents(
       );
     }
     await replaceRoutedAddresses(db, tenantId, routedAddresses({ ...snapshot, settings }));
+    // IMAP UID bookkeeping for the read-only bridge. A no-op unless MAIL_BRIDGE=on.
+    await syncUidsForMailbox(db, tenantId, snapshot.messages.map((m) => ({ id: m.id, folder: asFolder(m.folder) })));
     for (const [key, text] of Object.entries(snapshot.briefs)) {
       await db.query(
         `insert into cumulus_mail.briefs (tenant_id, brief_key, body) values ($1,$2,$3)`,

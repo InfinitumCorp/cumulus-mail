@@ -103,9 +103,14 @@ export function tomorrowMorning(now = new Date()): string {
   return until.toISOString();
 }
 
-export function formatWhen(iso: string): string {
+/**
+ * Dates are written in English ("Tue 03 Nov, 16:48"; the interface translator turns them into Russian)
+ * in `timeZone`: UTC on the server and in the first render, so the hydrated page matches; the viewer's
+ * own zone after that (src/lib/viewer-time-zone.ts).
+ */
+export function formatWhen(iso: string, timeZone = "UTC"): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
+    timeZone,
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -115,12 +120,40 @@ export function formatWhen(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function formatShort(iso: string): string {
+export function formatShort(iso: string, timeZone = "UTC"): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
+    timeZone,
     day: "2-digit",
     month: "short",
   }).format(new Date(iso));
+}
+
+/** The zone after a time: "UTC", or the offset at that moment ("GMT+3", "GMT-5"), which needs no translation. */
+export function zoneLabel(iso: string, timeZone = "UTC"): string {
+  if (timeZone === "UTC") return "UTC";
+  const part = new Intl.DateTimeFormat("en-GB", { timeZone, timeZoneName: "shortOffset" })
+    .formatToParts(new Date(iso))
+    .find((p) => p.type === "timeZoneName")?.value;
+  return !part || /^GMT([+-]0)?$/.test(part) ? "UTC" : part;
+}
+
+/**
+ * A calendar label that starts with its own start time in UTC ("2026-11-26 17:00 UTC · Every week"),
+ * with that time in `timeZone` instead ("2026-11-26 20:00 GMT+3 · Every week"). Labels written any other
+ * way (an invite's own text) are left as they are.
+ */
+export function localWhenLabel(label: string, sortIso: string, timeZone = "UTC"): string {
+  const ms = Date.parse(sortIso);
+  if (timeZone === "UTC" || !Number.isFinite(ms)) return label;
+  const iso = new Date(ms).toISOString();
+  const utcPrefix = `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  if (!label.startsWith(utcPrefix)) return label;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(ms))
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${zoneLabel(iso, timeZone)}${label.slice(utcPrefix.length)}`;
 }
 
 export function initials(name: string): string {
@@ -255,12 +288,30 @@ export function draftCount(messages: MailMessage[]): number {
 }
 
 export function rowTitle(message: MailMessage, meEmail: string = ME.email): string {
-  if (message.from.email.toLowerCase() === meEmail.toLowerCase()) {
-    const to = message.to[0]?.name || message.to[0]?.email || "someone";
-    return `To ${to}`;
-  }
-  return message.from.name;
+  const parts = rowTitleParts(message, meEmail);
+  return parts.to ? `To ${parts.name}` : parts.name;
 }
+
+/** The row title in pieces, so the list can render "To" as its own (translatable) text and the name as data. */
+export function rowTitleParts(message: MailMessage, meEmail: string = ME.email): { to: boolean; name: string } {
+  if (message.from.email.toLowerCase() === meEmail.toLowerCase()) {
+    return { to: true, name: message.to[0]?.name || message.to[0]?.email || "—" };
+  }
+  return { to: false, name: message.from.name };
+}
+
+/** System labels shown by their folder's name (which the interface translates); anything else is the owner's own label. */
+export const SYSTEM_LABEL_NAMES: Record<string, string> = {
+  inbox: "Inbox",
+  outbox: "Outbox",
+  sent: "Sent",
+  drafts: "Drafts",
+  archive: "Archive",
+  trash: "Trash",
+  quarantine: "Quarantine",
+  snoozed: "Snoozed",
+  starred: "Starred",
+};
 
 export type QuotaWarning = "near" | "over" | null;
 
@@ -287,7 +338,8 @@ export function quota(
   const pct = Math.min(100, ratio * 100);
   const warning: QuotaWarning = ratio >= 1 ? "over" : ratio >= 0.9 ? "near" : null;
   const shown = gb > 0 && gb < 0.01 ? "<0.01" : gb.toFixed(2);
-  return { label: `${shown} GB of ${quotaGb} GB`, pct, warning, measured };
+  // "2.41 / 15 GB" reads the same in every language (the catalog translates "GB").
+  return { label: `${shown} / ${quotaGb} GB`, pct, warning, measured };
 }
 
 export function parsePeople(value: string): Person[] {

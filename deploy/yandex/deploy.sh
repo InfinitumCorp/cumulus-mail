@@ -38,6 +38,14 @@ secret_args=()
 for key in BETTER_AUTH_SECRET DATABASE_URL MAIL_BLOB_KEY MAIL_S3_ACCESS_KEY_ID MAIL_S3_SECRET_ACCESS_KEY CRON_SECRET; do
   secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}")
 done
+# Lockbox keys mounted only when listed (a missing key fails the deploy): space-separated, from
+# MAIL_BLOB_KEYS and MAIL_BLIND_KEY (key rotation, docs/ops/key-rotation.md).
+for key in ${LOCKBOX_OPTIONAL_KEYS:-}; do
+  case "${key}" in
+    MAIL_BLOB_KEYS|MAIL_BLIND_KEY) secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}") ;;
+    *) echo "LOCKBOX_OPTIONAL_KEYS: ${key} is not an optional key" >&2; exit 1 ;;
+  esac
+done
 
 yc serverless container revision deploy \
   --container-name "${CONTAINER_NAME}" \

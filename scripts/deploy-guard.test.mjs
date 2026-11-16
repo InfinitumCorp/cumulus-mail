@@ -66,3 +66,18 @@ test("deploy workflows run only by hand, in a reviewed environment, through the 
   assert.equal(/deploy --config wrangler\.jsonc|wrangler(@[\d.]+)? deploy\s*$/m.test(cloudflare), false, "deploy only the guarded copy");
   assert.equal(/email routing|catch-all/i.test(cloudflare.replace(/^#.*$/gm, "")), false);
 });
+
+test("the guarded API config keeps Nitro's module rules, so every chunk is uploaded", async () => {
+  const { parseJsonc } = await import("./nitro-preset.mjs");
+  // As Nitro writes .output/server/wrangler.json: no_bundle with ESModule globs for the chunks.
+  const written = JSON.stringify({
+    name: "cumulus-mail-api",
+    main: "index.mjs",
+    workers_dev: true,
+    no_bundle: true,
+    hyperdrive: [{ binding: "HYPERDRIVE", id: "REPLACE_WITH_HYPERDRIVE_ID" }],
+    rules: [{ type: "ESModule", globs: ["**/*.mjs", "**/*.js"] }],
+  }, null, 2);
+  const guarded = guardConfig("api", parseJsonc(written), { hyperdriveId: "0".repeat(32) });
+  assert.deepEqual(guarded.rules, [{ type: "ESModule", globs: ["**/*.mjs", "**/*.js"] }]);
+});

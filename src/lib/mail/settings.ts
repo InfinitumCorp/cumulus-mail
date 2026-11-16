@@ -3,6 +3,7 @@ import { sanitizeFolders } from "./folders.ts";
 import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
+import { DEFAULT_THEME, THEMES, type Theme } from "../theme-names.ts";
 
 export type CustomDomain = {
   domain: string;
@@ -47,7 +48,13 @@ export type MailSettings = {
   audit: AuditEvent[];
   /** Lists the owner unsubscribed from, newest last. */
   unsubscribed: Unsubscribed[];
+  /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
+  setupPending: boolean;
+  /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
+  theme: Theme;
 };
+
+export { THEMES, type Theme } from "../theme-names.ts";
 
 export const TXT_VALUE = "cumulus-mail-verify=cumuluscloud.app";
 
@@ -77,6 +84,8 @@ export function defaultSettings(): MailSettings {
     events: [],
     audit: [],
     unsubscribed: [],
+    setupPending: false,
+    theme: DEFAULT_THEME,
   };
 }
 
@@ -113,6 +122,9 @@ function asEvent(value: unknown): CalEvent | null {
     ...(typeof row.rrule === "string" && row.rrule ? { rrule: row.rrule.slice(0, 300) } : {}),
     ...(Array.isArray(row.exdates)
       ? { exdates: row.exdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
+      : {}),
+    ...(Array.isArray(row.rdates)
+      ? { rdates: row.rdates.filter((item): item is string => typeof item === "string" && Number.isFinite(Date.parse(item))).slice(0, 100) }
       : {}),
     ...(typeof row.uid === "string" && row.uid ? { uid: row.uid.slice(0, 300) } : {}),
     ...(typeof row.organizer === "string" && validEmail(row.organizer) ? { organizer: row.organizer.toLowerCase().slice(0, 320) } : {}),
@@ -174,6 +186,8 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
           .map((item) => ({ key: text(item.key, 320).toLowerCase(), at: text(item.at, 40), method: item.method }))
           .slice(-200)
       : [],
+    setupPending: row.setupPending === true,
+    theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
   };
 }
 

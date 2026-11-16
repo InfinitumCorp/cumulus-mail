@@ -16,6 +16,7 @@ import { currentOutbound } from "./outbound/config.ts";
 import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
 import { limitsFromEnv, sendDecision } from "./outbound/limits.ts";
+import { outboundSafety, type SafetyDecision } from "./outbound/safety.ts";
 
 export type TenantStorage = (tenantId: string) => TenantBlobs;
 
@@ -126,6 +127,7 @@ export async function deliverMessage(
   const files = (await loadAttachmentMap(db, senderTenant)).get(message.id) ?? [];
   // Attachment bytes for SMTP, loaded once per message and only when outbound is on.
   let outgoing: OutgoingFile[] | null | undefined;
+  let safety: SafetyDecision | undefined;
   const hops: DeliveryHop[] = [];
   for (const person of uniquePeople([...message.to, ...message.cc])) {
     if (await suppressions.has(person.email)) {
@@ -176,7 +178,13 @@ export async function deliverMessage(
           });
           continue;
         }
-        const decision = await sendDecision(db, senderTenant, limitsFromEnv());
+        // Verified account, not paused, warm-up caps: once per message (outbound/safety.ts).
+        safety ??= await outboundSafety(db, senderTenant, message, limitsFromEnv());
+        if (!safety.allowed) {
+          hops.push({ email: person.email, status: "outbound", detail: safety.reason });
+          continue;
+        }
+        const decision = await sendDecision(db, senderTenant, safety.limits);
         if (decision.action === "hold") {
           hops.push({ email: person.email, status: "outbound", detail: decision.reason });
           continue;

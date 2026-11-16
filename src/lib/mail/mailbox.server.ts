@@ -1,4 +1,6 @@
 import { getSql } from "@/lib/db";
+import { takeAction } from "@/lib/rate-limit";
+import { markSendVerified } from "./outbound/safety.ts";
 import { DEV_USER_ID, UnauthorizedError, getSessionUser } from "@/lib/auth/verify.server";
 import {
   createLocalJWKSet,
@@ -36,7 +38,7 @@ import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
 import { catchAllAddress } from "./routing.ts";
-import { readSettings, writeSettings } from "./records.ts";
+import { readProfile, readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -76,7 +78,7 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
-): Promise<{ tenantId: string; profile: MailProfile }> {
+): Promise<{ tenantId: string; profile: MailProfile; verified: boolean }> {
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
     const tenantId = await tenantFromCumulusToken(bearerToken);
     assertTenantId(tenantId);
@@ -88,6 +90,7 @@ async function sessionMailbox(
     const email = (person?.email ?? "").trim().toLowerCase();
     if (!person || person.cid !== tenantId || !email.includes("@")) throw new UnauthorizedError();
     return {
+      verified: true, // a Cumulus ID token: the identity provider verified the email
       tenantId,
       profile: {
         name: person.name || person.username || email.split("@")[0]!,
@@ -100,18 +103,24 @@ async function sessionMailbox(
   }
   const session = await getSessionUser();
   if (session) {
-    if (session.id !== contextUserId) throw new TenantAccessError("Session does not match");
+    if (session.id !== contextUserId) {
+      const { metric } = await import("@/lib/observability/metrics");
+      metric("auth.failure", { reason: "tenant_mismatch" });
+      throw new TenantAccessError("Session does not match");
+    }
     assertTenantId(session.id);
     const email = (session.email ?? "").trim().toLowerCase();
     const address = email.includes("@") ? email : mailboxAddress(session.id);
     const name = address.split("@")[0] || "Cumulus";
     return {
+      verified: session.emailVerified === true,
       tenantId: session.id,
       profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
     };
   }
   if (contextUserId !== DEV_USER_ID) throw new TenantAccessError("Tenant is not verified");
   return {
+    verified: true, // the local development user (sign-in off), never a deployed copy
     tenantId: DEV_USER_ID,
     profile: { name: "Alex Reid", email: mailboxAddress("alex"), cid: "cid:alex", plan: "Free", quotaGb: 15 },
   };
@@ -127,9 +136,10 @@ export async function writeMailboxForSession(
   snapshot: MailboxSnapshot,
   bearerToken?: string,
 ): Promise<MailboxSnapshot> {
-  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const { tenantId, profile, verified } = await sessionMailbox(contextUserId, bearerToken);
   const db = await database();
   await openMailbox(db, tenantId, profile);
+  if (verified) await markSendVerified(db, tenantId);
   return writeSnapshot(db, storageFor, tenantId, snapshot);
 }
 
@@ -147,8 +157,142 @@ export async function readAttachmentForSession(
   return { name: file.name, contentType: file.contentType, dataBase64: bytesToBase64(file.bytes) };
 }
 
+/** "Report spam" / "Not spam" for a message in this mailbox. The sender is read from the stored message. */
+export async function reportSpamForSession(
+  contextUserId: string,
+  messageId: string,
+  verdict: "spam" | "ham",
+  bearerToken?: string,
+): Promise<{ ok: true }> {
+  const { messageSender, reportNotSpam, reportSpam } = await import("./spam.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const sender = await messageSender(db, tenantId, messageId);
+  if (!sender) throw new Error("That message is not in this mailbox.");
+  if (verdict === "spam") await reportSpam(db, tenantId, sender);
+  else await reportNotSpam(db, tenantId, sender);
+  return { ok: true };
+}
+
+/** Account deletion: ask (7-day grace period), cancel, or see where it stands. */
+export async function accountDeletionForSession(
+  contextUserId: string,
+  action: "status" | "request" | "cancel",
+  bearerToken?: string,
+): Promise<{ status: { purgeAfter: string } | null }> {
+  const { cancelDeletion, deletionStatus, requestDeletion } = await import("./account-deletion.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (action === "request") await requestDeletion(db, tenantId);
+  if (action === "cancel") await cancelDeletion(db, tenantId);
+  const status = await deletionStatus(db, tenantId);
+  return { status: status && !status.cancelled ? { purgeAfter: status.purgeAfter } : null };
+}
+
+/**
+ * "Download my data": a five-minute link to one part of the export, or when it is next available.
+ * The session is checked here; the download route only verifies the link's signature.
+ */
+export async function requestDataExportForSession(
+  contextUserId: string,
+  part: "mbox" | "json",
+  bearerToken?: string,
+): Promise<{ url: string } | { retryAt: string }> {
+  const { exportToken, nextExportAt } = await import("./data-export.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const next = await nextExportAt(db, tenantId, part);
+  if (next) return { retryAt: next.toISOString() };
+  return { url: `/api/account/export/${exportToken(tenantId, part)}` };
+}
+
+/** The download itself, for the route: the once-a-day claim, then the streamed file. */
+export async function dataExportResponse(token: string): Promise<Response> {
+  const { claimExport, dataJsonText, mboxStream, nextExportAt, verifyExportToken } = await import("./data-export.ts");
+  const link = verifyExportToken(token);
+  if (!link) return new Response("This download link is not valid or has expired.", { status: 403 });
+  const db = await database();
+  if (!(await claimExport(db, link.tenantId, link.part))) {
+    const next = await nextExportAt(db, link.tenantId, link.part);
+    const seconds = next ? Math.max(1, Math.ceil((next.getTime() - Date.now()) / 1000)) : 3600;
+    return new Response("Already downloaded today.", { status: 429, headers: { "retry-after": String(seconds) } });
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const common = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
+  if (link.part === "json") {
+    return new Response(await dataJsonText(db, link.tenantId), {
+      headers: {
+        ...common,
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="cumulus-mail-data-${day}.json"`,
+      },
+    });
+  }
+  return new Response(await mboxStream(db, storageFor(link.tenantId), link.tenantId), {
+    headers: {
+      ...common,
+      "content-type": "application/mbox",
+      "content-disposition": `attachment; filename="cumulus-mail-messages-${day}.mbox"`,
+    },
+  });
+}
+
+/** Ranked, paged search over the signed-in mailbox (encrypted word index, search.ts). */
+export async function searchMailForSession(
+  contextUserId: string,
+  input: { query: string; cursor?: string | null; folders?: string[] },
+  bearerToken?: string,
+): Promise<import("./search.ts").SearchPage> {
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const { searchMessages } = await import("./search.ts");
+  return searchMessages(db, tenantId, input.query, { cursor: input.cursor, folders: input.folders, limit: 25 });
+}
+
+/** Calendar subscription feed: status, make or rotate (returns the URL, once), or turn off. */
+export async function calendarFeedForSession(
+  contextUserId: string,
+  action: "status" | "rotate" | "disable",
+  bearerToken?: string,
+): Promise<{ enabled: boolean; url?: string }> {
+  const { disableFeed, feedStatus, rotateFeed } = await import("./calendar-feed.ts");
+  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (action === "rotate") {
+    const token = await rotateFeed(db, tenantId);
+    return { enabled: true, url: `/api/calendar/${token}.ics` };
+  }
+  if (action === "disable") await disableFeed(db, tenantId);
+  return { enabled: (await feedStatus(db, tenantId)).enabled };
+}
+
+/** The feed itself, for the route. 404 for an unknown token, exactly as for no feed. */
+export async function calendarFeedResponse(token: string): Promise<Response> {
+  const { feedIcs, feedTenant } = await import("./calendar-feed.ts");
+  const db = await database();
+  const tenantId = await feedTenant(db, token);
+  if (!tenantId) return new Response("Not found", { status: 404, headers: { "cache-control": "no-store" } });
+  const settings = await readSettings(db, tenantId);
+  const profile = await readProfile(db, tenantId);
+  return new Response(feedIcs(settings.events ?? [], `${profile?.name ?? "Cumulus"} — Cumulus://Mail`), {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": 'inline; filename="calendar.ics"',
+      // Private: a shared cache must never hand one person's calendar to another.
+      "cache-control": "private, max-age=300",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
+
 export async function exportMailboxForSession(contextUserId: string, bearerToken?: string): Promise<MailboxBackup> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "export");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return exportMailbox(db, storageFor(tenantId), tenantId);
@@ -160,6 +304,7 @@ export async function importMailboxForSession(
   bearerToken?: string,
 ): Promise<MailboxSnapshot> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "import");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return importMailbox(db, storageFor, tenantId, backup);
@@ -171,6 +316,7 @@ export async function unsubscribeForSession(
   bearerToken?: string,
 ): Promise<import("./unsubscribe.ts").UnsubscribeResult> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "unsubscribe");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const { unsubscribeMessage } = await import("./unsubscribe.ts");
@@ -183,6 +329,7 @@ export async function submitAbuseForSession(
   bearerToken?: string,
 ): Promise<{ id: string; suppressed: true }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "abuseReport");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   return createAbuseIntake(db, tenantId).submit(report);
@@ -196,6 +343,7 @@ export async function issueShareForSession(
   bearerToken?: string,
 ): Promise<{ token: string; exp: number }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "share");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const rows = await db.query<{ object_key: string }>(
@@ -250,6 +398,7 @@ export async function checkDomainForSession(
   bearerToken?: string,
 ): Promise<{ verified: boolean; txtName: string; txtValue: string }> {
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "domainCheck");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const settings = await readSettings(db, tenantId);

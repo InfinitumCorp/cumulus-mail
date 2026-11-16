@@ -1,13 +1,19 @@
 import { Check, Plus, X } from "lucide-react";
 import { useDialogFocus } from "@/lib/a11y/focus";
+import { AccountDeletionControls } from "./account-deletion-controls";
 import { BillingControls } from "./billing-controls";
+import { DataExportControls } from "./data-export-controls";
+import { ContactsTransfer } from "./contacts-transfer";
+import { CalendarFeedControls } from "./calendar-feed-controls";
 import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
 import { bridgeDesign } from "@/lib/mail/bridge";
 import { identityPosture } from "@/lib/mail/identity";
-import { addressAllowed, expectedTxt, MAX_DOMAINS, type MailSettings } from "@/lib/mail/settings";
+import { addressAllowed, expectedTxt, MAX_DOMAINS, THEMES, type MailSettings, type Theme } from "@/lib/mail/settings";
 import { cleanDomain } from "@/lib/mail/routing";
+import { localWhenLabel } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { ME, type CalEvent, type ArchitectTask, type Contact, type CustomFolder, type MailRule, type RuleAction } from "@/lib/mail/model";
 import { parseSieve } from "@/lib/mail/sieve";
 import { planUsage } from "@/lib/mail/plans";
@@ -24,17 +30,24 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
   }
 }
 
-export function CalendarPanel({ events }: { events: CalEvent[] }) {
+
+/** Settings → Appearance. Light is the default; "Device" follows the operating system's light or dark setting. */
+const APPEARANCE_LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Device" };
+const APPEARANCE = THEMES.map((value) => [value, APPEARANCE_LABELS[value]] as const);
+
+export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {
+  const timeZone = useViewerTimeZone();
   return (
     <div className="aux-pane overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
         <p className="font-mono text-xs uppercase tracking-wide text-muted">Calendar</p>
         <h2 className="mt-3 text-4xl tracking-tight">Coming up</h2>
         <p className="mt-3 max-w-lg text-muted">Encrypted with this mailbox. Spectre sees titles and times only while the Firmament grant stands.</p>
+        {feed ? <CalendarFeedControls /> : null}
         <ol className="mt-8">
           {events.map((event) => (
             <li key={event.id} className="grid gap-2 border-t border-line py-6 md:grid-cols-[200px_1fr] md:gap-8">
-              <p className="font-mono text-xs text-accent">{event.whenLabel}</p>
+              <p className="font-mono text-xs text-accent">{localWhenLabel(event.whenLabel, event.sort, timeZone)}</p>
               <div>
                 <h3 className="text-2xl tracking-tight">{event.title}</h3>
                 <p className="mt-2 text-sm">{event.with}</p>
@@ -53,11 +66,14 @@ export function ContactsPanel({
   query,
   onWrite,
   onSave,
+  onReplace,
 }: {
   contacts: Contact[];
   query: string;
   onWrite: (contact: Contact) => void;
   onSave?: (contact: Contact) => void;
+  /** Bulk replace, for import. Absent: no import/export controls. */
+  onReplace?: (contacts: Contact[]) => void;
 }) {
   const q = query.trim().toLowerCase();
   const rows = contacts.filter((contact) =>
@@ -68,6 +84,7 @@ export function ContactsPanel({
       <div className="mx-auto w-full max-w-3xl px-5 py-8 md:px-8">
         <p className="font-mono text-xs uppercase tracking-wide text-muted">Contacts</p>
         <h2 className="mt-3 text-4xl tracking-tight">People</h2>
+        {onReplace ? <ContactsTransfer contacts={contacts} onReplace={onReplace} /> : null}
         <ul className="mt-8">
           {rows.length === 0 ? <li className="border-t border-line py-6 text-sm text-muted">No one matches.</li> : null}
           {rows.map((contact) => (
@@ -254,6 +271,18 @@ export function AccountPanel({
                   </ul>
                 ) : null}
                 <BillingControls />
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Your data</dt>
+              <dd>
+                <DataExportControls />
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted">Delete</dt>
+              <dd>
+                <AccountDeletionControls />
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -451,6 +480,29 @@ export function AccountPanel({
               </dd>
             </div>
             <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
+              <dt className="text-muted" id="appearance-label">Appearance</dt>
+              <dd>
+                <div role="radiogroup" aria-labelledby="appearance-label" className="flex flex-wrap gap-2">
+                  {APPEARANCE.map(([value, label]) => (
+                    <label
+                      key={value}
+                      className={`inline-flex h-11 cursor-pointer items-center gap-2 border px-3 text-sm ${settings.theme === value ? "border-ink" : "border-line"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="appearance"
+                        value={value}
+                        checked={settings.theme === value}
+                        onChange={() => onSettings({ ...settings, theme: value })}
+                        className="accent-accent"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </dd>
+            </div>
+            <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-line py-4">
               <dt className="text-muted">Undo send</dt>
               <dd>
                 <input
@@ -468,10 +520,21 @@ export function AccountPanel({
             <div className="border-b border-line py-4">
               <dt className="text-muted">Sign-in</dt>
               <dd className="mt-2 text-sm text-muted">
-                {posture.note} Factors: {posture.methods.join(", ")}.{" "}
-                <a className="text-accent" href={posture.accountUrl} target="_blank" rel="noopener noreferrer">
-                  {posture.accountUrl.replace(/^https:\/\//, "")}
-                </a>
+                {posture.note} Factors: {posture.methods.join(", ")}.
+                {/* The issuer is a machine endpoint (OIDC discovery), not a page: shown as text, not a link, so a
+                    screen reader does not read a long URL as link text and nobody lands on a JSON document. */}
+                <span className="mt-1 block">
+                  Identity provider:{" "}
+                  <code translate="no" className="break-all font-mono text-xs">
+                    {posture.issuer}
+                  </code>
+                </span>
+                <span className="mt-1 block">
+                  Manage your sign-in at{" "}
+                  <a className="text-accent" href={posture.accountUrl} target="_blank" rel="noopener noreferrer">
+                    {posture.accountUrl.replace(/^https:\/\//, "")}
+                  </a>
+                </span>
               </dd>
             </div>
             <div className="border-b border-line py-4">

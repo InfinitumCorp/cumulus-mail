@@ -1,5 +1,6 @@
 import { assertTenantId } from "../../storage/adapter.ts";
 import { newId } from "../bytes.ts";
+import { metric } from "../../observability/metrics.ts";
 import { recordBounce } from "../dsn.ts";
 import { blindIndex, openText, sealText } from "../field-crypto.ts";
 import type { DeliveryHop } from "../model.ts";
@@ -88,6 +89,20 @@ type Row = {
 
 export type QueueReport = { sent: number; retried: number; bounced: number };
 
+/** Rows waiting to send, and how long the oldest has waited: the queue-depth metric. */
+export async function queueDepth(db: MailQuery, now = new Date()): Promise<{ queued: number; sending: number; oldestQueuedSeconds: number }> {
+  const rows = await db.query<{ queued: number | string; sending: number | string; oldest: string | Date | null }>(
+    `select count(*) filter (where status = 'queued') as queued,
+            count(*) filter (where status = 'sending') as sending,
+            min(created_at) filter (where status in ('queued', 'sending')) as oldest
+       from cumulus_mail.outbound_queue`,
+    [],
+  );
+  const row = rows[0];
+  const oldest = row?.oldest ? new Date(row.oldest).getTime() : now.getTime();
+  return { queued: Number(row?.queued ?? 0), sending: Number(row?.sending ?? 0), oldestQueuedSeconds: Math.max(0, Math.round((now.getTime() - oldest) / 1000)) };
+}
+
 /**
  * Send due rows. 2xx marks a row sent. 5xx (or running out of attempts)
  * bounces it through `recordBounce`, which suppresses the address on a
@@ -145,6 +160,7 @@ export async function processOutboundQueue(
     const attempts = row.attempts + 1;
     if (result?.ok) {
       report.sent += 1;
+      metric("mail.outbound.result", { outcome: "sent", attempts });
       await finish(db, row, "sent", attempts, null);
       await updateHop(db, tenantId, row.message_id, recipient, `Sent by SMTP. ${result.detail}`.slice(0, 300));
       continue;
@@ -152,6 +168,7 @@ export async function processOutboundQueue(
     const failure = result && !result.ok ? result : { permanent: false, status: "4.0.0", detail: "No reply for this recipient" };
     if (failure.permanent || attempts >= policy.maxAttempts) {
       report.bounced += 1;
+      metric("mail.outbound.result", { outcome: "bounced", status: failure.status, permanent: failure.permanent, attempts });
       // Out of retries on a 4xx keeps its 4.x.x status: the message bounces, but a
       // server that was down for a while does not get the address suppressed.
       const status = failure.status;
@@ -162,6 +179,7 @@ export async function processOutboundQueue(
     }
     report.retried += 1;
     const next = new Date(now.getTime() + backoffMs(attempts, policy));
+    metric("mail.outbound.result", { outcome: "retry", status: failure.status, attempts });
     await db.query(
       `update cumulus_mail.outbound_queue
        set status = 'queued', attempts = $3, next_attempt_at = $4, last_error = $5, updated_at = now()

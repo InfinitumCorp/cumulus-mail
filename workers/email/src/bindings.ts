@@ -22,6 +22,10 @@ export type IngestHooks = {
 export type WorkerBindings = {
   HYPERDRIVE?: { connectionString?: string };
   MAIL_BLOB_KEY?: string;
+  /** Key ring for rotation (docs/ops/key-rotation.md): current key first, old keys after. */
+  MAIL_BLOB_KEYS?: string;
+  /** Stable key for blind indexes; defaults to MAIL_BLOB_KEY. */
+  MAIL_BLIND_KEY?: string;
   CUMULUS_ALLOW_SUPABASE?: string;
   MAIL_S3_LOOPBACK_ONLY?: string;
   SUPABASE_S3_ENDPOINT?: string;
@@ -70,7 +74,7 @@ async function connectPg(connectionString: string): Promise<QueryClient> {
 /**
  * Build the ingest object from a Hyperdrive binding and Supabase Storage S3
  * settings. The connection string is passed to `pg` unchanged. Blob bytes use
- * the existing per-tenant AES-256-GCM (`MAIL_BLOB_KEY`) and
+ * the existing per-tenant AES-256-GCM (`MAIL_BLOB_KEYS`, else `MAIL_BLOB_KEY`) and
  * `tenants/<tenantId>/<blobId>` keys.
  */
 export async function openWorkerIngest(
@@ -89,7 +93,10 @@ export async function openWorkerIngest(
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error("Supabase Storage is not configured for the inbound worker.");
   }
-  if (env.MAIL_BLOB_KEY?.trim()) process.env.MAIL_BLOB_KEY = env.MAIL_BLOB_KEY.trim();
+  for (const name of ["MAIL_BLOB_KEY", "MAIL_BLOB_KEYS", "MAIL_BLIND_KEY"] as const) {
+    const value = env[name]?.trim();
+    if (value) process.env[name] = value;
+  }
   if (env.CUMULUS_ALLOW_SUPABASE?.trim()) {
     process.env.CUMULUS_ALLOW_SUPABASE = env.CUMULUS_ALLOW_SUPABASE.trim();
   }

@@ -41,7 +41,19 @@ export const authMiddleware = createMiddleware({ type: "function" })
     const { assertSameSiteRequest } = await import("./isolation.server");
     const { requireUserId } = await import("./verify.server");
     // Reject scripted cross-site/sibling requests before touching per-user data.
-    assertSameSiteRequest();
-    const userId = await requireUserId(context.bearerToken);
+    const { metric } = await import("../observability/metrics");
+    try {
+      assertSameSiteRequest();
+    } catch (error) {
+      metric("auth.failure", { reason: "cross_site" });
+      throw error;
+    }
+    let userId: string;
+    try {
+      userId = await requireUserId(context.bearerToken);
+    } catch (error) {
+      metric("auth.failure", { reason: "no_session" });
+      throw error;
+    }
     return next({ context: { userId, bearerToken: context.bearerToken } });
   });

@@ -93,21 +93,27 @@ async function openBilling(fixture) {
   await page.locator("aside button.w-full.border-t").click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
-  return { context, page, dialog, errors };
+  // Stop answering routes before the context goes: a billing call still in flight would otherwise
+  // fail after the test ends ("Request context disposed") and fail the file.
+  const close = async () => {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await context.close();
+  };
+  return { context, page, dialog, errors, close };
 }
 
 test("not subscribed: a plan picker and Upgrade, no Manage billing, no notice", async () => {
-  const { context, dialog, errors } = await openBilling({ enabled: true, subscribed: false, hasCustomer: false });
+  const { close, dialog, errors } = await openBilling({ enabled: true, subscribed: false, hasCustomer: false });
   await dialog.getByRole("button", { name: "Upgrade" }).waitFor({ timeout: 10_000 });
   assert.equal(await dialog.getByRole("combobox", { name: "Plan to upgrade to" }).count(), 1);
   assert.equal(await dialog.getByRole("button", { name: "Manage billing" }).count(), 0);
   assert.equal(await dialog.getByText(/Payment failed|Renews/).count(), 0);
   assert.deepEqual(errors, []);
-  await context.close();
+  await close();
 });
 
 test("subscribed and paid: Manage billing, no Upgrade, and the renewal date", async () => {
-  const { context, dialog, errors } = await openBilling({
+  const { close, dialog, errors } = await openBilling({
     enabled: true,
     subscribed: true,
     hasCustomer: true,
@@ -118,11 +124,11 @@ test("subscribed and paid: Manage billing, no Upgrade, and the renewal date", as
   assert.equal(await dialog.getByRole("button", { name: "Upgrade" }).count(), 0);
   assert.match(await dialog.innerText(), /Renews Mar 4, 2027\./);
   assert.deepEqual(errors, []);
-  await context.close();
+  await close();
 });
 
 test("payment failed: an urgent alert telling the person to update their card", async () => {
-  const { context, dialog, errors } = await openBilling({
+  const { close, dialog, errors } = await openBilling({
     enabled: true,
     subscribed: true,
     hasCustomer: true,
@@ -134,25 +140,25 @@ test("payment failed: an urgent alert telling the person to update their card", 
   assert.match(await alert.innerText(), /Payment failed\. Update your card in Manage billing to keep your plan\./);
   assert.equal(await dialog.getByRole("button", { name: "Manage billing" }).count(), 1);
   assert.deepEqual(errors, []);
-  await context.close();
+  await close();
 });
 
 test("when the server cannot start a checkout, the dialog says so instead of failing silently", async () => {
-  const { context, page, dialog, errors } = await openBilling({ enabled: true, subscribed: false });
+  const { close, page, dialog, errors } = await openBilling({ enabled: true, subscribed: false });
   await dialog.getByRole("button", { name: "Upgrade" }).click();
   const alert = dialog.getByRole("alert");
   await alert.waitFor({ timeout: 15_000 });
   assert.ok((await alert.innerText()).trim().length > 0);
   assert.equal(page.url().startsWith(URL_BASE), true, "the person is not sent anywhere on a failure");
   assert.deepEqual(errors, []);
-  await context.close();
+  await close();
 });
 
 test("billing off: the account dialog shows no billing controls at all", async () => {
-  const { context, dialog, errors } = await openBilling({ enabled: false });
+  const { close, dialog, errors } = await openBilling({ enabled: false });
   assert.ok((await dialog.innerText()).includes("Plan"));
   assert.equal(await dialog.getByRole("button", { name: "Upgrade" }).count(), 0);
   assert.equal(await dialog.getByRole("button", { name: "Manage billing" }).count(), 0);
   assert.deepEqual(errors, []);
-  await context.close();
+  await close();
 });

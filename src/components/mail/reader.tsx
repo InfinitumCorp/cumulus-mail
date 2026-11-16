@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import { Archive, ChevronLeft, Clock, Forward, ListTodo, Lock, Paperclip, Reply, ReplyAll, Shield, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attachment, CalEvent, CustomFolder, FolderId, MailMessage } from "@/lib/mail/model";
 import { ME } from "@/lib/mail/model";
-import { formatSize, formatWhen, initials, isE2E } from "@/lib/mail/logic";
+import { formatSize, formatWhen, initials, isE2E, SYSTEM_LABEL_NAMES, zoneLabel } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { Composer, type DraftForm } from "./composer";
 
 type Props = {
@@ -53,6 +55,8 @@ type Props = {
   inviteRsvp?: "accepted" | "tentative" | "declined";
   onReceipt?: (accept: boolean) => void;
   onReport?: () => void;
+  /** "Report spam" (moves to Quarantine) or, in Quarantine, "Not spam" (back to the Inbox). */
+  onSpam?: (verdict: "spam" | "ham") => void;
 };
 
 export function Reader(props: Props) {
@@ -122,12 +126,15 @@ function Opened({
   inviteRsvp,
   onReceipt,
   onReport,
+  onSpam,
 }: Props & { message: MailMessage }) {
+  const timeZone = useViewerTimeZone();
   const e2e = isE2E(message);
   const inline = composer?.placement === "inline" ? composer : null;
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1">
+      {/* Phones: one row that scrolls sideways, so the message starts near the top instead of under four rows of buttons. */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-line px-2 py-1 [scrollbar-width:none] *:shrink-0 md:flex-wrap md:overflow-visible">
         <button type="button" className="grid size-11 place-items-center lg:hidden" onClick={onBack} aria-label="Back to list">
           <ChevronLeft className="size-5" />
         </button>
@@ -201,6 +208,17 @@ function Opened({
           <ListTodo className="size-4" />
           Architect
         </button>
+        {onSpam && message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
+          message.folder === "quarantine" ? (
+            <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={() => onSpam("ham")}>
+              Not spam
+            </button>
+          ) : (
+            <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={() => onSpam("spam")}>
+              Report spam
+            </button>
+          )
+        ) : null}
         {onReport ? (
           <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onReport}>
             Report
@@ -209,8 +227,17 @@ function Opened({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8">
-          <p className="font-mono text-xs uppercase tracking-wide text-muted">{message.labels.join(" · ") || "Mail"}</p>
-          <h2 translate="no" className="mt-3 text-3xl leading-tight tracking-tight md:text-4xl">{message.subject}</h2>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">
+            {message.labels.length
+              ? message.labels.map((label, index) => (
+                  <Fragment key={label}>
+                    {index ? " · " : null}
+                    {SYSTEM_LABEL_NAMES[label] ? SYSTEM_LABEL_NAMES[label] : <span translate="no">{label}</span>}
+                  </Fragment>
+                ))
+              : "Mail"}
+          </p>
+          <h2 translate="no" className="mt-3 text-2xl leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-3xl md:text-4xl">{message.subject}</h2>
           <p className={`mt-4 inline-flex items-center gap-2 text-sm ${e2e ? "text-accent" : "text-muted"}`}>
             {e2e ? <Lock className="size-4" /> : <Shield className="size-4" />}
             {e2e ? "End-to-end · Cumulus to Cumulus" : "Encrypted at rest · leaves Cumulus when it is delivered"}
@@ -312,7 +339,7 @@ function Opened({
                         {item.from.name} <span className="text-muted">{`<${item.from.email}>`}</span>
                       </p>
                       <time className="font-mono text-xs text-muted" dateTime={item.at}>
-                        {formatWhen(item.at)} UTC
+                        {formatWhen(item.at, timeZone)} {zoneLabel(item.at, timeZone)}
                       </time>
                     </div>
                     <p className="mt-1 text-sm text-muted">

@@ -45,3 +45,14 @@ export async function createHarness() {
 export function profile(tenantId: string, email: string, name = email.split("@")[0] || email): MailProfile {
   return { name, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 };
 }
+
+/**
+ * Make a mailbox an established, verified sender: email verified and older than the warm-up week
+ * (outbound/safety.ts). For tests about SMTP, retries and caps rather than about those rules.
+ */
+export async function establishedSender(db: { query: (text: string, params?: unknown[]) => Promise<unknown> }, tenantId: string): Promise<void> {
+  await db.query(
+    `update cumulus_mail.mailboxes set send_verified = true, created_at = now() - interval '30 days' where tenant_id = $1`,
+    [tenantId],
+  );
+}

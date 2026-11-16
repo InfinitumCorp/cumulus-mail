@@ -18,6 +18,8 @@ COPY . .
 ARG VITE_AUTH_ENABLED=true
 ENV VITE_AUTH_ENABLED=${VITE_AUTH_ENABLED}
 # Short commit for /api/health (passed by deploy/yandex/deploy.sh); not a secret.
+# No third-party grok.com script in the image (owner decision 2026-11-16; also the code default).
+ENV VITE_GROK_EXTENSIONS=0
 ARG APP_COMMIT=""
 ENV APP_COMMIT=${APP_COMMIT}
 RUN npm run build:node

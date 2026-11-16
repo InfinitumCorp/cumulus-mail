@@ -1,9 +1,12 @@
 import { sha256Hex, type TenantBlobs } from "../storage/index.ts";
 import { authenticateInbound, emptyResolver, type DNSResolver } from "./authenticate.ts";
+import { metric } from "../observability/metrics.ts";
+import { inboundVerdict, type ResolveA } from "./spam.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { createBounceHandler } from "./dsn.ts";
 import { applyRules } from "./logic.ts";
+import { noteNewMessage } from "./bridge/uids.ts";
 import { parseMime } from "./mime.ts";
 import type { MailMessage, MailRule } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -25,11 +28,14 @@ export async function ingestInboundEmail(
   storageFor: TenantStorage,
   message: InboundEmail,
   resolver: DNSResolver = emptyResolver,
-  options: { enforceStorage?: boolean } = {},
+  options: { enforceStorage?: boolean; spam?: { env?: Record<string, string | undefined>; resolve?: ResolveA } } = {},
 ): Promise<{ stored: string[]; rejected?: "mailbox_full" }> {
   const recipient = message.to.trim().toLowerCase();
   const tenantId = await findTenantByAddress(db, recipient);
-  if (!tenantId) return { stored: [] };
+  if (!tenantId) {
+    metric("mail.inbound.result", { outcome: "no_mailbox" });
+    return { stored: [] };
+  }
 
   const digest = await sha256Hex(message.raw);
   const id = `in-${digest.slice(0, 32)}`;
@@ -37,12 +43,16 @@ export async function ingestInboundEmail(
     `select id from cumulus_mail.messages where tenant_id = $1 and id = $2 limit 1`,
     [tenantId, id],
   );
-  if (existing.length > 0) return { stored: [id] };
+  if (existing.length > 0) {
+    metric("mail.inbound.result", { outcome: "duplicate" });
+    return { stored: [id] };
+  }
 
   // Storage enforcement (docs/plans.md step 7) is off unless the operator turns it on. When on, a
   // message that would take the mailbox over its plan's quota is refused before anything is stored,
   // so the sender gets a "mailbox full" bounce instead of the mail being lost silently.
   if (options.enforceStorage && (await overQuotaWith(db, tenantId, message.raw.byteLength))) {
+    metric("mail.inbound.result", { outcome: "rejected", reason: "mailbox_full" });
     return { stored: [], rejected: "mailbox_full" };
   }
 
@@ -78,10 +88,13 @@ export async function ingestInboundEmail(
     { sender: message.from, ip: "192.0.2.10", helo: "inbound.example.test" },
     resolver,
   );
+  metric("mail.inbound.auth", { spf: auth.spf, dkim: auth.dkim, dmarc: auth.dmarc, disposition: auth.disposition });
+  // Lists, shared reputation, RBL (off unless configured) and the sender's own DMARC policy.
+  const verdict = await inboundVerdict(db, tenantId, from.email, auth, options.spam);
   const draft: MailMessage = {
     id,
     threadId: id,
-    folder: auth.disposition === "quarantine" ? "quarantine" : "inbox",
+    folder: verdict.folder,
     from,
     to: parsed.to.length ? parsed.to : [{ name: recipient.split("@")[0] || recipient, email: recipient }],
     cc: parsed.cc,
@@ -107,8 +120,13 @@ export async function ingestInboundEmail(
       action: row.action as MailRule["action"],
       label: row.label ?? undefined,
     }));
-  await insertMessage(db, tenantId, applyRules(draft, rules), rawKey);
+  const filed = applyRules(draft, rules);
+  await insertMessage(db, tenantId, filed, rawKey);
   for (const file of attachments) await insertAttachment(db, tenantId, id, file);
+  metric("mail.inbound.result", { outcome: "stored", folder: filed.folder === "quarantine" ? "quarantine" : "mailbox" });
+  // New mail gets its IMAP UID now, so a bridge sees it (and an IDLE wakes) without waiting for the
+  // next snapshot write. A no-op unless MAIL_BRIDGE=on.
+  await noteNewMessage(db, tenantId, filed.folder, id);
   return { stored: [id] };
 }
 

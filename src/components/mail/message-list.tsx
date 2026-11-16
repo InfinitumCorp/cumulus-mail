@@ -1,10 +1,12 @@
+import type { ReactNode } from "react";
 import { Star } from "lucide-react";
 import type { BoxId, CustomFolder, MailMessage } from "@/lib/mail/model";
 import { isCustomFolderId } from "@/lib/mail/folders";
 import { CATEGORIES, type Category, type Subscription } from "@/lib/mail/categories";
 
 export type InboxTab = "all" | Category | "subscriptions";
-import { formatShort, initials, messageSnippet, rowTitle } from "@/lib/mail/logic";
+import { formatShort, initials, messageSnippet, rowTitleParts } from "@/lib/mail/logic";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 type Props = {
   box: BoxId;
@@ -33,6 +35,10 @@ type Props = {
   unsubscribing?: string | null;
   onUnsubscribe?: (subscription: Subscription) => void;
   subscriptionNote?: string;
+  /** The current search, for the "no results" state. */
+  query?: string;
+  /** First-run card shown above the inbox (setup.tsx). */
+  setup?: ReactNode;
 };
 
 const TITLES: Record<Exclude<BoxId, `folder-${string}`>, string> = {
@@ -73,7 +79,10 @@ export function MessageList({
   unsubscribing = null,
   onUnsubscribe,
   subscriptionNote = "",
+  query = "",
+  setup = null,
 }: Props) {
+  const timeZone = useViewerTimeZone();
   const title = isCustomFolderId(box) ? (folders.find((folder) => folder.id === box)?.name ?? "Folder") : TITLES[box];
   const showTabs = box === "inbox" && Boolean(onTab);
   const visible = rows.map((row) => row.threadId);
@@ -206,8 +215,9 @@ export function MessageList({
         </div>
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {box === "inbox" ? setup : null}
         {rows.length === 0 ? (
-          <p className="px-4 py-10 text-sm text-muted">Nothing in {title.toLowerCase()}.</p>
+          <EmptyState box={box} title={title} query={query} unreadOnly={unreadOnly} />
         ) : (
           rows.map((message) => {
             const threadCount = messages.filter(
@@ -240,8 +250,8 @@ export function MessageList({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}>{rowTitle(message, meEmail)}</span>
-                      <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at)}</span>
+                      <span className={`truncate text-sm ${unread ? "text-ink" : "text-muted"}`}><RowTitle message={message} meEmail={meEmail} /></span>
+                      <span className="shrink-0 font-mono text-xs text-muted">{formatShort(message.at, timeZone)}</span>
                     </span>
                     <span className={`mt-1 flex items-baseline gap-2 text-sm ${unread ? "text-ink" : "text-muted"}`}>
                       <span translate="no" className="truncate">{message.subject}</span>
@@ -266,5 +276,51 @@ export function MessageList({
       </div>
       )}
     </section>
+  );
+}
+
+/** What an empty list says: a search with no results, an empty inbox, or an empty folder. */
+function EmptyState({ box, title, query, unreadOnly }: { box: string; title: string; query: string; unreadOnly: boolean }) {
+  const q = query.trim();
+  if (q) {
+    const heading = `No messages match “${q}”.`;
+    return (
+      <div className="px-4 py-10" role="status">
+        <p className="text-sm">{heading}</p>
+        <p className="mt-1 text-sm text-muted">Try fewer words, or search another folder.</p>
+      </div>
+    );
+  }
+  if (unreadOnly) {
+    return (
+      <div className="px-4 py-10" role="status">
+        <p className="text-sm">No unread messages.</p>
+      </div>
+    );
+  }
+  if (box === "inbox") {
+    return (
+      <div className="px-4 py-10" role="status">
+        <p className="text-sm">You're all caught up.</p>
+        <p className="mt-1 text-sm text-muted">New mail will appear here.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="px-4 py-10" role="status">
+      <p className="text-sm text-muted">Nothing in {title.toLowerCase()}.</p>
+    </div>
+  );
+}
+
+/** "To Mira Chen" for mail you sent ("To" is interface text; the name is data), else the sender's name. */
+function RowTitle({ message, meEmail }: { message: MailMessage; meEmail?: string }) {
+  const { to, name } = rowTitleParts(message, meEmail);
+  return to ? (
+    <>
+      To <span translate="no">{name}</span>
+    </>
+  ) : (
+    <span translate="no">{name}</span>
   );
 }

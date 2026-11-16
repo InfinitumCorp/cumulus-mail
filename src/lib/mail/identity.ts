@@ -3,14 +3,14 @@ import { CUMULUS_ID_ACCOUNT_URL } from "../auth/cid-account.ts";
 
 /**
  * Sign-in factors live on Cumulus://ID. Mail does not collect a second password,
- * TOTP secret, or security-key attestation.
+ * PIN or TOTP secret.
  */
 export type IdentityPosture = {
   issuer: string;
-  /** Where people manage passkeys, the authenticator app and recovery codes. */
+  /** Where people manage their password, PIN, authenticator app and recovery codes. */
   accountUrl: string;
   twoFactor: "delegated-to-cumulus-id";
-  methods: Array<"totp" | "security-key" | "passkey">;
+  methods: Array<"password" | "pin" | "totp">;
   note: string;
 };
 
@@ -19,7 +19,7 @@ export function identityPosture(issuer = DEFAULT_CUMULUS_ISSUER): IdentityPostur
     issuer,
     accountUrl: CUMULUS_ID_ACCOUNT_URL,
     twoFactor: "delegated-to-cumulus-id",
-    methods: ["totp", "security-key", "passkey"],
-    note: "Two-factor codes, passkeys, and security keys are enrolled on Cumulus://ID. This mailbox trusts that sign-in and does not store a second factor.",
+    methods: ["password", "pin", "totp"],
+    note: "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own.",
   };
 }

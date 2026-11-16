@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
 import { sha256Hex } from "./adapter.ts";
-import { openSeal, seal, masterKeyFromEnv } from "./crypto.ts";
+import { openSeal, seal, sealingKeysFromEnv, type Keys } from "./crypto.ts";
 import {
   BlobNotFoundError,
   createFilesystemDriver,
@@ -18,7 +18,7 @@ export {
   createS3Driver,
   newBlobId,
 } from "./driver.ts";
-export { masterKeyFromEnv, openSeal, seal, tenantKey } from "./crypto.ts";
+export { masterKeyFromEnv, openSeal, seal, sealingKeysFromEnv, tenantKey } from "./crypto.ts";
 export { ChecksumMismatchError, TenantAccessError, assertTenantId, sha256Hex } from "./adapter.ts";
 
 export type TenantBlobs = {
@@ -47,7 +47,7 @@ export function createStorageDriver(env: NodeJS.ProcessEnv = process.env): Stora
 }
 
 /** Encrypt every byte before it reaches the driver. Decrypt on read. */
-export function createSealedDriver(inner: StorageDriver, masterKey: Uint8Array): StorageDriver {
+export function createSealedDriver(inner: StorageDriver, masterKey: Keys): StorageDriver {
   return {
     kind: inner.kind,
     async put(tenantId, blobId, bytes) {
@@ -77,7 +77,7 @@ export function openTenantStorage(
   tenantId: string,
   inner: StorageDriver = createStorageDriver(),
 ): TenantBlobs {
-  const driver = createSealedDriver(inner, masterKeyFromEnv());
+  const driver = createSealedDriver(inner, sealingKeysFromEnv());
   return {
     async put(plaintext) {
       const blobId = newBlobId();

@@ -16,6 +16,15 @@
 
 const ISSUERS = { us: "id.cumuluscloud.app", ru: "ru.id.cumuluscloud.app" };
 
+/** ", schema current" / ", 1 migration pending" / ", schema unreachable"; empty for an older build without the check. */
+export function schemaNote(schema) {
+  if (!schema) return "";
+  if (typeof schema.pending === "number") {
+    return schema.pending === 0 ? ", schema current" : `, ${schema.pending} migration${schema.pending === 1 ? "" : "s"} pending`;
+  }
+  return `, schema ${schema.error ?? "down"}`;
+}
+
 /** The region a host should report: `--region` when given (gateway or workers.dev URLs), else ru.* -> ru. */
 export function expectedRegion(hostUrl, override) {
   if (override === "ru" || override === "us") return override;
@@ -41,14 +50,14 @@ export async function checkHealth(base, fetcher, region = expectedRegion(base)) 
   }
   const problems = [];
   if (response.status !== 200 || body.status !== "ok") {
-    problems.push(`status ${body.status} (db ${body.db?.ok ? "ok" : body.db?.error ?? "down"}, storage ${body.storage?.ok ? "ok" : body.storage?.error ?? "down"})`);
+    problems.push(`status ${body.status} (db ${body.db?.ok ? "ok" : body.db?.error ?? "down"}, storage ${body.storage?.ok ? "ok" : body.storage?.error ?? "down"}${schemaNote(body.schema)})`);
   }
   if (body.region !== region) problems.push(`region is ${body.region}, expected ${region}`);
   if (!body.commit || body.commit === "unknown") problems.push("no build commit");
   return {
     name: "health",
     ok: problems.length === 0,
-    detail: problems.length ? problems.join("; ") : `ok, region ${body.region}, commit ${body.commit}, db ${body.db?.source ?? "?"}, storage ${body.storage?.kind ?? "?"}`,
+    detail: problems.length ? problems.join("; ") : `ok, region ${body.region}, commit ${body.commit}, db ${body.db?.source ?? "?"}, storage ${body.storage?.kind ?? "?"}${schemaNote(body.schema)}`,
   };
 }
 
