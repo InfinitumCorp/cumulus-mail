@@ -45,6 +45,7 @@ import { MessageList, type InboxTab } from "./message-list";
 import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { applyTheme } from "@/lib/theme";
 import { useInterfaceLanguage } from "@/lib/interface-language";
 import { LanguageSlot } from "@/components/language";
 
@@ -99,6 +100,11 @@ export function MailApp() {
   const setSignature = useMail((s) => s.setSignature);
   const setSettings = useMail((s) => s.setSettings);
   const settings = useMail((s) => s.settings);
+  const theme = settings?.theme;
+  // The mailbox's Appearance setting wins over this device's remembered choice once it has loaded.
+  useEffect(() => {
+    if (theme) applyTheme(theme);
+  }, [theme]);
   // Recurrence rules are put into words by code, in the interface language (src/lib/mail/recurrence.ts).
   const interfaceLanguageNow = useInterfaceLanguage();
   const saveContact = useMail((s) => s.saveContact);
