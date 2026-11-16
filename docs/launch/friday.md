@@ -7,9 +7,15 @@ it puts them in order.
 **Who:** the owner, holding the Cloudflare, Yandex Cloud, Supabase and DNS logins. **Nothing in this
 repository or its CI makes these changes**; every switch below is yours.
 
-**Needs on `main`:** `npm run preflight` (#144, merged) and these launch PRs: the post-deploy smoke
-(`npm run smoke -- --url`), the deletion purge on both copies (#147), the spam reputation fix (#146), the
-security re-check, and the error and maintenance pages. Check `#86` for their numbers and merge order.
+**Needs on `main`:** `npm run preflight` (#144, merged), and the launch PRs:
+- #149, the post-deploy smoke (`npm run smoke -- --url`);
+- #147, the deletion purge on both copies;
+- #146, the spam reputation fix;
+- #148, the security re-check;
+- #150, the error and maintenance pages;
+- the save fix that keeps new mail (see #86).
+
+#86 lists the merge order.
 
 **Rule for the whole day:** if a step's check does not show what is written here, stop, do that step's
 rollback, and do not go on. Every step before the DNS cutover (step 6) is invisible to users.
