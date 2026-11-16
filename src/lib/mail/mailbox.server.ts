@@ -153,14 +153,14 @@ export async function reportSpamForSession(
   verdict: "spam" | "ham",
   bearerToken?: string,
 ): Promise<{ ok: true }> {
-  const { messageSender, reportNotSpam, reportSpam } = await import("./spam.ts");
+  const { reportedMessage, reportNotSpam, reportSpam } = await import("./spam.ts");
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
   const db = await database();
   await openMailbox(db, tenantId, profile);
-  const sender = await messageSender(db, tenantId, messageId);
-  if (!sender) throw new Error("That message is not in this mailbox.");
-  if (verdict === "spam") await reportSpam(db, tenantId, sender);
-  else await reportNotSpam(db, tenantId, sender);
+  const message = await reportedMessage(db, tenantId, messageId);
+  if (!message) throw new Error("That message is not in this mailbox.");
+  if (verdict === "spam") await reportSpam(db, tenantId, message.from, message.auth);
+  else await reportNotSpam(db, tenantId, message.from, message.auth);
   return { ok: true };
 }
 

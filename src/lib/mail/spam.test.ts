@@ -5,6 +5,7 @@ import { openMailbox } from "./mailbox.ts";
 import type { MailAuth } from "./model.ts";
 import { readSnapshot } from "./records.ts";
 import {
+  authenticatedForDomain,
   badReputation,
   dohResolver,
   inboundVerdict,
@@ -13,6 +14,7 @@ import {
   messageSender,
   rblListed,
   rblZones,
+  reportedMessage,
   reportNotSpam,
   reportSpam,
   reputation,
@@ -76,9 +78,9 @@ test("the list stores no address in the clear", async () => {
 test("Not spam allows the sender — but only for mail that passed authentication", async () => {
   const tenant = await mailbox("spam-allow");
   // Make the domain look bad to everyone, then allow one sender.
-  for (let i = 0; i < MIN_REPORTS; i += 1) await reportSpam(harness.db, await mailbox(`spam-voter-${i}`), `x${i}@bulk.example`);
+  for (let i = 0; i < MIN_REPORTS; i += 1) await reportSpam(harness.db, await mailbox(`spam-voter-${i}`), `x${i}@bulk.example`, PASS);
   assert.equal(badReputation(await reputation(harness.db, "bulk.example")), true);
-  await reportNotSpam(harness.db, tenant, "friend@bulk.example");
+  await reportNotSpam(harness.db, tenant, "friend@bulk.example", PASS);
   assert.deepEqual(await inboundVerdict(harness.db, tenant, "friend@bulk.example", PASS), { folder: "inbox", reason: "allowlisted" });
   // A forged From: of the allowed address, with no authentication, does not get the pass.
   assert.deepEqual(await inboundVerdict(harness.db, tenant, "friend@bulk.example", NONE), { folder: "quarantine", reason: "reputation" });
@@ -97,13 +99,53 @@ test("reputation needs enough reports, mostly spam, before it counts", () => {
   assert.equal(badReputation({ spam: 8, ham: 2 }), true);
 });
 
-test("one mailbox gets one vote per sender: pressing Report spam again counts nothing", async () => {
+test("one mailbox gets one vote per domain: pressing Report spam again counts nothing", async () => {
   const tenant = await mailbox("spam-onevote");
-  for (let i = 0; i < 10; i += 1) await reportSpam(harness.db, tenant, "repeat@onevote.example");
+  for (let i = 0; i < 10; i += 1) await reportSpam(harness.db, tenant, "repeat@onevote.example", PASS);
   assert.equal((await reputation(harness.db, "onevote.example")).spam, 1);
-  // Changing one's mind is a real change and counts.
-  await reportNotSpam(harness.db, tenant, "repeat@onevote.example");
-  assert.deepEqual(await reputation(harness.db, "onevote.example"), { received: 0, spam: 1, ham: 1 });
+  // Changing one's mind moves the vote rather than adding a second one.
+  await reportNotSpam(harness.db, tenant, "repeat@onevote.example", PASS);
+  assert.deepEqual(await reputation(harness.db, "onevote.example"), { received: 0, spam: 0, ham: 1 });
+});
+
+test("one person cannot sink a big domain by reporting many of its addresses", async () => {
+  const tenant = await mailbox("spam-sybil");
+  for (let i = 0; i < 20; i += 1) await reportSpam(harness.db, tenant, `user${i}@bigmail.example`, PASS);
+  assert.equal((await reputation(harness.db, "bigmail.example")).spam, 1, "twenty addresses, one mailbox: one vote");
+  assert.equal(badReputation(await reputation(harness.db, "bigmail.example")), false);
+  // Each address is still blocked for this mailbox.
+  assert.equal(await listKind(harness.db, tenant, "user7@bigmail.example"), "block");
+});
+
+test("mail that did not authenticate as its domain cannot vote on that domain", async () => {
+  // Forged "From: …@forged.example" reported by five different mailboxes: blocked for each of them, no votes.
+  for (let i = 0; i < MIN_REPORTS + 2; i += 1) {
+    const voter = await mailbox(`spam-forged-${i}`);
+    await reportSpam(harness.db, voter, `ceo@forged.example`, i % 2 ? NONE : undefined);
+    assert.equal(await listKind(harness.db, voter, "ceo@forged.example"), "block");
+  }
+  assert.deepEqual(await reputation(harness.db, "forged.example"), { received: 0, spam: 0, ham: 0 });
+  const spfOnly: MailAuth = { spf: "pass", dkim: "none", dmarc: "fail", policy: "none", disposition: "deliver" };
+  await reportSpam(harness.db, await mailbox("spam-forged-spf"), "ceo@forged.example", spfOnly);
+  assert.equal((await reputation(harness.db, "forged.example")).spam, 0, "an SPF pass for some other domain is not enough");
+});
+
+test("a domain that sends a lot needs proportionally more spam votes", () => {
+  assert.equal(badReputation({ spam: MIN_REPORTS, ham: 0, received: 1_000 }), true, "0.5% of 1,000 messages");
+  assert.equal(badReputation({ spam: MIN_REPORTS, ham: 0, received: 100_000 }), false, "five votes against 100,000 messages");
+  assert.equal(badReputation({ spam: 100, ham: 0, received: 100_000 }), true, "0.1% of them");
+});
+
+test("votes are stored without a mailbox id, and one mailbox's votes on different domains do not link up", async () => {
+  const tenant = await mailbox("spam-votes-private");
+  await reportSpam(harness.db, tenant, "a@one.example", PASS);
+  await reportSpam(harness.db, tenant, "b@two.example", PASS);
+  const rows = await harness.db.query<{ domain: string; voter: string }>(
+    `select domain, voter from cumulus_mail.spam_votes where domain in ('one.example', 'two.example') order by domain`,
+  );
+  assert.equal(rows.length, 2);
+  assert.equal(JSON.stringify(rows).includes(tenant), false);
+  assert.notEqual(rows[0].voter, rows[1].voter);
 });
 
 test("RBL: off unless zones are configured; listed domains go to Quarantine", async () => {
@@ -144,4 +186,9 @@ test("inbound mail from a blocked sender lands in Quarantine", async () => {
   assert.equal(message?.folder, "quarantine");
   assert.equal(await messageSender(harness.db, tenant, message!.id), "pest@pest-inbound.example");
   assert.equal(await messageSender(harness.db, "spam-a", message!.id), null, "another mailbox cannot report it");
+  // A report carries the stored authentication result. Without live DNS it is "none", so it does not vote.
+  const reported = await reportedMessage(harness.db, tenant, message!.id);
+  assert.equal(reported?.from, "pest@pest-inbound.example");
+  assert.equal(reported?.auth?.dmarc, "none");
+  assert.equal(authenticatedForDomain(reported?.auth), false);
 });
