@@ -131,7 +131,7 @@ export function stripeForm(params: Record<string, FormValue>): string {
 }
 
 export type StripeClient = (
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   params?: Record<string, FormValue>,
   options?: { idempotencyKey?: string },

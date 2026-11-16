@@ -20,6 +20,7 @@
     "preflight": "node scripts/preflight.mjs",
     "bundle:check": "node scripts/client-bundle-guard.mjs",
     "csp:check": "node scripts/csp-check.mjs",
+    "blobs:sweep": "node --experimental-strip-types --no-warnings scripts/sweep-orphan-blobs.mjs",
     "db:status": "node scripts/migrate.mjs --status",
     "load:inbound": "node --experimental-strip-types --no-warnings scripts/load/inbound-load.mjs",
     "keys:rekey": "node --experimental-strip-types --no-warnings scripts/rekey.mjs",
