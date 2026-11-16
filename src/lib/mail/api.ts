@@ -59,6 +59,32 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
     return exportMailboxForSession(context.userId, context.bearerToken);
   });
 
+/** Account deletion: "status", "request" (starts a 7-day grace period) or "cancel". */
+export const accountDeletion = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { action: "status" | "request" | "cancel" } => {
+    const action = (input as { action?: unknown } | null)?.action;
+    if (action !== "status" && action !== "request" && action !== "cancel") throw new Error("Unknown action");
+    return { action };
+  })
+  .handler(async ({ context, data }) => {
+    const { accountDeletionForSession } = await import("./mailbox.server");
+    return accountDeletionForSession(context.userId, data.action, context.bearerToken);
+  });
+
+/** "Download my data": a short-lived link to one part (mbox or json), or when it is next available. */
+export const requestDataExport = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { part: "mbox" | "json" } => {
+    const part = (input as { part?: unknown } | null)?.part;
+    if (part !== "mbox" && part !== "json") throw new Error("Unknown export part");
+    return { part };
+  })
+  .handler(async ({ context, data }) => {
+    const { requestDataExportForSession } = await import("./mailbox.server");
+    return requestDataExportForSession(context.userId, data.part, context.bearerToken);
+  });
+
 /** Calendar subscription feed: "status", "rotate" (makes or replaces it; the URL is returned once) or "disable". */
 export const calendarFeed = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
