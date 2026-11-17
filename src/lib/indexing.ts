@@ -35,8 +35,30 @@ export function isIndexableHost(host: string | null | undefined, raw = process.e
   return indexableHosts(raw).includes(hostName(host));
 }
 
-/** Adds `X-Robots-Tag` for a non-production host unless the response already set one. */
-export function applyIndexing(headers: Headers, host: string | null | undefined, raw = process.env.INDEXABLE_HOSTS): Headers {
-  if (!isIndexableHost(host, raw) && !headers.has("x-robots-tag")) headers.set("x-robots-tag", NOINDEX);
+/**
+ * Paths that stay out of search on every host, production included: `/p/<token>` is a password-protected
+ * message somebody was sent (the URL is the capability; a search result would hand it to strangers), and
+ * the API and server-function endpoints are not pages.
+ */
+const PRIVATE_PATHS = ["/p/", "/api/", "/_serverFn/"];
+
+export function isPrivatePath(path: string | null | undefined): boolean {
+  const value = path ?? "";
+  return PRIVATE_PATHS.some((prefix) => value.startsWith(prefix));
+}
+
+/**
+ * Adds `X-Robots-Tag` for a non-production host, or for a private path on any host, unless the response
+ * already set one.
+ */
+export function applyIndexing(
+  headers: Headers,
+  host: string | null | undefined,
+  raw = process.env.INDEXABLE_HOSTS,
+  path = "",
+): Headers {
+  if ((!isIndexableHost(host, raw) || isPrivatePath(path)) && !headers.has("x-robots-tag")) {
+    headers.set("x-robots-tag", NOINDEX);
+  }
   return headers;
 }

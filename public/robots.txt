@@ -1,0 +1,5 @@
+# Share pages (/p/...) are not disallowed here on purpose: a crawler has to fetch them to see their
+# X-Robots-Tag: noindex (server/middleware/indexing.ts). A disallowed URL can still be listed by its address.
+User-agent: *
+Disallow: /api/
+Disallow: /_serverFn/
