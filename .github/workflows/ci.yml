@@ -139,6 +139,9 @@ jobs:
       # Sign-in off, as in e2e, so "/" is the mail app itself rather than the sign-in screen.
       - run: VITE_AUTH_ENABLED=false npm run build:node
       - run: npm run perf
+      # A first user's whole session on this production build (CSP enforced): setup, send to self,
+      # receive, reply, search, delete.
+      - run: npm run e2e:prod
       # No server code (database adapter, migrator, storage, secret names) in the public client assets.
       - run: npm run bundle:check
       # The Content-Security-Policy, enforced, on the same production build: no violation on any screen.

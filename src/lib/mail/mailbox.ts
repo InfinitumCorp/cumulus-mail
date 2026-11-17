@@ -120,6 +120,20 @@ export async function writeSnapshot(
     keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
   }
 
+  // Mail the client never saw (it arrived after the client loaded: inbound, a delivery from another
+  // mailbox, a scheduled release) is kept as it is on the server. Only a message the client knew about
+  // and left out is deleted. Without knownIds (an older client) the save replaces the mailbox, as before.
+  if (Array.isArray(snapshot.knownIds)) {
+    const known = new Set(snapshot.knownIds);
+    const sent = new Set(messages.map((message) => message.id));
+    for (const message of current.messages) {
+      if (sent.has(message.id) || known.has(message.id)) continue;
+      messages.push(message);
+      keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
+      for (const file of existing.get(message.id) ?? []) storedFiles.push({ messageId: message.id, file });
+    }
+  }
+
   // Refuse rather than silently keep the first few.
   if (requestedDomainCount(snapshot.settings, mailDomain()) > limits.domains) {
     throw new Error(`You can add up to ${limits.domains} custom domains.`);
@@ -143,8 +157,9 @@ export async function writeSnapshot(
     throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
 
+  const { knownIds: _known, ...rest } = snapshot;
   const next: MailboxSnapshot = {
-    ...snapshot,
+    ...rest,
     // Only the display name comes from the client (first-run setup); address, plan and quota never do.
     me: { ...current.me, name: cleanDisplayName(snapshot.me?.name) || current.me.name },
     messages,
