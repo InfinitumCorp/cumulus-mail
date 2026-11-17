@@ -203,3 +203,33 @@ test("SCALVS drafts are written for the signed-in person, never a hard-coded nam
     assert.equal(draftSigner("x".repeat(200)).length, 80);
   }
 });
+
+// --- credentials never reach the logs ---------------------------------------------------------------
+
+test("logs: no console call is handed a token, cookie, password or secret value", () => {
+  const credential =
+    /\b(signedCookie|sessionToken|bearerToken|accessToken|refreshToken|idToken|apiKey|password|secret|authorization|cookieHeader|rawCookie)\b/i;
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) {
+        if (name !== "node_modules") walk(path);
+      } else if (/\.(ts|tsx|mjs)$/.test(name) && !name.includes(".test.")) {
+        const source = readFileSync(path, "utf8");
+        for (const match of source.matchAll(/console\.(log|error|warn|info|debug)\(/g)) {
+          let end = match.index! + match[0].length;
+          for (let depth = 1; depth && end < source.length; end += 1) {
+            if (source[end] === "(") depth += 1;
+            else if (source[end] === ")") depth -= 1;
+          }
+          // String literals may name a credential ("token refresh failed"); only the values passed matter.
+          const args = source.slice(match.index, end).replace(/`[^`]*`|"[^"\n]*"|'[^'\n]*'/g, '""');
+          if (credential.test(args)) found.push(`${path.slice(root.length + 1)}: ${args.replace(/\s+/g, " ").slice(0, 120)}`);
+        }
+      }
+    }
+  };
+  for (const dir of ["src", "workers", "server"]) walk(join(root, dir));
+  assert.deepEqual(found, []);
+});
