@@ -41,6 +41,8 @@ this repository.
       drill:restore` (#123, runbook §9) proves that mail sealed under a key does not open without it.
 - [ ] Content-Security-Policy: on by default in production builds (`MAIL_CSP` unset = `enforce`, #118). If a page
       breaks after a deploy, `MAIL_CSP=report-only` is the switch; `docs/deploy/csp.md`.
+- [ ] Rate limits at the edge (US): add the Cloudflare rate-limiting rules in `docs/deploy/edge-rate-limits.md`.
+      The app's own limits are per Worker instance, so they stop loops and scripts but not a distributed flood.
 - [ ] Monitoring: wire the alerts in `docs/ops/alerts.md` (#125) to Logpush (US) and Cloud Logging / Monitoring
       (RU, logs kept in `ru-central1`). Optional `MAIL_REQUEST_LOG=on` adds a scrubbed line per request.
 
