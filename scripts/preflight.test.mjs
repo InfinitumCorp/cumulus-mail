@@ -135,3 +135,9 @@ test("the report numbers what is missing and fails only on missing", () => {
   assert.ok(lines.includes("  1. C: do c (y)"));
   assert.equal(report([{ level: "warn", what: "B", fix: "b", see: "x" }]).failed, false);
 });
+
+test("maintenance mode left on is a warning", () => {
+  const findings = checkEnv({ ...US_READY, MAIL_MAINTENANCE: "1" }, { region: "us" });
+  assert.equal(levels(findings)["MAIL_MAINTENANCE is on"], "warn");
+  assert.equal(levels(checkEnv(US_READY, { region: "us" }))["MAIL_MAINTENANCE is on"], undefined);
+});
