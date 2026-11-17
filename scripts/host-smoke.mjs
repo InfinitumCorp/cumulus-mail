@@ -103,7 +103,9 @@ export async function checkPage(base, fetcher, region = expectedRegion(base)) {
       ? "this is the old static page worker (cumulus-config.js), not the new app"
       : response.status === 200
         ? "200, the app"
-        : `answered ${response.status}`,
+        : response.status === 503 && response.headers.get("x-maintenance") === "1"
+          ? "503: maintenance mode is on (MAIL_MAINTENANCE); unset it and redeploy to open the site"
+          : `answered ${response.status}`,
   });
   return results;
 }
