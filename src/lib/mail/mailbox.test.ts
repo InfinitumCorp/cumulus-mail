@@ -217,3 +217,29 @@ test("an older client without knownIds still replaces the mailbox (unchanged beh
   const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, messages: loaded.messages.filter((m) => m.id !== "drop") });
   assert.deepEqual(saved.messages.map((m) => m.id), ["keep"]);
 });
+
+test("a stale tab's save keeps the auto-reply history and unsubscribes the server recorded meanwhile", async () => {
+  const { db, storageFor } = harness;
+  const { readSettings, writeSettings } = await import("./records.ts");
+  const { keepServerNotes, noteAutoReply, noteUnsubscribed } = await import("./settings.ts");
+  const tenant = "save-keeps-notes";
+  await openMailbox(db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Ada"));
+  const loaded = await readSnapshot(db, tenant);
+
+  // While the tab is open, the server sends an auto-reply and records a one-click unsubscribe.
+  const now = new Date("2026-11-17T09:00:00Z");
+  await writeSettings(db, tenant, noteUnsubscribed(noteAutoReply(await readSettings(db, tenant), "bob@example.com", now), "news@shop.example", "one-click", now));
+
+  // The tab saves its older settings (with its own new unsubscribe).
+  const tabSettings = noteUnsubscribed(loaded.settings!, "promo@other.example", "mailto", new Date("2026-11-17T09:05:00Z"));
+  const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, settings: tabSettings, knownIds: loaded.messages.map((m) => m.id) });
+  assert.ok(saved.settings?.autoReply.sent.some((key) => key.startsWith("bob@example.com|")), "the auto-reply is still recorded");
+  assert.deepEqual(saved.settings?.unsubscribed.map((u) => u.key).sort(), ["news@shop.example", "promo@other.example"]);
+
+  // The merge itself: union, newest entry per key, never more than 200.
+  const merged = keepServerNotes(
+    { ...tabSettings, unsubscribed: [{ key: "a", at: "2026-01-01T00:00:00Z", method: "one-click" }] },
+    { ...tabSettings, unsubscribed: [{ key: "a", at: "2026-02-01T00:00:00Z", method: "mailto" }] },
+  );
+  assert.deepEqual(merged.unsubscribed, [{ key: "a", at: "2026-02-01T00:00:00Z", method: "mailto" }]);
+});
