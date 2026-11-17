@@ -49,6 +49,9 @@ export function checkEnv(env, { region }) {
   if (csp && !["enforce", "report-only", "off"].includes(csp)) out.push(missing(`MAIL_CSP (set to an unknown mode)`, "unset it (enforce), or enforce / report-only", "docs/deploy/csp.md"));
   else if (csp === "off") out.push(warn("MAIL_CSP=off", "no Content-Security-Policy is sent; unset it to enforce", "docs/deploy/csp.md"));
   else out.push(ok(`MAIL_CSP (${csp || "enforce"})`));
+  if (["1", "on", "true"].includes(env.MAIL_MAINTENANCE?.trim().toLowerCase() ?? "")) {
+    out.push(warn("MAIL_MAINTENANCE is on", "every page answers 503 with the maintenance page; unset it and redeploy to open the site", "docs/launch/friday.md"));
+  }
   if (env.VITE_GROK_EXTENSIONS?.trim() === "1") out.push(warn("VITE_GROK_EXTENSIONS=1", "the owner decided no grok.com script ships; unset it or set 0", "docs/deploy/csp.md"));
 
   if (region === "us") {
