@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
+  readStripeWebhook,
   StripeSignatureError,
   handleStripeEvent,
   openBillingPortal,
@@ -420,4 +421,37 @@ test("on Workers the Stripe keys come from the bindings, even before the databas
     if (keep.w === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
     else process.env.STRIPE_WEBHOOK_SECRET = keep.w;
   }
+});
+
+test("webhook: no signature header is refused before the body is read; an oversized body gets 413", async () => {
+  let pulled = 0;
+  const endless = () =>
+    new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(64 * 1024));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+  const post = (headers: Record<string, string>, body: BodyInit) =>
+    new Request("http://localhost/api/billing/webhook", { method: "POST", headers, body, duplex: "half" } as RequestInit);
+
+  const unsigned = await readStripeWebhook(post({}, endless()));
+  assert.ok(unsigned instanceof Response);
+  assert.equal(unsigned.status, 400);
+  assert.equal(pulled, 0, "the body is not read without a signature header");
+
+  const declared = await readStripeWebhook(post({ "stripe-signature": "t=1,v1=x", "content-length": "5000000" }, "{}"));
+  assert.ok(declared instanceof Response);
+  assert.equal(declared.status, 413);
+
+  const big = await readStripeWebhook(post({ "stripe-signature": "t=1,v1=x" }, endless()), 256 * 1024);
+  assert.ok(big instanceof Response);
+  assert.equal(big.status, 413);
+  assert.ok(pulled <= 8, `read stops at the cap (pulled ${pulled} chunks)`);
+
+  const ok = await readStripeWebhook(post({ "stripe-signature": "t=1,v1=x" }, '{"id":"evt_1"}'));
+  assert.deepEqual(ok, { payload: '{"id":"evt_1"}', signature: "t=1,v1=x" });
 });
