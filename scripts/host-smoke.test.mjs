@@ -179,3 +179,17 @@ test("--domain adds the MX check to a run; health shows the deep timings", async
   assert.ok(results.some((r) => r.name === "mx" && r.ok));
   assert.equal(timingNote(undefined), "");
 });
+
+test("page: maintenance mode is named, not just a 503", async () => {
+  const origin = "https://mail.cumuluscloud.app";
+  const { ok, results } = await runHostSmoke(origin, {
+    log: quiet,
+    fetcher: host({
+      "GET /api/health": health("us"),
+      "GET /": { status: 503, body: "<html>being updated</html>", headers: { ...SECURE, "x-maintenance": "1" } },
+      "POST /api/auth/sign-in/social": signIn("id.cumuluscloud.app", origin),
+    }),
+  });
+  assert.equal(ok, false);
+  assert.match(results.find((r) => r.name === "page").detail, /maintenance mode is on \(MAIL_MAINTENANCE\)/);
+});
