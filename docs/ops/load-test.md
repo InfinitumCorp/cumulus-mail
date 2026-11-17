@@ -36,3 +36,57 @@ The rows now go in one `INSERT … SELECT FROM unnest(…)`. That's 6 queries pe
 - live SPF/DKIM DNS lookups, which are off unless `MAIL_AUTH_DNS=live`.
 
 Expect production latency to add the network time to Supabase per query. Fewer queries matter more there than here.
+
+## Results, 2026-11-16 (launch check)
+Same setup as 13 Nov: Postgres 16 and the in-memory S3 on one sandbox machine, 200 messages/s into 50
+mailboxes, pool of 20. This time **each run gets a fresh database and a fresh S3 stand-in**: a long-lived
+stand-in holding earlier runs' objects in memory made later runs look several times slower than they were.
+
+| code | stored | errors | p50 | p95 | p99 | max |
+|---|---|---|---|---|---|---|
+| `main` 22be155, run 1 | 12,000 | 0 | 8.9 ms | 31.9 ms | 111.7 ms | 190.7 ms |
+| `main` 22be155, run 2 | 12,000 | 0 | 9.2 ms | 47.4 ms | 166.2 ms | 221.3 ms |
+| main + the launch PRs, run 1 | 12,000 | 0 | 8.4 ms | 39.1 ms | 187.3 ms | 260.2 ms |
+| main + the launch PRs, run 2 | 12,000 | 0 | 8.2 ms | 103.7 ms | 240.7 ms | 311.1 ms |
+
+No errors and no regression in the median (8–9 ms against 9.3 ms on 13 Nov). The tail is wider than 13 Nov,
+and varies a lot between identical runs on this shared machine; the inbound spam checks (#106) add three
+small queries per message (the sender domain's reputation, the mailbox's lists).
+
+**Watch after launch:** every authenticated message from a domain updates that domain's one
+`sender_reputation` row (`received`). For a very large sender (gmail.com) that is one hot row. It held up
+here (58,000 updates to one row, few dead tuples thanks to HOT updates and autovacuum), but if inbound
+latency climbs with volume, split the counter across a few rows (a sharded counter) or count a sample.
+
+The script now creates the bucket itself when `S3_ENDPOINT` is a loopback stand-in (before, the recipe
+above failed every message with an opaque `UnknownError`).
+
+# API soak
+
+`npm run soak:api -- --minutes 30 --concurrency 8` (`scripts/load/api-soak.mjs`) starts the **production
+build** (`.output/server`, CSP enforced) itself and keeps 8 requests in flight for the whole run, cycling
+through:
+- the server-rendered app;
+- `/api/health?deep=1`;
+- the 404 page;
+- a refused export link;
+- a CSP report.
+
+Every minute it prints requests, errors, p50/p95/p99 and the server's RSS. At the end it compares the last
+third of the run with the first (after a warm-up minute, and leaving out a partial last minute) and fails
+on RSS growth over 25%, p95 growth over 50%, or any error. It looks for **drift** (a leak, a growing
+cache), not peak throughput. Set `DATABASE_URL` to use Postgres; otherwise it uses PGlite.
+
+## Results, 2026-11-17 (launch check)
+Production build of `main` plus the launch PRs (#146–#152), Postgres 16, one sandbox machine, 30 minutes.
+
+| minute | requests | errors | p50 | p95 | p99 | RSS |
+|---|---|---|---|---|---|---|
+| 1 | 54,958 | 0 | 8 ms | 16 ms | 21 ms | 505 MB |
+| 10 | 60,384 | 0 | 7 ms | 14 ms | 18 ms | 515 MB |
+| 20 | 59,241 | 0 | 7 ms | 15 ms | 20 ms | 517 MB |
+| 30 | 61,148 | 0 | 7 ms | 14 ms | 19 ms | 519 MB |
+
+**1,798,401 requests, 0 errors. Last third against the first: RSS +1.0%, p95 −3.0%.** No leak and no
+latency drift. RSS settles at about 515 MB within the first two minutes. (With PGlite instead of Postgres,
+RSS is higher, about 930 MB, because the database runs inside the process.)
