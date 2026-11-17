@@ -162,6 +162,9 @@ message from 6.1.
 `BETTER_AUTH_URL` back to the workers.dev origin. The old worker was never modified. Mail that arrived in
 between stays in the new database.
 
+4. Add the four rate-limiting rules in `docs/deploy/edge-rate-limits.md` (zone `cumuluscloud.app`), in
+   **Log** mode for now. The smoke above stays all ok with them on.
+
 ## 7. Mail authentication DNS, then `MAIL_AUTH_DNS=live` (10 min + propagation)
 
 Publish SPF, DKIM and DMARC exactly as in `docs/deploy/dns-records.md` (US #2–#4; the DKIM value from
@@ -224,6 +227,8 @@ spam.
   violations** and **Deletion overdue**.
 - Leave the old worker `cumulus-mail` and its R2 bucket untouched for at least a week.
 - Raise the DNS TTLs back tomorrow.
+- Tomorrow, check Security → Events for the rate-limiting rules: if nothing legitimate was logged, switch
+  them to **Block** (`docs/deploy/edge-rate-limits.md`).
 
 ---
 
