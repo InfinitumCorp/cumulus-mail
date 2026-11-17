@@ -520,5 +520,10 @@
  "Wed {0} Nov, {1}": "ср, {0} нояб., {1}",
  "Wed {0} Oct, {1}": "ср, {0} окт., {1}",
  "Wed {0} Sep, {1}": "ср, {0} сент., {1}",
- "Wed {0} Sept, {1}": "ср, {0} сент., {1}"
+ "Wed {0} Sept, {1}": "ср, {0} сент., {1}",
+ "Go to your inbox": "Перейти во «Входящие»",
+ "Page not found": "Страница не найдена",
+ "This address doesn't lead anywhere in Cumulus://Mail. It may have been mistyped, or the link has expired.": "По этому адресу в Cumulus://Mail ничего нет. Возможно, в нём опечатка или срок действия ссылки истёк.",
+ "This page didn't load. Your mail is safe. Try again in a moment.": "Страница не загрузилась. Ваша почта в сохранности. Попробуйте ещё раз чуть позже.",
+ "Try again": "Повторить"
 }
