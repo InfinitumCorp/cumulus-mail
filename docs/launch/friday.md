@@ -13,6 +13,9 @@ repository or its CI makes these changes**; every switch below is yours.
 - #180, leaving mid-save asks first;
 - #181, the default issuer is the live realm (your call: merge it, or set `CUMULUS_OIDC_ISSUER`);
 - #183, `npm run cutover:check` (this page uses it at go/no-go and in step 2);
+- #186, outbound abuse limits and the `outbound:pause` kill switch, sign-in errors in EN/RU, and
+  `docs/ops/incident.md` (the per-symptom playbook for today);
+- #185, compressed static files on the Russia copy (faster first load on phones);
 - #184, staging load-test flags (after launch).
 
 #86 lists the merge order.
