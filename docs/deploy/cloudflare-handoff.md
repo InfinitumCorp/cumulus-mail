@@ -110,14 +110,14 @@ Same Hyperdrive id, same `MAIL_BLOB_KEY`, same two S3 secrets. Also:
 
 `DATABASE_URL` is not a Worker secret. The API copies `env.HYPERDRIVE.connectionString` onto `DATABASE_URL` per request. `CUMULUS_RUNTIME=cloudflare` is already a var so the Worker does not boot the local PGLite database.
 
-OIDC defaults to the Cumulus://ID Amazon Cognito user pool:
+OIDC defaults to the Cumulus://ID realm (the same issuer sign-in uses; discovery checked 2026-11-18):
 
 ```text
-issuer:   https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna
-jwks_uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json
+issuer:   https://id.cumuluscloud.app/realms/cumulus
+jwks_uri: https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs
 ```
 
-Discovery is `/.well-known/openid-configuration` under the issuer, and Mail reads `jwks_uri` from it. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`; override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. The tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). The retired Keycloak realm `https://id.cumuluscloud.app/realms/cumulus` no longer answers and is not the default.
+Discovery is `/.well-known/openid-configuration` under the issuer, and Mail reads `jwks_uri` from it. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`; override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. The tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). The Cognito pool `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna` once planned for Cumulus://ID answers 404 for discovery and is no longer the default.
 
 ## 7. Deploy steps
 

@@ -2,7 +2,11 @@ import { createLocalJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
 
 /**
- * Cumulus://ID signs in through an Amazon Cognito user pool. The issuer of a
+ * Cumulus://ID is the realm at `https://id.cumuluscloud.app/realms/cumulus` (Keycloak: discovery and
+ * ES256 keys answer there; checked 2026-11-18). That is the default issuer Mail verifies bearer tokens
+ * against, the same one sign-in uses (CID_ISSUER) and the API worker names (#177).
+ *
+ * An Amazon Cognito user pool can still be named instead (CUMULUS_COGNITO_USER_POOL_ID). The issuer of a
  * Cognito pool is `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`,
  * and both discovery and JWKS hang off that host — not off the hosted-UI domain
  * (`<prefix>.auth.<region>.amazoncognito.com`), which only serves the browser
@@ -22,14 +26,17 @@ export function cognitoIssuer(region: string, userPoolId: string): string {
   return `https://cognito-idp.${region.trim().toLowerCase()}.amazonaws.com/${userPoolId.trim()}`;
 }
 
-/** The Cognito user pool Cumulus://ID uses, unless the environment names another. */
-export const DEFAULT_CUMULUS_ISSUER = cognitoIssuer(
-  DEFAULT_CUMULUS_COGNITO_REGION,
-  DEFAULT_CUMULUS_COGNITO_USER_POOL_ID,
-);
+/** The Cumulus://ID realm: the issuer of record, and the default. */
+export const CUMULUS_REALM_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
 
-/** The Keycloak realm Cumulus://ID used before Cognito. `id.cumuluscloud.app` answers 404. */
-export const RETIRED_KEYCLOAK_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
+/** The issuer Mail verifies against unless the environment names another. */
+export const DEFAULT_CUMULUS_ISSUER = CUMULUS_REALM_ISSUER;
+
+/**
+ * The Cognito user pool once planned for Cumulus://ID. Its discovery document answers 404
+ * (2026-11-16 and 2026-11-18), so it is no longer the default; it stays for CUMULUS_COGNITO_* configs.
+ */
+export const LEGACY_COGNITO_ISSUER = cognitoIssuer(DEFAULT_CUMULUS_COGNITO_REGION, DEFAULT_CUMULUS_COGNITO_USER_POOL_ID);
 
 const COGNITO_ISSUER = /^https:\/\/cognito-idp\.([a-z0-9-]+)\.amazonaws\.com\/([a-z0-9-]+_[A-Za-z0-9]+)$/;
 
@@ -54,7 +61,7 @@ type IssuerEnv = {
  *   1. `CUMULUS_OIDC_ISSUER`, used verbatim (any OIDC issuer, Keycloak included).
  *   2. `CUMULUS_COGNITO_USER_POOL_ID` (+ optional `CUMULUS_COGNITO_REGION`,
  *      which defaults to the region the pool id starts with).
- *   3. The Cognito pool above.
+ *   3. The Cumulus://ID realm (DEFAULT_CUMULUS_ISSUER).
  */
 export function cumulusIssuer(env: IssuerEnv = process.env): string {
   applyWorkerBindings();
