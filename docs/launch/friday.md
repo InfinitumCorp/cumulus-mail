@@ -39,6 +39,8 @@ Tick every line, or move the launch.
 - [ ] An SMTP relay account exists (or you accept that outside mail stays in the Outbox on day one).
 - [ ] The alerts in `docs/ops/alerts.md` are wired to somewhere you will see them today.
 - [ ] Someone in Russia, without a VPN, can test `ru.mail` in step 9.
+- [ ] The Cumulus://ID cut-over is planned before step 5 (see step 5), or you accept doing the first end-to-end
+      sign-in after step 6.
 
 ---
 
@@ -135,6 +137,14 @@ npm run smoke -- --url https://cumulus-mail-api.<account>.workers.dev --region u
 **Expected:** every line `ok` (`health` region us, schema current; `page`; `sign-in` to
 `id.cumuluscloud.app` with PKCE; `security` CSP with a nonce, no grok.com, HSTS; `api-auth`). Then **sign
 in once in a browser** through that URL, end to end.
+
+The issuer only sends people back to addresses it knows, and neither the old one nor the new one knows the
+workers.dev address by default: the smoke's `sign-in` line checks the redirect Mail builds, not that the issuer
+accepts it. So the new Cumulus://ID goes live **before this step**, started with
+`CID_EXTRA_ORIGINS=cumulus-mail=https://cumulus-mail-api.<account>.workers.dev` (InfinitumCorp/cumulus-id,
+`docs/deploy-checklist.md`, "Same day as the Cumulus://Mail launch"). Without it this sign-in ends on an
+"invalid redirect" page at id.cumuluscloud.app: that is not a Mail fault; do the end-to-end sign-in after step 6
+instead.
 
 Then the real-database inbound probe (`docs/deploy/cloudflare-handoff.md` §8, `MAIL_INBOUND_LIVE=1`):
 expect it to store and then delete one encrypted test message.
