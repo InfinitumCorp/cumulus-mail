@@ -21,6 +21,10 @@ export const ACTION_LIMITS = {
   domainCheck: [30, 3600],
   abuseReport: [20, 3600],
   unsubscribe: [60, 3600],
+  /** SCALVS briefs and drafts: each one is a model call the operator pays for. Keyed by user. */
+  brief: [60, 3600],
+  spamReport: [200, 3600],
+  deletion: [20, 3600],
 } as const satisfies Record<string, readonly [number, number]>;
 
 export type LimitedAction = keyof typeof ACTION_LIMITS;

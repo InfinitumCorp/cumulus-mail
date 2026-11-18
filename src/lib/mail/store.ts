@@ -84,17 +84,32 @@ let dirty = false;
 let revision = 0;
 let hydratePromise: Promise<void> | null = null;
 let pushChain: Promise<void> = Promise.resolve();
+let pushing = 0;
+/**
+ * The ids of the messages in the last snapshot the server sent. Sent with every save, so the server
+ * deletes only what this tab knew about and removed, and keeps mail that arrived since (src/lib/mail/
+ * mailbox.ts writeSnapshot). Empty before the first load: then nothing on the server is deleted.
+ */
+let knownIds: string[] = [];
+const remember = (snapshot: MailboxSnapshot) => {
+  knownIds = snapshot.messages.map((message) => message.id);
+};
 
 function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
   if (typeof window === "undefined") return;
   const mine = ++revision;
   const snapshot = pick(get());
+  pushing += 1;
   pushChain = pushChain
     .catch(() => undefined)
     .then(async () => {
-      const saved = await putMailbox({ data: snapshot });
+      const saved = await putMailbox({ data: { ...snapshot, knownIds } });
+      remember(saved);
       if (mine !== revision) return;
       set({ ...saved, syncError: "" });
+    })
+    .finally(() => {
+      pushing -= 1;
     })
     .catch((error: unknown) => {
       set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
@@ -120,11 +135,28 @@ export const useMail = create<MailStore>((set, get) => ({
     hydratePromise = (async () => {
       try {
         const saved = await getMailbox();
+        remember(saved);
         if (!dirty) set({ ...saved, syncError: "" });
       } catch (error) {
         set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
       }
     })();
+    // New mail shows up without a click: a quiet refresh every minute and when the tab comes back, skipped
+    // while a save is in flight or the tab is hidden, and dropped if the person changed something meanwhile.
+    const refresh = async () => {
+      if (pushing > 0 || document.visibilityState !== "visible") return;
+      const before = revision;
+      try {
+        const saved = await getMailbox();
+        if (pushing > 0 || revision !== before) return;
+        remember(saved);
+        set({ ...saved, syncError: "" });
+      } catch {
+        // offline or signed out: the next save or refresh reports it
+      }
+    };
+    window.setInterval(() => void refresh(), 60_000);
+    window.addEventListener("focus", () => void refresh());
   },
   flush: () => (hydratePromise ? hydratePromise.then(() => pushChain) : pushChain),
   markThreadRead: (threadId) => {

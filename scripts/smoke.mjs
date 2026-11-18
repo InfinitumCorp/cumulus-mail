@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Operator smoke check. Reads environment variables only.
- * `node scripts/smoke.mjs --host https://<host>` instead checks a deployed copy: health, region,
- * the edge in front of ru.*, the page, and the sign-in redirect (scripts/host-smoke.mjs).
+ * `npm run smoke -- --url https://<host>` (or `--host`) instead checks a deployed copy: health with timings,
+ * region, the edge in front of ru.*, the page, the sign-in redirect, security headers and CSP (no grok.com),
+ * that protected endpoints refuse anonymous requests, and optionally the MX records (`--domain`). Read-only (scripts/host-smoke.mjs).
  * Unset sections are skipped and the process still exits 0.
  * It does not apply migrations, create buckets, send mail, or change DNS.
  *
@@ -188,13 +189,16 @@ export async function runSmoke(env = process.env) {
 
 const invoked = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invoked === fileURLToPath(import.meta.url)) {
-  // `--host https://...` checks a deployed copy instead (scripts/host-smoke.mjs). Read-only.
-  const hostIndex = process.argv.indexOf("--host");
-  if (hostIndex >= 0) {
+  // `--url https://...` (or `--host`) checks a deployed copy instead (scripts/host-smoke.mjs). Read-only.
+  //   npm run smoke -- --url https://mail.cumuluscloud.app [--region us|ru] [--domain cumuluscloud.app]
+  const arg = (name) => {
+    const at = process.argv.indexOf(name);
+    return at >= 0 ? process.argv[at + 1] : undefined;
+  };
+  const target = arg("--url") ?? arg("--host");
+  if (target !== undefined) {
     const { runHostSmoke } = await import("./host-smoke.mjs");
-    const regionIndex = process.argv.indexOf("--region");
-    const region = regionIndex >= 0 ? process.argv[regionIndex + 1] : undefined;
-    const { ok } = await runHostSmoke(process.argv[hostIndex + 1] ?? "", { region });
+    const { ok } = await runHostSmoke(target, { region: arg("--region"), domain: arg("--domain") });
     process.exit(ok ? 0 : 1);
   }
   const code = await runSmoke();

@@ -549,7 +549,7 @@ export function MailApp() {
           ? transcript(related)
           : composer.body.trim() || `New message. Subject: ${composer.subject || "(none)"}.`;
       const result = await briefThread({
-        data: { mode: "draft", subject: composer.subject, transcript: source },
+        data: { mode: "draft", subject: composer.subject, transcript: source, name: me.name },
       });
       if (!result.ok) {
         setComposeError(result.error);

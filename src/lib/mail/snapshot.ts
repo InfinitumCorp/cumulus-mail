@@ -34,6 +34,12 @@ export type MailboxSnapshot = {
   rules: MailRule[];
   /** Omitted by older clients. The server fills the default. */
   settings?: MailSettings;
+  /**
+   * Save only (client -> server): the ids of the messages the client last received from the server. A
+   * message missing from `messages` is deleted only if its id is here; one the client never saw (mail that
+   * arrived after it loaded) is kept. Omitted by older clients, which then replace the mailbox as before.
+   */
+  knownIds?: string[];
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);

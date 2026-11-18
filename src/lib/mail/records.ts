@@ -8,7 +8,7 @@ import { messageSnippet } from "./logic.ts";
 import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
-import { defaultSettings, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
+import { defaultSettings, keepServerNotes, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
@@ -401,7 +401,7 @@ export async function replaceMailboxContents(
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
     const previous = await readSettings(db, tenantId);
-    const settings = keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain()));
+    const settings = keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain())));
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.messages where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);

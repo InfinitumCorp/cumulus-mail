@@ -10,6 +10,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
+import { readCappedText } from "../csp-report.ts";
 import { openText } from "./field-crypto.ts";
 import type { MailQuery } from "./query.ts";
 import { isPlanId, limitsFor, type PlanId, type PlanStatus } from "./plans.ts";
@@ -105,6 +106,27 @@ export function verifyStripeSignature(
     return given.length === expected.length && timingSafeEqual(given, expected);
   });
   if (!match) throw new StripeSignatureError("Stripe signature does not match");
+}
+
+/** Stripe event payloads are a few kilobytes; anything near this is not from Stripe. */
+export const MAX_WEBHOOK_BYTES = 1_000_000;
+
+/**
+ * Read a webhook request without trusting it: no `Stripe-Signature` header → 400 before the body is read;
+ * a body over MAX_WEBHOOK_BYTES → 413, having read no more than the cap. The endpoint needs no session, so
+ * this keeps an anonymous caller from making the server buffer an arbitrarily large body.
+ */
+export async function readStripeWebhook(
+  request: Request,
+  max: number = MAX_WEBHOOK_BYTES,
+): Promise<{ payload: string; signature: string } | Response> {
+  const signature = request.headers.get("stripe-signature");
+  if (!signature) return new Response("Invalid signature", { status: 400 });
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) return new Response("Payload too large", { status: 413 });
+  const payload = await readCappedText(request, max);
+  if (payload === null) return new Response("Payload too large", { status: 413 });
+  return { payload, signature };
 }
 
 /** Build a header the way Stripe does. For tests and local fixtures. */

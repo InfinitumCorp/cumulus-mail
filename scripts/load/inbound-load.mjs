@@ -29,6 +29,12 @@ if (!DATABASE_URL || !S3_ENDPOINT) {
   process.exit(1);
 }
 
+// A loopback S3 stand-in (scripts/dry-run/fake-s3.mjs) starts with no buckets: create the load bucket, or
+// every message fails with an opaque S3 error. A real endpoint is left alone.
+if (["127.0.0.1", "localhost"].includes(new URL(S3_ENDPOINT).hostname)) {
+  await fetch(new URL("/cumulus-mail-load", S3_ENDPOINT), { method: "PUT" }).catch(() => undefined);
+}
+
 process.env.MAIL_BLOB_KEY ??= randomBytes(32).toString("hex");
 process.env.MAIL_DOMAIN = "cumuluscloud.app";
 const { handleEmail } = await import("../../workers/email/src/index.ts");

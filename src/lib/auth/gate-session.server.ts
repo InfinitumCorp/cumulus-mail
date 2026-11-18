@@ -59,8 +59,11 @@ async function emitSessionCookie(
     sessionTokenName,
   )?.value;
   if (!sessionValue) {
+    // Names only: the header value is a signed session token, which must never reach the logs.
+    const cookieNames = [...parseSetCookieHeader(signedCookie).keys()];
     console.error(`${LOG} signed Set-Cookie missing session token value`, {
-      cookiePreview: signedCookie.slice(0, 120),
+      expected: sessionTokenName,
+      cookieNames,
     });
     return null;
   }

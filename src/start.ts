@@ -53,4 +53,18 @@ export const serverFnCsrfMiddleware = createCsrfMiddleware({
   allowRequestsWithoutOriginCheck: true,
 });
 
-export const startInstance = createStart(() => ({ requestMiddleware: [serverFnCsrfMiddleware, csrfMiddleware, cspMiddleware] }));
+/**
+ * `MAIL_MAINTENANCE=1`: every page and API answers 503 with a static page (src/lib/maintenance.ts), except
+ * health, CSP reports and the cron tick. First in the list, so nothing else runs during the window.
+ */
+const maintenanceMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const { maintenanceAllows, maintenanceOn, maintenanceResponse } = await import("./lib/maintenance");
+  if (!maintenanceOn() || maintenanceAllows(new URL(request.url).pathname)) return next();
+  const { regionFor } = await import("./lib/region");
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
+  return maintenanceResponse(request, regionFor(host));
+});
+
+export const startInstance = createStart(() => ({
+  requestMiddleware: [maintenanceMiddleware, serverFnCsrfMiddleware, csrfMiddleware, cspMiddleware],
+}));

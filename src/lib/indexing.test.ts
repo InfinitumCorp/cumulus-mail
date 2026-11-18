@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyIndexing, hostName, indexableHosts, isIndexableHost, NOINDEX } from "./indexing.ts";
+import { applyIndexing, hostName, indexableHosts, isIndexableHost, isPrivatePath, NOINDEX } from "./indexing.ts";
 
 test("only the production names are indexable by default", () => {
   assert.equal(isIndexableHost("mail.cumuluscloud.app", ""), true);
@@ -40,4 +40,17 @@ test("applyIndexing adds noindex off production and keeps a route's own value", 
   assert.equal(applyIndexing(new Headers(), "mail.cumuluscloud.app", "").get("x-robots-tag"), null);
   const own = new Headers({ "x-robots-tag": "noarchive" });
   assert.equal(applyIndexing(own, "x.workers.dev", "").get("x-robots-tag"), "noarchive");
+});
+
+test("share pages and API paths are noindex on the production host too", () => {
+  for (const path of ["/p/0123456789abcdef", "/api/health", "/_serverFn/abc"]) {
+    assert.equal(isPrivatePath(path), true, path);
+    assert.equal(applyIndexing(new Headers(), "mail.cumuluscloud.app", "", path).get("x-robots-tag"), NOINDEX, path);
+  }
+  for (const path of ["/", "/legal/privacy", "/pricing", "/papers", ""]) {
+    assert.equal(isPrivatePath(path), false, path);
+    assert.equal(applyIndexing(new Headers(), "mail.cumuluscloud.app", "", path).get("x-robots-tag"), null, path);
+  }
+  const own = new Headers({ "x-robots-tag": "noarchive" });
+  assert.equal(applyIndexing(own, "mail.cumuluscloud.app", "", "/p/x").get("x-robots-tag"), "noarchive");
 });

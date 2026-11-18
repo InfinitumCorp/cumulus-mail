@@ -238,6 +238,24 @@ export function noteAutoReply(settings: MailSettings, fromEmail: string, now = n
   };
 }
 
+/**
+ * Notes the SERVER adds to settings while a tab is open (src/lib/mail/delivery.ts records each auto-reply
+ * sent; src/lib/mail/unsubscribe.ts records one-click unsubscribes). A save carries the tab's copy of
+ * settings, which may predate them; the app only ever adds to these lists, never removes, so the stored
+ * entries are kept (union). Without this, a stale tab's save erased them: a sender could get a second
+ * auto-reply the same day, and an unsubscribe would show as not done.
+ */
+export function keepServerNotes(previous: MailSettings, next: MailSettings): MailSettings {
+  const sent = [...new Set([...previous.autoReply.sent, ...next.autoReply.sent])].slice(-200);
+  const byKey = new Map<string, Unsubscribed>();
+  for (const item of [...previous.unsubscribed, ...next.unsubscribed]) {
+    const prior = byKey.get(item.key);
+    if (!prior || item.at > prior.at) byKey.set(item.key, item);
+  }
+  const unsubscribed = [...byKey.values()].sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-200);
+  return { ...next, autoReply: { ...next.autoReply, sent }, unsubscribed };
+}
+
 /** A domain stays verified only when the stored row already was, and its TXT value did not change. */
 export function keepVerified(previous: MailSettings, next: MailSettings): MailSettings {
   return {

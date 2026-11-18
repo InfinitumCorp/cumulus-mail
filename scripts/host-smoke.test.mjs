@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { expectedRegion, runHostSmoke, schemaNote } from "./host-smoke.mjs";
+import { checkApiAuth, checkMx, checkSecurity, expectedRegion, runHostSmoke, schemaNote, timingNote } from "./host-smoke.mjs";
 
 /** A fake host: routes -> { status, headers, body }. */
 function host(routes) {
@@ -22,6 +22,15 @@ const signIn = (issuer, origin) => ({
 });
 const APP = '<html><script type="module" src="/_build/assets/main.js"></script><title>Cumulus://Mail</title></html>';
 const quiet = () => {};
+/** The headers a correct deploy sends on its pages (src/lib/security-headers.ts, src/lib/csp.ts). */
+const SECURE = {
+  "content-security-policy":
+    "default-src 'self'; script-src 'self' 'nonce-abc'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; report-uri /api/csp-report; report-to csp",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "permissions-policy": "camera=(), microphone=()",
+  "strict-transport-security": "max-age=31536000",
+};
 
 test("the region is read from the host", () => {
   assert.equal(expectedRegion("https://mail.cumuluscloud.app"), "us");
@@ -50,7 +59,7 @@ test("a correct US deployment passes, Cloudflare in front is fine there", async 
     log: quiet,
     fetcher: host({
       "GET /api/health": health("us"),
-      "GET /": { body: APP, headers: { "cf-ray": "8f-IAD", "strict-transport-security": "max-age=31536000" } },
+      "GET /": { body: APP, headers: { ...SECURE, "cf-ray": "8f-IAD" } },
       "POST /api/auth/sign-in/social": signIn("id.cumuluscloud.app", origin),
     }),
   });
@@ -61,7 +70,7 @@ test("a correct RU deployment passes; the wrong issuer, region or callback fails
   const origin = "https://ru.mail.cumuluscloud.app";
   const good = {
     "GET /api/health": health("ru"),
-    "GET /": { body: APP },
+    "GET /": { body: APP, headers: SECURE },
     "POST /api/auth/sign-in/social": signIn("ru.id.cumuluscloud.app", origin),
   };
   assert.equal((await runHostSmoke(origin, { log: quiet, fetcher: host(good) })).ok, true);
@@ -98,7 +107,7 @@ test("--region checks a copy on its own URL before cutover (gateway or workers.d
   const origin = "https://d5d1abc.apigw.yandexcloud.net";
   const fetcher = host({
     "GET /api/health": health("ru"),
-    "GET /": { body: APP },
+    "GET /": { body: APP, headers: SECURE },
     "POST /api/auth/sign-in/social": signIn("ru.id.cumuluscloud.app", origin),
   });
   assert.equal((await runHostSmoke(origin, { log: quiet, fetcher })).ok, false);
@@ -106,4 +115,81 @@ test("--region checks a copy on its own URL before cutover (gateway or workers.d
   assert.equal(ru.ok, true, JSON.stringify(ru.results));
   assert.ok(ru.results.some((r) => r.name === "ru-path"));
   await assert.rejects(() => runHostSmoke(origin, { log: quiet, fetcher, region: "eu" }), /--region/);
+});
+
+test("security: a missing header, a report-only CSP, grok.com anywhere, or no HSTS on https are caught", async () => {
+  const base = "https://mail.cumuluscloud.app";
+  const at = (headers, body = APP) => checkSecurity(base, host({ "GET /": { body, headers } }));
+  assert.equal((await at(SECURE)).ok, true);
+  const grok = await at({ ...SECURE, "content-security-policy": `${SECURE["content-security-policy"]}; script-src-elem https://grok.com/x.js` });
+  assert.equal(grok.ok, false);
+  assert.match(grok.detail, /grok\.com/);
+  assert.match((await at(SECURE, `${APP}<script src="https://grok.com/grok-app-builder/extensions.js"></script>`)).detail, /loads something from grok\.com/);
+  const { "x-content-type-options": _n, "strict-transport-security": _h, ...bare } = SECURE;
+  const missing = await at(bare);
+  assert.equal(missing.ok, false);
+  assert.match(missing.detail, /nosniff/);
+  assert.match(missing.detail, /Strict-Transport-Security/);
+  const { "content-security-policy": policy, ...rest } = SECURE;
+  const reportOnly = await at({ ...rest, "content-security-policy-report-only": policy });
+  assert.equal(reportOnly.ok, true);
+  assert.equal(reportOnly.warn, true, "report-only is reported, not failed");
+  const noNonce = await at({ ...SECURE, "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'" });
+  assert.match(noNonce.detail, /no nonce/);
+  // On plain http to localhost, missing HSTS is only a warning.
+  const local = await checkSecurity("http://127.0.0.1:3000", host({ "GET /": { body: APP, headers: bare } }));
+  assert.doesNotMatch(local.detail, /Strict-Transport-Security/);
+});
+
+test("api-auth: every protected endpoint must refuse an anonymous request; a 2xx or a 5xx fails", async () => {
+  const base = "https://mail.cumuluscloud.app";
+  assert.equal((await checkApiAuth(base, host({}))).ok, true, "404s and 401s are refusals");
+  const open = await checkApiAuth(base, host({ "POST /api/cron/tick": { status: 200, body: { released: 0 } } }));
+  assert.equal(open.ok, false);
+  assert.match(open.detail, /cron tick without its secret answered 200/);
+  const broken = await checkApiAuth(base, host({ "GET /api/account/export/not-a-real-token": { status: 500, body: "boom" } }));
+  assert.match(broken.detail, /forged export link answered 500/);
+});
+
+test("mx: Cloudflare Email Routing for the US copy; none, or another provider, fails", async () => {
+  const cf = async () => [{ exchange: "route1.mx.cloudflare.net", priority: 10 }];
+  assert.equal((await checkMx("cumuluscloud.app", cf)).ok, true);
+  assert.equal((await checkMx("cumuluscloud.app", async () => [{ exchange: "mx.other.example", priority: 10 }])).ok, false);
+  assert.equal((await checkMx("cumuluscloud.app", async () => [])).ok, false);
+  const nx = await checkMx("cumuluscloud.app", async () => Promise.reject(Object.assign(new Error("x"), { code: "ENOTFOUND" })));
+  assert.match(nx.detail, /ENOTFOUND/);
+  assert.equal((await checkMx("cumuluscloud.app", async () => [{ exchange: "mx.yandex.net", priority: 10 }], "ru")).ok, true);
+});
+
+test("--domain adds the MX check to a run; health shows the deep timings", async () => {
+  const origin = "https://mail.cumuluscloud.app";
+  const deep = { body: { ...health("us").body, timings: { db: 12, storage: 20, schema: 4, total: 41 } } };
+  const { ok, results } = await runHostSmoke(origin, {
+    log: quiet,
+    domain: "cumuluscloud.app",
+    resolveMx: async () => [{ exchange: "route1.mx.cloudflare.net", priority: 10 }],
+    fetcher: host({
+      "GET /api/health": deep,
+      "GET /": { body: APP, headers: SECURE },
+      "POST /api/auth/sign-in/social": signIn("id.cumuluscloud.app", origin),
+    }),
+  });
+  assert.equal(ok, true, JSON.stringify(results));
+  assert.match(results.find((r) => r.name === "health").detail, /41 ms \(db 12, storage 20, schema 4\)/);
+  assert.ok(results.some((r) => r.name === "mx" && r.ok));
+  assert.equal(timingNote(undefined), "");
+});
+
+test("page: maintenance mode is named, not just a 503", async () => {
+  const origin = "https://mail.cumuluscloud.app";
+  const { ok, results } = await runHostSmoke(origin, {
+    log: quiet,
+    fetcher: host({
+      "GET /api/health": health("us"),
+      "GET /": { status: 503, body: "<html>being updated</html>", headers: { ...SECURE, "x-maintenance": "1" } },
+      "POST /api/auth/sign-in/social": signIn("id.cumuluscloud.app", origin),
+    }),
+  });
+  assert.equal(ok, false);
+  assert.match(results.find((r) => r.name === "page").detail, /maintenance mode is on \(MAIL_MAINTENANCE\)/);
 });
