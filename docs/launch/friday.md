@@ -205,6 +205,11 @@ npm run smoke -- --url https://<id>.apigw.yandexcloud.net --region ru
    `Authorization: Bearer <CRON_SECRET>`. **Without it, scheduled send, the outbound queue and the purge of
    deleted Russian mailboxes never run.** Check one call: it answers 200 with counts (`released`,
    `deletions`), not 401 or 404.
+3. The client address the gateway passes on (sign-in rate limits are per address): in the container's
+   request log, one request's `x-forwarded-for` should hold **one** address, the caller's. If it holds a
+   chain (`client, gateway`), set `BETTER_AUTH_TRUSTED_PROXIES` to the gateway's ranges so the client hop is
+   used; until then every chained request shares one sign-in bucket (safe, but one busy client could slow
+   sign-in for the rest).
 
 ```sh
 npm run smoke -- --url https://ru.mail.cumuluscloud.app
