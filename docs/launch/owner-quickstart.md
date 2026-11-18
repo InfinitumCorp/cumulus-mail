@@ -9,7 +9,9 @@ Already on `main`: everything up to #184. Still open, merge in this order, waiti
 1. **#175**: a mailbox import is checked like a save (security).
 2. **#186**: outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, the
    incident playbook.
-3. **#185**: compressed static files on the Russia copy.
+3. **#188**: one-click unsubscribe works on Workers.
+4. **#185**: compressed static files on the Russia copy.
+5. **#187**: these pages, `cutover:check` accepting the pending `0001_auth`, and `keep_vars` on both workers.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 

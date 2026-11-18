@@ -15,7 +15,10 @@ where, the commands in order, go/no-go and the rollback.
 1. #175, a mailbox import is checked like a save (security);
 2. #186, outbound abuse limits and the `outbound:pause` kill switch, sign-in errors in EN/RU, and
    `docs/ops/incident.md` (the per-symptom playbook for today);
-3. #185, compressed static files on the Russia copy (faster first load on phones).
+3. #188, one-click unsubscribe on Workers (the US copy) through fetch, not a DNS lookup that may throw;
+4. #185, compressed static files on the Russia copy (faster first load on phones);
+5. #187, this page's corrections, `cutover:check` accepting the pending `0001_auth`, and `keep_vars`
+   (dashboard variables survive deploys).
 
 #86 lists the merge order and why.
 
