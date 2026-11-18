@@ -31,6 +31,9 @@
       "id": "REPLACE_WITH_HYPERDRIVE_ID"
     }
   ],
+  // Keep variables set in the dashboard (MAIL_AUTH_DNS, MAIL_SMTP_*, MAIL_MAINTENANCE, MAIL_CSP, ...)
+  // across deploys: without this, every workflow deploy deletes them. Values below still win.
+  "keep_vars": true,
   "vars": {
     "MAIL_DOMAIN": "cumuluscloud.app",
     "MAIL_APP_HOST": "mail.cumuluscloud.app",
