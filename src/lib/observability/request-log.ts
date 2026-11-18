@@ -42,14 +42,17 @@ const ID_LIKE = /^(?:[0-9a-f-]{8,}|\d+|[A-Za-z0-9_-]{16,})$/;
 /**
  * A path safe to log: the query string dropped, and any segment that looks like an id or a token
  * replaced. `/p/8f3c…` (a protected-message token) becomes `/p/:id`, so a log cannot be used to open
- * someone's message.
+ * someone's message. A segment counts when any dot-separated part of it does: the calendar feed
+ * (`cal_<token>.ics`) and the data-export link (`<tenant>.<part>.<expiry>.<signature>`) carry their
+ * credential next to a dot, and were logged whole. File names (`manifest.webmanifest`, hashed assets)
+ * have no part that long and stay readable.
  */
 export function scrubPath(rawPath: string): string {
   const path = rawPath.split("?")[0]!.split("#")[0]!;
   const segments = path.split("/").map((segment) => {
     if (!segment) return segment;
     if (segment.includes("@")) return ":addr";
-    return ID_LIKE.test(segment) ? ":id" : segment;
+    return segment.split(".").some((part) => ID_LIKE.test(part)) ? ":id" : segment;
   });
   const cleaned = segments.join("/").slice(0, 200);
   return cleaned || "/";
