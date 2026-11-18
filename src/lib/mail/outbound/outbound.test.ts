@@ -283,7 +283,8 @@ test("attachments go out as multipart/mixed and parse back byte for byte", async
   assert.equal(parsed.text, "Two files ✓");
   assert.deepEqual(parsed.attachments.map((file) => [file.name, file.contentType, file.bytes.byteLength]), [
     ["report.pdf", "application/pdf", 70_000],
-    ["R_sum_ _final_.txt", "application/octet-stream", 3],
+    // The receiver reads the RFC 2231 name (filename*), not the ASCII fallback "R_sum_ _final_.txt".
+    ["Résumé _final_.txt", "application/octet-stream", 3],
   ]);
   assert.deepEqual([...parsed.attachments[0]!.bytes.slice(0, 5)], [0, 1, 2, 3, 4]);
   assert.match(raw, /filename\*=UTF-8''R%C3%A9sum%C3%A9%20_final_.txt/);
