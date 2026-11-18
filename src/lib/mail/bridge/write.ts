@@ -10,6 +10,8 @@
  * - APPEND only files into Sent, and only a message whose From is one of this mailbox's own addresses. It is
  *   for the copy a client keeps after sending through SMTP; it cannot be used to plant "received" mail.
  */
+import { fileName } from "../snapshot.ts";
+import { sanitizeContentType } from "../../storage/adapter.ts";
 import { createHash } from "node:crypto";
 import { assertTenantId } from "../../storage/adapter.ts";
 import type { TenantStorage } from "../delivery.ts";
@@ -144,9 +146,9 @@ export async function appendSentCopy(
     const saved = await storage.put(file.bytes);
     attachments.push({
       id: `a-${id}-${index}`,
-      name: file.name,
+      name: fileName(file.name),
       size: file.bytes.byteLength,
-      contentType: file.contentType || "application/octet-stream",
+      contentType: sanitizeContentType(file.contentType),
       sha256: saved.sha256,
       objectKey: saved.blobId,
     });

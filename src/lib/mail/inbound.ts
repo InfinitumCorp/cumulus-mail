@@ -8,6 +8,8 @@ import { createBounceHandler } from "./dsn.ts";
 import { applyRules } from "./logic.ts";
 import { noteNewMessage } from "./bridge/uids.ts";
 import { parseMime } from "./mime.ts";
+import { fileName } from "./snapshot.ts";
+import { sanitizeContentType } from "../storage/adapter.ts";
 import type { MailMessage, MailRule } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { limitsFor } from "./plans.ts";
@@ -72,9 +74,10 @@ export async function ingestInboundEmail(
     const saved = await storage.put(file.bytes);
     attachments.push({
       id: attachmentId,
-      name: file.name,
+      // The sender chose these: the same cleaning as a file saved from the app (mailbox.ts).
+      name: fileName(file.name),
       size: file.bytes.byteLength,
-      contentType: file.contentType || "application/octet-stream",
+      contentType: sanitizeContentType(file.contentType),
       sha256: saved.sha256,
       objectKey: saved.blobId,
     });
