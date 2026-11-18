@@ -21,6 +21,7 @@ import { defaultSettings, expectedTxt, keepVerified, TXT_VALUE } from "./setting
 import { applySieve, parseSieve } from "./sieve.ts";
 import type { MailboxSnapshot } from "./snapshot.ts";
 import { createHarness, profile } from "./test-support.ts";
+import { ownershipTxt } from "./domain-ownership.ts";
 
 const fast = { expiresAt: "2099-01-01T00:00:00.000Z", reads: 2, selfDestruct: false, iterations: 1000 };
 
@@ -143,8 +144,12 @@ test("plus addresses, catch-all, auto-reply, holds, and sealed contact fields", 
     };
     await writeSnapshot(db, storageFor, "par-bea", empty);
     assert.equal(await findTenantByAddress(db, "anyone@client.test"), null);
+    // The shared record anyone could copy no longer verifies; this mailbox's own record does.
+    const shared = await refreshDomainVerification(await readSettings(db, "par-bea"), async (name) => (name === txt.name ? [[TXT_VALUE]] : []));
+    assert.equal(shared.domains[0]?.verified, false);
+    const own = ownershipTxt("par-bea", "client.test").value;
     const verified = await refreshDomainVerification(await readSettings(db, "par-bea"), async (name) => {
-      return name === txt.name ? [[TXT_VALUE]] : [];
+      return name === txt.name ? [[own]] : [];
     });
     assert.equal(verified.domains[0]?.verified, true);
     await writeSettings(db, "par-bea", verified);

@@ -99,12 +99,14 @@ function asDomain(value: unknown, platformDomain: string): CustomDomain | null {
   const domain = cleanDomain(text(row.domain, 253), platformDomain);
   if (!domain) return null;
   const txt = expectedTxt(domain);
+  // The value is the mailbox's own (set by the server, domain-ownership.ts); keep it, never the old shared one.
+  const own = typeof row.txtValue === "string" && /^cumulus-mail-verify=[0-9a-f]{32}$/.test(row.txtValue) ? row.txtValue : "";
   return {
     domain,
     catchAll: row.catchAll === true,
     verified: row.verified === true,
     txtName: txt.name,
-    txtValue: txt.value,
+    txtValue: own,
   };
 }
 

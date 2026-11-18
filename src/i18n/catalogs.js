@@ -546,7 +546,8 @@ export default {
   "Your address": "Your address",
   "Your data": "Your data",
   "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute.",
-  "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own.": "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own."
+  "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own.": "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own.",
+  "Your record appears in a moment.": "Your record appears in a moment."
  },
  "ru": {
   ". SMTP": ". SMTP",
@@ -1106,6 +1107,7 @@ export default {
   "This session": "Этот сеанс",
   "Withdraw": "Отозвать",
   "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox trusts that sign-in and stores no password or second factor of its own.": "Пароль, 4-значный PIN-код и приложение-аутентификатор (по желанию) управляются в Cumulus://ID. Этот ящик доверяет этому входу и не хранит собственного пароля или второго фактора.",
-  "unknown": "неизвестно"
+  "unknown": "неизвестно",
+  "Your record appears in a moment.": "Ваша запись появится через мгновение."
  }
 };
