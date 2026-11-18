@@ -114,7 +114,7 @@ test("the server enforces the address limit, but keeps mailboxes that already we
     const me = profile("alias-cap", "cap@cumuluscloud.app", "Cap");
     await openMailbox(harness.db, "alias-cap", me);
     const base = await readSnapshot(harness.db, "alias-cap");
-    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap.alias${index}@cumuluscloud.app`);
+    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap+alias${index}@cumuluscloud.app`);
     const saved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...base, aliases: many(MAX_ALIASES) });
     assert.equal(saved.aliases.length, MAX_ALIASES);
     await assert.rejects(
@@ -123,7 +123,7 @@ test("the server enforces the address limit, but keeps mailboxes that already we
     );
     assert.equal((await readSnapshot(harness.db, "alias-cap")).aliases.length, MAX_ALIASES);
     // Duplicates and the mailbox's own address do not count toward the limit.
-    const dupes = [...many(MAX_ALIASES), "CAP.ALIAS0@cumuluscloud.app", me.email];
+    const dupes = [...many(MAX_ALIASES), "CAP+ALIAS0@cumuluscloud.app", me.email];
     assert.equal((await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: dupes })).aliases.length, MAX_ALIASES);
 
     // A mailbox stored with more than the limit before this check existed can still save, but not grow.

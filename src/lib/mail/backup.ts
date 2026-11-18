@@ -7,6 +7,8 @@ import type { MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { loadAttachmentMap, previousRawKeys, readSnapshot, replaceMailboxContents } from "./records.ts";
 import { createSuppressionList } from "./suppression.ts";
+import { sanitizeSettings } from "./settings.ts";
+import { allowedAliases } from "./alias.ts";
 
 export type BackupBlob = {
   objectKey: string;
@@ -146,7 +148,8 @@ export async function importMailbox(
     {
       me: current.me,
       messages: backup.messages,
-      aliases: backup.aliases,
+      // The same alias rule as a save: a restore can't bring in system addresses or other people's names.
+      aliases: allowedAliases(backup.aliases, current.aliases, current.me.email, sanitizeSettings(current.settings).domains.filter((d) => d.verified).map((d) => d.domain)),
       briefs: backup.briefs,
       tasks: backup.tasks,
       contacts: backup.contacts,
