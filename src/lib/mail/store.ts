@@ -91,8 +91,11 @@ let pushing = 0;
  * mailbox.ts writeSnapshot). Empty before the first load: then nothing on the server is deleted.
  */
 let knownIds: string[] = [];
+/** The per-message server revs from that snapshot; sent back so the server can spot a stale copy. */
+let knownRevs: Record<string, number> = {};
 const remember = (snapshot: MailboxSnapshot) => {
   knownIds = snapshot.messages.map((message) => message.id);
+  knownRevs = snapshot.revs ?? {};
 };
 
 function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
@@ -103,7 +106,7 @@ function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) =
   pushChain = pushChain
     .catch(() => undefined)
     .then(async () => {
-      const saved = await putMailbox({ data: { ...snapshot, knownIds } });
+      const saved = await putMailbox({ data: { ...snapshot, knownIds, knownRevs } });
       remember(saved);
       if (mine !== revision) return;
       set({ ...saved, syncError: "" });

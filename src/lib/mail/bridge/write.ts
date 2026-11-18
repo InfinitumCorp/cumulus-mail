@@ -83,7 +83,8 @@ export async function moveMessages(
     // Compare-and-swap on the folder: if the app moved it meanwhile, this message is skipped.
     const updated = await db.query<{ id: string }>(
       `update cumulus_mail.messages
-          set folder = $4, due_at = case when $3 = 'drafts' then null else due_at end
+          set folder = $4, due_at = case when $3 = 'drafts' then null else due_at end,
+              server_rev = server_rev + 1
         where tenant_id = $1 and id = $2 and folder = $3
         returning id`,
       [tenantId, row.message_id, from, to],
