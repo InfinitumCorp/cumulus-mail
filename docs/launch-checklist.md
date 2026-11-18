@@ -29,7 +29,8 @@ this repository.
 
 - [ ] `BETTER_AUTH_SECRET`: random, 32+ bytes, in each region's secret store. **Sign-in refuses to start
       without it** on a deployment (never falls back to a random secret).
-- [ ] Cumulus ID (nexus) lists both origins for the public client `cumulus-mail`: `https://mail.cumuluscloud.app`
+- [ ] Cumulus ID (nexus today; InfinitumCorp/cumulus-id `src/clients.ts` after its cut-over, where both are already
+      listed) lists both origins for the public client `cumulus-mail`: `https://mail.cumuluscloud.app`
       and `https://ru.mail.cumuluscloud.app`. `CID_ISSUER` / `CID_CLIENT_ID` only to override (RU uses the mirror).
 - [ ] `MAIL_BLOB_KEY` (32 random bytes) per region; never reuse a local key. A region that shares a bucket with
       another must share its key.
