@@ -68,12 +68,37 @@ async function setList(db: MailQuery, tenantId: string, address: string, kind: "
 
 /* ---------------- shared reputation ---------------- */
 
-async function bump(db: MailQuery, domain: string, column: "received" | "spam_reports" | "ham_reports"): Promise<void> {
+async function bump(
+  db: MailQuery,
+  domain: string,
+  column: "received" | "spam_reports" | "ham_reports",
+  by = 1,
+): Promise<void> {
   await db.query(
-    `insert into cumulus_mail.sender_reputation (domain, ${column}) values ($1, 1)
-     on conflict (domain) do update set ${column} = cumulus_mail.sender_reputation.${column} + 1, updated_at = now()`,
-    [domain],
+    `insert into cumulus_mail.sender_reputation (domain, ${column}) values ($1, $2)
+     on conflict (domain) do update set ${column} = cumulus_mail.sender_reputation.${column} + $2, updated_at = now()`,
+    [domain, by],
   );
+}
+
+/**
+ * `received` for a big sending domain is one row that every authenticated message from it would update,
+ * so under load every inbound message from that domain queues on the same row lock. Past
+ * RECEIVED_SAMPLE_FROM it is counted by sampling: one message in RECEIVED_SAMPLE (at random) adds
+ * RECEIVED_SAMPLE. The expected count is unchanged and the row takes about 1/16 of the writes; the count
+ * is only compared against spam votes at 0.1% (RECEIVED_SHARE), far coarser than the sampling noise.
+ */
+export const RECEIVED_SAMPLE_FROM = 1000;
+export const RECEIVED_SAMPLE = 16;
+
+export async function countReceived(
+  db: MailQuery,
+  domain: string,
+  current: number,
+  random: () => number = Math.random,
+): Promise<void> {
+  if (current < RECEIVED_SAMPLE_FROM) return bump(db, domain, "received");
+  if (random() < 1 / RECEIVED_SAMPLE) await bump(db, domain, "received", RECEIVED_SAMPLE);
 }
 
 export async function reputation(db: MailQuery, domain: string): Promise<{ received: number; spam: number; ham: number }> {
@@ -187,18 +212,23 @@ export async function inboundVerdict(
   tenantId: string,
   from: string,
   auth: MailAuth | undefined,
-  options: { env?: Record<string, string | undefined>; resolve?: ResolveA } = {},
+  options: { env?: Record<string, string | undefined>; resolve?: ResolveA; random?: () => number } = {},
 ): Promise<SpamVerdict> {
   assertTenantId(tenantId);
   const domain = senderDomain(from);
+  // One read of the domain's counters, used for counting and for the verdict.
+  let rep: Awaited<ReturnType<typeof reputation>> | null = null;
+  const repOf = async (name: string) => (rep ??= await reputation(db, name));
   // Only mail that authenticated as the domain counts toward its volume, like votes: forged mail must not
   // be able to pad a domain's `received` count and so dilute its spam votes (RECEIVED_SHARE).
-  if (domain && authenticatedForDomain(auth)) await bump(db, domain, "received");
+  if (domain && authenticatedForDomain(auth)) {
+    await countReceived(db, domain, (await repOf(domain)).received, options.random);
+  }
   if (auth?.disposition === "quarantine") return { folder: "quarantine", reason: "authentication" };
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };
   if (kind === "allow" && passed(auth)) return { folder: "inbox", reason: "allowlisted" };
-  if (domain && badReputation(await reputation(db, domain))) return { folder: "quarantine", reason: "reputation" };
+  if (domain && badReputation(await repOf(domain))) return { folder: "quarantine", reason: "reputation" };
   const zones = rblZones(options.env ?? process.env);
   if (domain && zones.length && (await rblListed(domain, zones, options.resolve ?? dohResolver(options.env)))) {
     return { folder: "quarantine", reason: "rbl" };

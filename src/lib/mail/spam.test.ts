@@ -195,3 +195,32 @@ test("inbound mail from a blocked sender lands in Quarantine", async () => {
   assert.equal(reported?.auth?.dmarc, "none");
   assert.equal(authenticatedForDomain(reported?.auth), false);
 });
+
+test("received: exact below 1,000, then sampled (1 in 16 adds 16) so a big domain's row takes far fewer writes", async () => {
+  const { countReceived, RECEIVED_SAMPLE, RECEIVED_SAMPLE_FROM } = await import("./spam.ts");
+  const db = harness.db;
+  const writes: string[] = [];
+  const counting = { query: (sql: string, params?: unknown[]) => (writes.push(sql), db.query(sql, params)) } as typeof db;
+
+  // Small domain: every message counts, exactly.
+  for (let i = 0; i < 3; i += 1) await countReceived(counting, "small.example", i, () => 0.99);
+  assert.equal((await reputation(db, "small.example")).received, 3);
+  assert.equal(writes.length, 3);
+
+  // Big domain: a draw below 1/16 adds 16, anything else writes nothing.
+  writes.length = 0;
+  await countReceived(counting, "big.example", RECEIVED_SAMPLE_FROM, () => 0.5);
+  assert.equal(writes.length, 0, "no write for the other 15 in 16");
+  await countReceived(counting, "big.example", RECEIVED_SAMPLE_FROM, () => 0.01);
+  assert.equal((await reputation(db, "big.example")).received, RECEIVED_SAMPLE);
+
+  // Over many messages the count stays close to the truth (seeded generator, so the test is stable).
+  let seed = 42;
+  const random = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  writes.length = 0;
+  const messages = 16_000;
+  for (let i = 0; i < messages; i += 1) await countReceived(counting, "huge.example", RECEIVED_SAMPLE_FROM, random);
+  const counted = (await reputation(db, "huge.example")).received;
+  assert.ok(Math.abs(counted - messages) / messages < 0.1, `counted ${counted} for ${messages}`);
+  assert.ok(writes.length < messages / 10, `${writes.length} writes for ${messages} messages`);
+});
