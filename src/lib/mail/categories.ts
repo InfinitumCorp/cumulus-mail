@@ -226,8 +226,14 @@ export function isPublicAddress(ip: string): boolean {
   return true;
 }
 
-/** node:dns lookup, or null where the runtime has no DNS module (Workers block private targets themselves). */
-async function systemResolver(host: string): Promise<string[] | null> {
+/**
+ * node:dns lookup, or null on Cloudflare Workers. Workers refuse private and metadata targets
+ * themselves, and under nodejs_compat `node:dns/promises` imports but its lookup cannot be relied on
+ * (it may throw "not implemented"), which would make every one-click unsubscribe fail as "does not
+ * resolve". So on Workers the check is left to the platform and the POST goes through fetch.
+ */
+export async function systemResolver(host: string, env: Record<string, string | undefined> = process.env): Promise<string[] | null> {
+  if (env.CUMULUS_RUNTIME === "cloudflare") return null;
   let dns: typeof import("node:dns/promises");
   try {
     dns = await import("node:dns/promises");
@@ -322,8 +328,19 @@ export async function oneClickUnsubscribe(
   try {
     const post = fetcher ? null : (pinned ?? (addresses ? await nodePinnedPost() : null));
     if (post && addresses) {
-      const status = await post(safe, addresses[0]!, "List-Unsubscribe=One-Click", controller.signal);
-      return { ok: status >= 200 && status < 300, status };
+      // Every address passed the check; try them in turn, as a resolver-driven fetch would (an IPv6
+      // answer first on a host without IPv6 must not fail the unsubscribe).
+      let lastError: unknown;
+      for (const address of addresses) {
+        try {
+          const status = await post(safe, address, "List-Unsubscribe=One-Click", controller.signal);
+          return { ok: status >= 200 && status < 300, status };
+        } catch (error) {
+          lastError = error;
+          if (controller.signal.aborted) break;
+        }
+      }
+      throw lastError;
     }
     fetcher ??= fetch;
     const response = await fetcher(safe.href, {

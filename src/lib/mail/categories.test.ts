@@ -265,3 +265,29 @@ test("one-click on Node connects to the address that was checked, not a second D
   });
   assert.match(hello, /unsub\.rebind\.example/);
 });
+
+test("on Workers the DNS check is left to the platform and the POST goes through fetch; on Node each checked address is tried", async () => {
+  const { systemResolver } = await import("./categories.ts");
+  assert.equal(await systemResolver("lists.example", { CUMULUS_RUNTIME: "cloudflare" }), null);
+
+  // No resolver answer (Workers): the injected fetch is used, never a pinned socket.
+  const calls: string[] = [];
+  const viaFetch = (async (url: string) => {
+    calls.push(url);
+    return new Response(null, { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u", viaFetch, 10_000, async () => null as never), { ok: true, status: 200 });
+  assert.deepEqual(calls, ["https://lists.example/u"]);
+
+  // Node: the first checked address does not connect, the second answers.
+  const tried: string[] = [];
+  const pinned = async (_url: URL, address: string) => {
+    tried.push(address);
+    if (address === "2606:4700::1111") throw Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" });
+    return 202;
+  };
+  const dual = async () => ["2606:4700::1111", "93.184.216.34"];
+  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u", null, 10_000, dual, pinned), { ok: true, status: 202 });
+  assert.deepEqual(tried, ["2606:4700::1111", "93.184.216.34"]);
+  await assert.rejects(() => oneClickUnsubscribe("https://lists.example/u", null, 10_000, async () => ["2606:4700::1111"], pinned), /ENETUNREACH/);
+});
