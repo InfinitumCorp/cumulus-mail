@@ -140,9 +140,10 @@ in once in a browser** through that URL, end to end.
 
 The issuer only sends people back to addresses it knows, and neither the old one nor the new one knows the
 workers.dev address by default: the smoke's `sign-in` line checks the redirect Mail builds, not that the issuer
-accepts it. So the new Cumulus://ID goes live **before this step**, started with
-`CID_EXTRA_ORIGINS=cumulus-mail=https://cumulus-mail-api.<account>.workers.dev` (InfinitumCorp/cumulus-id,
-`docs/deploy-checklist.md`, "Same day as the Cumulus://Mail launch"). Without it this sign-in ends on an
+accepts it. So the new Cumulus://ID goes live before this launch, and **between steps 4 and 5** it is told to
+accept this address: in the cumulus-id folder, `export CID_EXTRA_ORIGINS=cumulus-mail=https://cumulus-mail-api.<account>.workers.dev`
+(the address from step 4, brackets replaced), then `npm run deploy:live` (InfinitumCorp/cumulus-id
+`docs/launch-day.md`). Without it this sign-in ends on an
 "invalid redirect" page at id.cumuluscloud.app: that is not a Mail fault; do the end-to-end sign-in after step 6
 instead.
 
