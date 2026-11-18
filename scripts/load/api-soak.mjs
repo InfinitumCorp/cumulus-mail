@@ -13,6 +13,9 @@
  *   POST /api/csp-report          a violation report
  * With DATABASE_URL set it uses that Postgres; otherwise PGlite.
  *
+ * `--url https://staging.example` soaks a deployed copy instead (docs/ops/staging-load.md): no server is
+ * started, RSS is not measured, and production hosts are refused.
+ *
  * Every minute it prints requests, errors, p50/p95/p99 and RSS. At the end it compares the last third of
  * the run with the first third (after a warm-up minute) and fails if RSS grew more than 25% or p95 more
  * than 50%: that is what a leak or an accumulating cache looks like.
@@ -33,6 +36,24 @@ const arg = (name, fallback) => {
 };
 const minutes = arg("--minutes", 30);
 const concurrency = arg("--concurrency", 8);
+const urlAt = args.indexOf("--url");
+const targetUrl = urlAt >= 0 ? args[urlAt + 1] ?? "" : "";
+
+/** Hosts the soak must never be pointed at: it is load, and production has real people on it. */
+export const PRODUCTION_HOSTS = ["cumuluscloud.app", "mail.cumuluscloud.app", "ru.mail.cumuluscloud.app", "id.cumuluscloud.app", "ru.id.cumuluscloud.app"];
+
+/** The base URL for `--url`, or an error message. Only https, never a production host. */
+export function soakTarget(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: `--url is not a URL: ${url}` };
+  }
+  if (parsed.protocol !== "https:") return { error: "--url must be https://" };
+  if (PRODUCTION_HOSTS.includes(parsed.hostname.toLowerCase())) return { error: `${parsed.hostname} is production; point the soak at staging` };
+  return { base: parsed.origin };
+}
 
 /** p-th percentile (0–100) of sorted numbers. */
 export function percentile(sorted, p) {
@@ -51,7 +72,8 @@ export function drift(rows) {
   const avg = (xs, key) => xs.reduce((sum, r) => sum + r[key], 0) / xs.length;
   const first = steady.slice(0, third);
   const last = steady.slice(-third);
-  const rssGrowth = avg(last, "rssMb") / avg(first, "rssMb") - 1;
+  // A remote target (--url) has no process to measure: judge latency alone.
+  const rssGrowth = avg(first, "rssMb") > 0 ? avg(last, "rssMb") / avg(first, "rssMb") - 1 : 0;
   const p95Growth = avg(last, "p95") / Math.max(1, avg(first, "p95")) - 1;
   return { rssGrowth, p95Growth, ok: rssGrowth <= 0.25 && p95Growth <= 0.5 };
 }
@@ -65,7 +87,8 @@ const rssMb = (pid) => {
   }
 };
 
-async function main() {
+/** Start the production build locally and return its base URL and process (or null for --url). */
+async function startLocal() {
   const serverPath = join(root, ".output/server/index.mjs");
   if (!existsSync(serverPath)) {
     console.error("[soak] no production build: VITE_AUTH_ENABLED=false npm run build:node");
@@ -102,6 +125,21 @@ async function main() {
     if (Date.now() > until) throw new Error("server did not start");
     await new Promise((r) => setTimeout(r, 300));
   }
+  return { base, server };
+}
+
+async function main() {
+  let base;
+  let server = null;
+  if (urlAt >= 0) {
+    const target = soakTarget(targetUrl);
+    if (target.error) {
+      console.error(`[soak] ${target.error}`);
+      process.exit(2);
+    }
+    base = target.base;
+    console.log(`[soak] remote target ${base}: RSS is not measured, latency drift and errors still fail the run`);
+  } else ({ base, server } = await startLocal());
 
   const report = JSON.stringify({ "csp-report": { "document-uri": `${base}/`, "effective-directive": "img-src", "blocked-uri": "https://example.org/x.png" } });
   const requests = [
@@ -140,7 +178,7 @@ async function main() {
       p50: Math.round(percentile(sorted, 50)),
       p95: Math.round(percentile(sorted, 95)),
       p99: Math.round(percentile(sorted, 99)),
-      rssMb: Math.round(rssMb(server.pid)),
+      rssMb: server ? Math.round(rssMb(server.pid)) : 0,
     };
     rows.push(row);
     window = { latencies: [], errors: 0 };
@@ -150,7 +188,7 @@ async function main() {
   await Promise.all(Array.from({ length: concurrency }, worker));
   clearInterval(ticker);
   if (window.latencies.length) flush();
-  server.kill();
+  server?.kill();
   const d = drift(rows);
   const errors = rows.reduce((sum, r) => sum + r.errors, 0);
   console.log(
