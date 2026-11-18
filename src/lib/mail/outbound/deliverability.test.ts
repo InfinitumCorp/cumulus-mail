@@ -119,3 +119,33 @@ test("header injection through a subject or a name cannot add a header", () => {
   const names = splitMessage(raw).headers.map((h) => h.name.toLowerCase());
   assert.ok(!names.includes("bcc"));
 });
+
+test("round trip: a Russian message with a long subject and Cyrillic attachment names is signed, passes DKIM, and parses back exactly", async () => {
+  const { parseMime } = await import("../mime.ts");
+  const subject = "Итоги квартала и план работ на декабрь: бюджет, сроки, ответственные — окончательная версия для согласования";
+  const body = "Добрый день, Лея!\n\nОтчёт и таблица во вложении. Цифры сверены.\n\n— Алексей\n";
+  const files = [
+    { name: "Отчёт за ноябрь.pdf", contentType: "application/pdf", bytes: Uint8Array.from({ length: 5000 }, (_, i) => i % 256) },
+    { name: "Бюджет №2.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: Uint8Array.of(80, 75, 3, 4) },
+  ];
+  const ru = message({
+    from: { name: "Алексей Рид", email: "alex@cumuluscloud.app" },
+    to: [{ name: "Лея Морозова", email: "leah@example.ru" }, { name: "Пётр", email: "petr@example.ru" }],
+    subject,
+    body,
+  });
+  const raw = signed(buildRawMessage(ru, ru.from, DOMAIN, new Date("2026-11-18T09:30:00Z"), files));
+  assert.ok(raw.split("\r\n").every((line) => line.length <= 998), "no line over the SMTP limit");
+
+  const auth = await authenticateInbound(raw, envelope, publishedDns());
+  assert.equal(auth.dkim, "pass");
+  assert.equal(auth.dmarc, "pass");
+
+  const parsed = parseMime(raw);
+  assert.equal(parsed.subject, subject);
+  assert.deepEqual(parsed.from, { name: "Алексей Рид", email: "alex@cumuluscloud.app" });
+  assert.deepEqual(parsed.to.map((p) => p.name), ["Лея Морозова", "Пётр"]);
+  assert.equal(parsed.text, body.trim());
+  assert.deepEqual(parsed.attachments.map((a) => a.name), files.map((f) => f.name));
+  assert.deepEqual([...parsed.attachments[0]!.bytes], [...files[0]!.bytes]);
+});
