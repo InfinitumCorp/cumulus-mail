@@ -3,7 +3,7 @@
  * `npm run smoke:local`: the post-deploy smoke (`npm run smoke -- --url …`, scripts/host-smoke.mjs) against
  * this checkout's production build, so CI proves the smoke passes on what would be deployed.
  *
- *   VITE_AUTH_ENABLED=false npm run build:node && npm run smoke:local
+ *   VITE_AUTH_ENABLED=false npm run build:node && npm run smoke:local [-- --region ru]
  *
  * Starts .output/server on a free port with throwaway keys and PGlite, then runs every check. HSTS is
  * only a warning here (plain http to 127.0.0.1); on a real https host it is required.
@@ -31,6 +31,14 @@ if (!existsSync(server)) {
   console.error("[smoke:local] no production build: run `VITE_AUTH_ENABLED=false npm run build:node` first");
   process.exit(1);
 }
+// `--region ru` runs the build as the Russia copy (MAIL_REGION=ru) and checks it as one: the ru health
+// answer, the Russian page and the Russia Cumulus ID issuer.
+const at = process.argv.indexOf("--region");
+const region = at > -1 ? process.argv[at + 1] : "us";
+if (region !== "us" && region !== "ru") {
+  console.error("[smoke:local] --region must be us or ru");
+  process.exit(2);
+}
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, [server], {
@@ -44,6 +52,7 @@ const child = spawn(process.execPath, [server], {
     MAIL_BLOB_KEY: randomBytes(32).toString("hex"),
     MAIL_BLOB_DIR: mkdtempSync(join(tmpdir(), "smoke-blobs-")),
     DATABASE_URL: "",
+    MAIL_REGION: region,
   },
   stdio: "ignore",
 });
@@ -59,7 +68,7 @@ try {
     if (Date.now() > until) throw new Error("the server did not start");
     await new Promise((r) => setTimeout(r, 300));
   }
-  ({ ok } = await runHostSmoke(base, { region: "us" }));
+  ({ ok } = await runHostSmoke(base, { region }));
 } finally {
   child.kill();
 }

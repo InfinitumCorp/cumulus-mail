@@ -146,6 +146,8 @@ jobs:
       - run: npm run bundle:check
       # The post-deploy smoke (npm run smoke -- --url) passes against this production build.
       - run: npm run smoke:local
+      # The same build as the Russia copy (MAIL_REGION=ru): ru health, Russian page, the Russia issuer.
+      - run: npm run smoke:local -- --region ru
       # Every server function and API route of this build refuses a caller without a session or with
       # forged credentials (sign-in turned on at run time).
       - run: npm run authz:sweep
