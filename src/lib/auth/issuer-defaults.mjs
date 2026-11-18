@@ -1,15 +1,15 @@
 /**
- * Cumulus://ID signs in through an Amazon Cognito user pool. This plain-JS copy
- * of the default is for scripts (smoke, live checks); the app reads
- * src/lib/auth/cumulus-issuer.ts. Override with CUMULUS_OIDC_ISSUER.
+ * Cumulus://ID is the realm at https://id.cumuluscloud.app/realms/cumulus. This plain-JS copy of the
+ * default is for scripts (smoke, live checks); the app reads src/lib/auth/cumulus-issuer.ts. Override
+ * with CUMULUS_OIDC_ISSUER.
  */
-export const DEFAULT_CUMULUS_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
+export const DEFAULT_CUMULUS_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
 
-/** Cognito publishes the user pool's signing keys here. */
-export const DEFAULT_CUMULUS_JWKS_URI = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json";
+/** The realm publishes its signing keys here. */
+export const DEFAULT_CUMULUS_JWKS_URI = "https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs";
 
-/** The Keycloak realm Cumulus://ID used before Cognito. It no longer answers. */
-export const RETIRED_KEYCLOAK_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
+/** The Cognito pool once planned for Cumulus://ID; its discovery answers 404. Kept for reference. */
+export const LEGACY_COGNITO_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
 
 /**
  * JWKS for an issuer: a Keycloak `/realms/<name>` issuer uses the realm certs
