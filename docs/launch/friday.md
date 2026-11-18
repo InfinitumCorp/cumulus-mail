@@ -99,8 +99,11 @@ RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Ru
 
 **Expected:** the second `db:status` exits 0. Every migration is additive (new tables, columns and
 indexes); none drops or rewrites data.
+Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code:
+with #161 merged that includes `0019_message_rev.sql`, which must be applied before that code is deployed.
+
 **Rollback:** not needed for additive migrations: the old page worker ignores these tables. Do not drop
-anything by hand.
+anything by hand; if a migration itself is the problem, `docs/ops/migrations.md` has the per-file undo.
 
 ## 3. Preflight (5 min)
 
