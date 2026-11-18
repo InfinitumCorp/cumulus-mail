@@ -60,6 +60,15 @@ test("account.created provisions the mailbox and publishes the address before Ma
   assert.equal(await handleCidEvent(harness.db, { ...e, cid: "cid_00000000-0000-4000-8000-000000000000", detail: { mailAddress: "x@evil.example" } }, "cumuluscloud.app"), "ignored");
 });
 
+test("account.created names the Mail user with the display name the person chose, when the issuer sends it", async () => {
+  const cid = "cid_22222222-2222-4222-8222-222222222222";
+  const e: CidEvent = { cid, type: "account.created", detail: { username: "robin2", displayName: "Robin Hood", mailAddress: "robin2@cumuluscloud.app" }, at };
+  assert.equal(await handleCidEvent(harness.db, e, "cumuluscloud.app"), "provisioned");
+  const tenant = await tenantForCid(harness.db, cid);
+  const user = await harness.db.query<{ name: string }>(`select "name" from "user" where "id" = $1`, [tenant]);
+  assert.equal(user[0]?.name, "Robin Hood");
+});
+
 test("security events land once in the inbox; none without a mailbox", async () => {
   const e: CidEvent = { cid: CID, type: "session.created", detail: { device: "Safari on iOS", country: "GB", method: "password+pin" }, at };
   assert.equal(await handleCidEvent(harness.db, e, "cumuluscloud.app"), "notified");

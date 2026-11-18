@@ -172,7 +172,8 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
   if (e.type === "account.created") {
     const email = s(e.detail.mailAddress).toLowerCase();
     if (!email.endsWith(`@${mailDomain}`)) return "ignored";
-    const name = s(e.detail.username) || email.split("@")[0]!;
+    // The name the person gave at sign-up (Cumulus://ID sends it since 18 November), else the username.
+    const name = s(e.detail.displayName) || s(e.detail.username) || email.split("@")[0]!;
     const tenantId = (await tenantForCid(db, e.cid, { email, name }))!;
     assertTenantId(tenantId);
     await provisionMailbox(db, tenantId, { name, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 });
