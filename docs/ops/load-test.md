@@ -53,10 +53,12 @@ No errors and no regression in the median (8–9 ms against 9.3 ms on 13 Nov). T
 and varies a lot between identical runs on this shared machine; the inbound spam checks (#106) add three
 small queries per message (the sender domain's reputation, the mailbox's lists).
 
-**Watch after launch:** every authenticated message from a domain updates that domain's one
-`sender_reputation` row (`received`). For a very large sender (gmail.com) that is one hot row. It held up
-here (58,000 updates to one row, few dead tuples thanks to HOT updates and autovacuum), but if inbound
-latency climbs with volume, split the counter across a few rows (a sharded counter) or count a sample.
+**One hot row per big sending domain (handled):** every authenticated message from a domain counts toward
+that domain's one `sender_reputation` row (`received`). It held up here (58,000 updates to one row, few
+dead tuples thanks to HOT updates and autovacuum). Since then, a domain past 1,000 messages is counted by
+sampling (`countReceived` in `src/lib/mail/spam.ts`: one message in 16, at random, adds 16), so a
+gmail.com-sized sender writes that row about 1/16 as often. The expected count is unchanged; the count is
+only compared with spam votes at 0.1%.
 
 The script now creates the bucket itself when `S3_ENDPOINT` is a loopback stand-in (before, the recipe
 above failed every message with an opaque `UnknownError`).
