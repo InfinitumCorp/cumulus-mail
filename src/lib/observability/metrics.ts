@@ -18,7 +18,9 @@ export type MetricName =
   /** A refused authenticated call. reason: no_session | cross_site | tenant_mismatch. */
   | "auth.failure"
   /** A Content-Security-Policy violation a browser reported: directive, blocked (origin or keyword), path, disposition. */
-  | "csp.violation";
+  | "csp.violation"
+  /** A bounce report about mail this mailbox did not send to that address: ignored, never suppresses. */
+  | "mail.dsn.unverified";
 
 export type MetricFields = Record<string, string | number | boolean | null>;
 
