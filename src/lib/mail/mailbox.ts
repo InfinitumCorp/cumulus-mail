@@ -52,6 +52,64 @@ export function isRevMap(value: unknown): value is Record<string, number> {
   return Object.values(value).every((rev) => Number.isSafeInteger(rev) && (rev as number) >= 0);
 }
 
+/**
+ * The aliases a mailbox may keep: valid, not its own address, not another mailbox's (that would let it
+ * receive or send as someone else), and within its plan. A mailbox that already holds more (saved before
+ * this check existed) keeps them but cannot add more. Used by every path that writes aliases: a save
+ * (writeSnapshot) and a backup import (backup.ts).
+ */
+/** Names on the platform domain nobody may take: mail to them is about the service, not a person. */
+export const RESERVED_LOCAL_PARTS = new Set([
+  "postmaster", "abuse", "hostmaster", "webmaster", "admin", "administrator", "root", "security", "support",
+  "noreply", "no-reply", "mailer-daemon", "billing", "help", "info", "dmarc", "dmarc-reports", "privacy", "legal",
+]);
+
+/**
+ * Where an alias may be: the platform mail domain (not a reserved name), or one of this mailbox's own
+ * custom domains that the server has verified. The client sends the alias list, so without this an
+ * alias could claim any unrouted address, including one on another customer's verified domain, and
+ * receive that domain's mail. Aliases the mailbox already has stay valid.
+ */
+export function aliasAllowed(email: string, current: MailboxSnapshot): boolean {
+  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return true;
+  const at = email.lastIndexOf("@");
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (domain === mailDomain()) return !RESERVED_LOCAL_PARTS.has(local.split("+")[0]!);
+  return (current.settings?.domains ?? []).some((item) => item.verified && item.domain.toLowerCase() === domain);
+}
+
+export async function checkedAliases(
+  db: MailQuery,
+  tenantId: string,
+  current: MailboxSnapshot,
+  requested: readonly unknown[],
+  /** A save refuses another mailbox's address outright; an import skips it and restores the rest. */
+  ownedByOther: "refuse" | "skip" = "refuse",
+): Promise<string[]> {
+  const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
+  const aliases: string[] = [];
+  for (const alias of requested) {
+    if (typeof alias !== "string") continue;
+    const email = alias.trim().toLowerCase();
+    if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
+    if (!aliasAllowed(email, current)) {
+      if (ownedByOther === "skip") continue;
+      throw new TenantAccessError(`An address can be on ${mailDomain()} or on one of your verified domains.`);
+    }
+    if (await addressOwnedByOther(db, email, tenantId)) {
+      if (ownedByOther === "skip") continue;
+      throw new TenantAccessError("That address belongs to another mailbox");
+    }
+    aliases.push(email);
+  }
+  const allowed = Math.max(limits.aliases, current.aliases.length);
+  if (aliases.length > allowed) {
+    throw new Error(`You can have up to ${limits.aliases} addresses.`);
+  }
+  return aliases;
+}
+
 export async function writeSnapshot(
   db: MailQuery,
   storageFor: TenantStorage,
@@ -167,20 +225,7 @@ export async function writeSnapshot(
     throw new Error(`You can have up to ${limits.folders} folders.`);
   }
 
-  const aliases: string[] = [];
-  for (const alias of snapshot.aliases) {
-    const email = alias.trim().toLowerCase();
-    if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
-    if (await addressOwnedByOther(db, email, tenantId)) {
-      throw new TenantAccessError("That address belongs to another mailbox");
-    }
-    aliases.push(email);
-  }
-  // A mailbox that already holds more (saved before this check existed) keeps them, but cannot add more.
-  const allowed = Math.max(limits.aliases, current.aliases.length);
-  if (aliases.length > allowed) {
-    throw new Error(`You can have up to ${limits.aliases} addresses.`);
-  }
+  const aliases = await checkedAliases(db, tenantId, current, snapshot.aliases);
 
   const { knownIds: _known, knownRevs: _knownRevs, revs: _revs, ...rest } = snapshot;
   const next: MailboxSnapshot = {

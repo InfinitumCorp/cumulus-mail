@@ -318,3 +318,32 @@ test("an older client without knownRevs still overwrites (unchanged behaviour); 
   assert.equal(isRevMap({ a: 1, b: 0 }), true);
   for (const bad of [null, [], { a: -1 }, { a: 1.5 }, { a: "2" }]) assert.equal(isRevMap(bad), false, JSON.stringify(bad));
 });
+
+test("an alias must be on the platform domain (not a reserved name) or on one of the mailbox's verified domains", async () => {
+  const { readSettings, writeSettings } = await import("./records.ts");
+  const { db, storageFor } = harness;
+  const base = await openMailbox(db, "alias-own", profile("alias-own", "alias.own@cumuluscloud.app", "Own"));
+  const saved = await writeSnapshot(db, storageFor, "alias-own", { ...base, aliases: ["own.two@cumuluscloud.app"] });
+  assert.deepEqual(saved.aliases, ["own.two@cumuluscloud.app"]);
+  for (const claim of ["postmaster@cumuluscloud.app", "abuse+x@cumuluscloud.app", "ceo@acme.example", "x@gmail.com"]) {
+    await assert.rejects(
+      () => writeSnapshot(db, storageFor, "alias-own", { ...saved, aliases: [...saved.aliases, claim] }),
+      /verified domains/,
+      claim,
+    );
+  }
+  // Their own domain once verified (the server's flag, not the client's): allowed.
+  const settings = await readSettings(db, "alias-own");
+  await writeSettings(db, "alias-own", {
+    ...settings,
+    domains: [{ domain: "own.example", catchAll: false, verified: false, txtName: "_cumulus.own.example", txtValue: "x" }],
+  });
+  const unverified = await readSnapshot(db, "alias-own");
+  await assert.rejects(() => writeSnapshot(db, storageFor, "alias-own", { ...unverified, aliases: ["me@own.example"] }), /verified domains/);
+  await writeSettings(db, "alias-own", {
+    ...settings,
+    domains: [{ domain: "own.example", catchAll: false, verified: true, txtName: "_cumulus.own.example", txtValue: "x" }],
+  });
+  const verified = await readSnapshot(db, "alias-own");
+  assert.deepEqual((await writeSnapshot(db, storageFor, "alias-own", { ...verified, aliases: ["me@own.example"] })).aliases, ["me@own.example"]);
+});

@@ -7,6 +7,8 @@ import type { MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { loadAttachmentMap, previousRawKeys, readSnapshot, replaceMailboxContents } from "./records.ts";
 import { createSuppressionList } from "./suppression.ts";
+import { checkedAliases } from "./mailbox.ts";
+import { limitsFor, DEFAULT_PLAN } from "./plans.ts";
 
 export type BackupBlob = {
   objectKey: string;
@@ -104,6 +106,18 @@ export async function importMailbox(
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   if (backup.version !== 1) throw new Error("Unsupported mailbox backup");
+  // An import is checked like a save (mailbox.ts writeSnapshot): the backup is a file the person
+  // uploads, so it can say anything. Aliases must be theirs to have, and the message count is the plan's.
+  const current = await readSnapshot(db, tenantId);
+  const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
+  if (backup.messages.length > limits.messages) throw new Error("Mailbox is too large");
+  const aliases = await checkedAliases(db, tenantId, current, backup.aliases ?? [], "skip");
+  // Sent copies carry this mailbox's own name and address, never the file's (a backup could otherwise
+  // "send" as anyone). And an import never sends: every sent message in it is recorded as delivered
+  // below, so deliverPending only finishes what this mailbox itself queued.
+  const messages = backup.messages.map((message) =>
+    message.folder === "sent" ? { ...message, from: { name: current.me.name, email: current.me.email } } : message,
+  );
   const storage = storageFor(tenantId);
   const idMap = new Map<string, string>();
   for (const blob of backup.blobs) {
@@ -119,7 +133,8 @@ export async function importMailbox(
   for (const entry of backup.suppressions ?? []) {
     await suppressions.add(entry.address, entry.reason);
   }
-  for (const messageId of backup.deliveredIds ?? []) {
+  const importedSent = messages.filter((message) => message.folder === "sent").map((message) => message.id);
+  for (const messageId of new Set([...(backup.deliveredIds ?? []), ...importedSent])) {
     await db.query(
       `insert into cumulus_mail.deliveries (sender_tenant, message_id) values ($1, $2) on conflict do nothing`,
       [tenantId, messageId],
@@ -139,14 +154,13 @@ export async function importMailbox(
       objectKey: idMap.get(file.objectKey) ?? file.objectKey,
     },
   }));
-  const current = await readSnapshot(db, tenantId);
   await replaceMailboxContents(
     db,
     tenantId,
     {
       me: current.me,
-      messages: backup.messages,
-      aliases: backup.aliases,
+      messages,
+      aliases,
       briefs: backup.briefs,
       tasks: backup.tasks,
       contacts: backup.contacts,
