@@ -41,8 +41,9 @@ Tick every line, or move the launch.
 - [ ] An SMTP relay account exists (or you accept that outside mail stays in the Outbox on day one).
 - [ ] The alerts in `docs/ops/alerts.md` are wired to somewhere you will see them today.
 - [ ] Someone in Russia, without a VPN, can test `ru.mail` in step 9.
-- [ ] **The rehearsal passes for both regions** (read-only; nothing is written or deployed). In the
-      deploy shell, with that region's secrets and `DATABASE_URL` exported:
+- [ ] **The rehearsal passes for both regions** (read-only; nothing is written or deployed). Run it once
+      the secrets exist: step 1 can be done the day before, since nothing reads them until step 4.
+      In the deploy shell, with that region's secrets and `DATABASE_URL` exported:
 
       ```sh
       npm run cutover:check -- --region us --selector <your DKIM selector>
@@ -56,7 +57,10 @@ Tick every line, or move the launch.
         `0001_auth.sql` first is right: it was added after production reached 0010, and goes in with 0020;
       - `WARN public.session does not exist yet` (0001 creates it);
       - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
-      - US only: the DNS lines steps 6–7 add (SPF, DMARC, the app host) as MISSING.
+      - US only: SPF, DKIM and DMARC as MISSING until step 7 publishes them, and the MTA-STS and TLS-RPT
+        lines as WARN;
+      - RU only: `WARN MAIL_LEGAL_RU_REVIEWED` until the lawyer's review is recorded. If D1 gave Russia
+        its own new database, it lists **all 21** migrations (no `_migrations` table yet); that is right.
       Anything else MISSING (a secret, the Hyperdrive id, the token issuer): fix it first. A
       `Migrations skipped in the middle` line means a file other than `0001_auth.sql` was skipped: stop.
 
@@ -69,8 +73,8 @@ git fetch origin && git checkout origin/main && git log -1 --oneline   # the com
 npm ci
 ```
 
-Optional: deploy with `MAIL_MAINTENANCE=1` (US: a variable in the `production-us` environment, then the
-deploy for `api`; RU: a container variable, new revision) to show a "being updated" page (English and
+Optional: set `MAIL_MAINTENANCE=1` (US: Workers → `cumulus-mail-api` → Settings → Variables, which takes
+effect at once and survives later deploys (`keep_vars`); RU: a container variable, new revision) to show a "being updated" page (English and
 Russian, 503 with `Retry-After: 600`) for the window. Health checks, CSP reports and the cron tick keep working, so steps 5–9 can
 still check the deploy. Unset it and redeploy to open the doors.
 
@@ -119,7 +123,7 @@ npm run db:status        # expect: nothing pending, exit 0
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
 **Expected:** the first `db:status` lists **11** pending and exits 3: `0001_auth.sql`, then `0011` to
-`0020`. `db:migrate` prints `applied …` for each, in that order, and `done — 11 migration(s) applied` (under
+`0020` (a new RU database: all 21). `db:migrate` prints `applied …` for each, in that order, and `done — 11 migration(s) applied` (under
 a second on the rehearsal's copy of production). The second `db:status` says `up to date` and exits 0.
 Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail
 already stored stays readable (the rehearsal read back every message after migrating).

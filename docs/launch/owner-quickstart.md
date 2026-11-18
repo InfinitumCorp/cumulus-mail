@@ -20,7 +20,8 @@ Then write down the `main` commit you will deploy. Every command below runs from
 | Worker `cumulus-mail-inbound` (`npx wrangler secret put`, from `workers/email`) | `MAIL_BLOB_KEY`, `MAIL_BLIND_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY` |
 | GitHub environment `production-ru` | secret `YC_SA_KEY_JSON`; variables `YC_CLOUD_ID`, `YC_FOLDER_ID`, `YC_REGISTRY_ID`, `YC_SA_ID`, `YC_LOCKBOX_ID` |
 | Yandex Lockbox (RU) | `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`, `MAIL_BLIND_KEY`, `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY`, `CRON_SECRET` (32+ characters) |
-| Later in the day | `MAIL_AUTH_DNS=live` (inbound worker, step 7); `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT`, `MAIL_SMTP_USER`, `MAIL_SMTP_PASSWORD`, `MAIL_DKIM_SELECTOR`, `MAIL_DKIM_PRIVATE_KEY` (step 10); `BETTER_AUTH_TRUSTED_PROXIES` only if RU's `x-forwarded-for` is a chain (step 9) |
+| Worker variables, set in the Cloudflare dashboard (they survive deploys: `keep_vars`) | `MAIL_AUTH_DNS=live` (inbound worker, step 7); `MAIL_MAINTENANCE=1` only for a maintenance window (API worker) |
+| Later in the day | `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT`, `MAIL_SMTP_USER`, `MAIL_SMTP_PASSWORD`, `MAIL_DKIM_SELECTOR`, `MAIL_DKIM_PRIVATE_KEY` (step 10); `BETTER_AUTH_TRUSTED_PROXIES` only if RU's `x-forwarded-for` is a chain (step 9) |
 
 New keys: `openssl rand -hex 32`, each saved in your password manager **before** it goes into a platform.
 The RU keys differ from the US keys.
@@ -30,9 +31,9 @@ Run each in a shell with that region's settings and `DATABASE_URL` exported.
 
 ```sh
 npm ci
-npm run cutover:check -- --region us --selector <dkim selector>   # go/no-go; read-only
+npm run cutover:check -- --region us --selector <dkim selector>   # go/no-go, once the secrets exist; read-only
 npm run cutover:check -- --region ru --no-dns
-npm run db:status        # US, then RU: 11 pending (0001_auth, 0011–0020), exit 3
+npm run db:status        # US, then RU: 11 pending (0001_auth, 0011–0020; a new RU database: 21), exit 3
 npm run db:migrate       # applies them, in that order
 npm run db:status        # up to date, exit 0
 npm run cutover:check -- --region us                    # now: "ok anon is refused on public.session"

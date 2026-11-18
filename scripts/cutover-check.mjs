@@ -28,17 +28,17 @@ const missing = (what, fix, see = RUNBOOK) => ({ level: "missing", what, fix, se
 const warn = (what, fix, see = RUNBOOK) => ({ level: "warn", what, fix, see });
 
 /**
- * Pending migrations, and whether any is older than one already applied (applied out of order).
- * @param {string[]} files migration file names in the repo
- * @param {string[]} applied names in `_migrations`
- */
-/**
  * Files that are older by name than migrations production already has, on purpose: `0001_auth.sql` was
  * copied up from `migrations/auth/` when sign-in was turned on (#177), after production reached 0010.
  * Pending, it is applied in the same `db:migrate` as `0020_auth_lockdown.sql`; it is not a hole.
  */
 export const ADDED_LATE = new Set(["0001_auth.sql"]);
 
+/**
+ * Pending migrations, and whether any is older than one already applied (applied out of order).
+ * @param {string[]} files migration file names in the repo
+ * @param {string[]} applied names in `_migrations`
+ */
 export function checkMigrations(files, applied) {
   const pending = pendingMigrations(files, applied);
   const out = [];
@@ -117,7 +117,8 @@ export async function checkIssuer(fetcher, env) {
   } catch {
     return [missing(`Token issuer's discovery document is not JSON: ${where}`, fix)];
   }
-  if (String(document?.issuer ?? "").replace(/\/+$/, "") !== issuer) {
+  // Exact, as the app compares a token's iss (cumulus-issuer.ts): a trailing slash is a mismatch.
+  if (String(document?.issuer ?? "") !== issuer) {
     return [missing(`Token issuer names a different issuer (${document?.issuer ?? "none"}): ${where}`, fix)];
   }
   return [ok(`Token issuer answers and names itself: ${issuer}`)];
