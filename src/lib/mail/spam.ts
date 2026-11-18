@@ -11,6 +11,7 @@
  *
  * Quarantine, not rejection: a false positive costs the person a click in Quarantine, not lost mail.
  */
+import { mailDomain } from "./domain.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { blindIndex } from "./field-crypto.ts";
 import type { MailAuth } from "./model.ts";
@@ -18,7 +19,7 @@ import type { MailQuery } from "./query.ts";
 
 export type SpamVerdict =
   | { folder: "inbox"; reason: "allowlisted" | "clean" }
-  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" };
+  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" | "own-domain" };
 
 /**
  * A domain needs this many votes before its reputation counts. A vote is one mailbox's verdict on one
@@ -225,6 +226,13 @@ export async function inboundVerdict(
     await countReceived(db, domain, (await repOf(domain)).received, options.random);
   }
   if (auth?.disposition === "quarantine") return { folder: "quarantine", reason: "authentication" };
+  // Mail between Cumulus mailboxes is delivered inside the app and never arrives here, so mail from the
+  // OUTSIDE claiming the platform's own domain is forged ("support@", a colleague) unless it passes DMARC
+  // for that domain (our own signed mail relayed by a list does, once MAIL_AUTH_DNS=live). No list or
+  // allowlist overrides this. A person's custom domains are theirs to send from anywhere, so not these.
+  if (domain && domain === mailDomain().toLowerCase() && auth?.dmarc !== "pass") {
+    return { folder: "quarantine", reason: "own-domain" };
+  }
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };
   if (kind === "allow" && passed(auth)) return { folder: "inbox", reason: "allowlisted" };

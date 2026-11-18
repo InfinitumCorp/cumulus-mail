@@ -224,3 +224,20 @@ test("received: exact below 1,000, then sampled (1 in 16 adds 16) so a big domai
   assert.ok(Math.abs(counted - messages) / messages < 0.1, `counted ${counted} for ${messages}`);
   assert.ok(writes.length < messages / 10, `${writes.length} writes for ${messages} messages`);
 });
+
+test("mail from outside claiming the platform's own domain is quarantined unless it passes DMARC; not-spam cannot release it", async () => {
+  const tenant = "spoof-own";
+  await openMailbox(harness.db, tenant, profile(tenant, "spoof.own@cumuluscloud.app", "Own"));
+  const unauthenticated: MailAuth = { spf: "none", dkim: "none", dmarc: "none", policy: "none", disposition: "deliver" };
+  // Before MAIL_AUTH_DNS=live nothing passes DMARC: a forged "support@" or colleague goes to Quarantine.
+  assert.deepEqual(await inboundVerdict(harness.db, tenant, "support@cumuluscloud.app", unauthenticated), { folder: "quarantine", reason: "own-domain" });
+  assert.deepEqual(await inboundVerdict(harness.db, tenant, "CEO@CumulusCloud.App", unauthenticated), { folder: "quarantine", reason: "own-domain" });
+  // The person marking one "not spam" (an allow-list entry) does not make the next forgery land.
+  await reportNotSpam(harness.db, tenant, "support@cumuluscloud.app", unauthenticated);
+  assert.deepEqual(await inboundVerdict(harness.db, tenant, "support@cumuluscloud.app", unauthenticated), { folder: "quarantine", reason: "own-domain" });
+  // Our own DKIM-signed mail relayed back (a list) passes DMARC and is delivered.
+  assert.equal((await inboundVerdict(harness.db, tenant, "alex@cumuluscloud.app", PASS)).folder, "inbox");
+  // Other domains, including look-alikes and subdomains, are judged as before.
+  assert.equal((await inboundVerdict(harness.db, tenant, "hi@cumuluscloud.app.example", unauthenticated)).folder, "inbox");
+  assert.equal((await inboundVerdict(harness.db, tenant, "hi@clean-other.example", unauthenticated)).folder, "inbox");
+});
