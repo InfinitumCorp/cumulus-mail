@@ -1,4 +1,4 @@
-# Migrations 0011–0019: what each adds, and how to undo it
+# Migrations 0011–0020: what each adds, and how to undo it
 
 Read `docs/ops/runbook.md` §4–5 first. In short: **roll back the code, keep the schema.** Every migration from
 0011 on only **adds** (tables, their indexes and row-level security, two columns with defaults). The code
@@ -28,6 +28,7 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 
 | File | Adds | What is lost on undo | Undo |
 |---|---|---|---|
+| `0020_auth_lockdown.sql` (#177) | RLS on, and no rights for `anon` / `authenticated`, on the sign-in tables and `_migrations` | **Do not undo it on Supabase**: it is what keeps session tokens away from the public anon key. Undo only on a database with no Data API | below |
 | `0019_message_rev.sql` | `messages.server_rev` | Nothing that matters: stale-tab protection (#161) stops until re-applied | below |
 | `0018_spam_votes.sql` | `spam_votes` | The one-vote-per-mailbox record; `sender_reputation` totals stay | below |
 | `0017_outbound_safety.sql` | `outbound_pauses`, `mailboxes.send_verified` | Pauses on outbound senders; who is past the new-sender limits | below |
@@ -39,6 +40,16 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 | `0011_message_words.sql` | `message_words` | The server-side search index; search falls back until `scripts/reindex-words.mjs` runs again | below |
 
 ```sql
+begin;
+-- 0020 (never on Supabase: it re-exposes the sign-in tables to the anon key)
+alter table public.session disable row level security;
+alter table public."user" disable row level security;
+alter table public.account disable row level security;
+alter table public.verification disable row level security;
+alter table public._migrations disable row level security;
+delete from public._migrations where name = '0020_auth_lockdown.sql';
+commit;
+
 begin;
 -- 0019
 alter table cumulus_mail.messages drop column if exists server_rev;

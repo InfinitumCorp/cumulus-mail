@@ -101,6 +101,9 @@ RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Ru
 indexes); none drops or rewrites data.
 Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code:
 with #161 merged that includes `0019_message_rev.sql`, which must be applied before that code is deployed.
+With #177 merged it also includes `0001_auth.sql` (pending on production) and `0020_auth_lockdown.sql`: let
+the one `db:migrate` run apply both. Then check that the anon key cannot read sign-in data, in the Supabase
+SQL editor: `set role anon; select count(*) from public.session;` must fail with `permission denied`.
 
 **Rollback:** not needed for additive migrations: the old page worker ignores these tables. Do not drop
 anything by hand; if a migration itself is the problem, `docs/ops/migrations.md` has the per-file undo.
