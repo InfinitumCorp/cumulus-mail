@@ -39,6 +39,18 @@ Tick every line, or move the launch.
 - [ ] An SMTP relay account exists (or you accept that outside mail stays in the Outbox on day one).
 - [ ] The alerts in `docs/ops/alerts.md` are wired to somewhere you will see them today.
 - [ ] Someone in Russia, without a VPN, can test `ru.mail` in step 9.
+- [ ] **The rehearsal passes for both regions** (read-only; nothing is written or deployed). In the
+      deploy shell, with that region's secrets and `DATABASE_URL` exported:
+
+      ```sh
+      npm run cutover:check -- --region us --selector <your DKIM selector>
+      npm run cutover:check -- --region ru --no-dns
+      ```
+
+      It runs preflight (secrets, repo settings, DNS), then lists pending migrations in apply order (and
+      fails if one was skipped in the middle), checks that `anon` is refused on `public.session`, and checks
+      the token issuer answers and names itself. The day before, the only expected blockers are the
+      migrations still to apply (a WARN) and DNS lines step 6–7 will add. Anything else: fix it first.
 
 ---
 
@@ -102,8 +114,10 @@ indexes); none drops or rewrites data.
 Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code:
 with #161 merged that includes `0019_message_rev.sql`, which must be applied before that code is deployed.
 With #177 merged it also includes `0001_auth.sql` (pending on production) and `0020_auth_lockdown.sql`: let
-the one `db:migrate` run apply both. Then check that the anon key cannot read sign-in data, in the Supabase
-SQL editor: `set role anon; select count(*) from public.session;` must fail with `permission denied`.
+the one `db:migrate` run apply both. Then check that the anon key cannot read sign-in data:
+`npm run cutover:check -- --region us` must show `ok anon is refused on public.session`. If it says this
+login cannot switch to anon, check in the Supabase SQL editor instead:
+`set role anon; select count(*) from public.session;` must fail with `permission denied`.
 
 **Rollback:** not needed for additive migrations: the old page worker ignores these tables. Do not drop
 anything by hand; if a migration itself is the problem, `docs/ops/migrations.md` has the per-file undo.
