@@ -14,7 +14,8 @@ export function sanitizeExtra(extra: MessageExtra | undefined): MessageExtra | u
       expiresAt: extra.protection.expiresAt.slice(0, 40),
       readsLeft: Math.max(0, Math.min(100, Math.trunc(extra.protection.readsLeft))),
       selfDestruct: extra.protection.selfDestruct === true,
-      iterations: Math.max(1_000, Math.min(200_000, Math.trunc(extra.protection.iterations) || 20_000)),
+      // 1,000,000 = MAX_ITERATIONS in protect.ts (new envelopes use 600,000; older ones 20,000).
+      iterations: Math.max(1_000, Math.min(1_000_000, Math.trunc(extra.protection.iterations) || 20_000)),
     };
   }
   if (extra.readReceipt === "requested" || extra.readReceipt === "accepted" || extra.readReceipt === "declined") {
