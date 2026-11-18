@@ -25,11 +25,18 @@ function parseEnvelope(tenantId: string, stored: string): ProtectedEnvelope | nu
   }
 }
 
+/** The longest a protected link lives. The compose screen offers 7 days; the envelope comes from the client. */
+export const PROTECTED_LINK_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+
 export async function issueProtectedLink(
   db: MailQuery,
   tenantId: string,
-  envelope: ProtectedEnvelope,
+  sealed: ProtectedEnvelope,
+  now = Date.now(),
 ): Promise<{ token: string; href: string }> {
+  const asked = Date.parse(sealed.expiresAt);
+  const expires = Math.min(Number.isFinite(asked) ? asked : now, now + PROTECTED_LINK_MAX_MS);
+  const envelope: ProtectedEnvelope = { ...sealed, expiresAt: new Date(expires).toISOString() };
   const token = randomBytes(24).toString("hex");
   await db.query(
     `insert into cumulus_mail.protected_links (
