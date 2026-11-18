@@ -147,7 +147,8 @@ export async function signIn(
     errorCallbackURL,
     disableRedirect: true,
   });
-  if (error) throw new Error(error.message ?? "Sign-in failed");
+  // Keep the status: a 429 (the sign-in rate limit) gets its own explanation on the screen.
+  if (error) throw Object.assign(new Error(error.message ?? "Sign-in failed"), { status: error.status });
   if (data?.url) window.location.href = data.url;
 }
 
