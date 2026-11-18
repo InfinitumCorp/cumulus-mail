@@ -7,15 +7,17 @@ it puts them in order.
 **Who:** the owner, holding the Cloudflare, Yandex Cloud, Supabase and DNS logins. **Nothing in this
 repository or its CI makes these changes**; every switch below is yours.
 
-**Needs on `main`:** everything listed up to 18 Nov is merged (#144–#179). The launch PRs still open:
-- #175, a mailbox import is checked like a save (security);
-- #182, one-click unsubscribe pinned to the checked address, and protected links capped at 30 days (security);
-- #180, leaving mid-save asks first;
-- #181, the default issuer is the live realm (your call: merge it, or set `CUMULUS_OIDC_ISSUER`);
-- #183, `npm run cutover:check` (this page uses it at go/no-go and in step 2);
-- #184, staging load-test flags (after launch).
+**Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
+where, the commands in order, go/no-go and the rollback.
 
-#86 lists the merge order.
+**Needs on `main`:** everything up to #184 is merged (#144–#184, including #181's issuer default and #183's
+`cutover:check`). The launch PRs still open, in the order to merge them:
+1. #175, a mailbox import is checked like a save (security);
+2. #186, outbound abuse limits and the `outbound:pause` kill switch, sign-in errors in EN/RU, and
+   `docs/ops/incident.md` (the per-symptom playbook for today);
+3. #185, compressed static files on the Russia copy (faster first load on phones).
+
+#86 lists the merge order and why.
 
 **Rule for the whole day:** if a step's check does not show what is written here, stop, do that step's
 rollback, and do not go on. Every step before the DNS cutover (step 6) is invisible to users.
@@ -49,8 +51,14 @@ Tick every line, or move the launch.
 
       It runs preflight (secrets, repo settings, DNS), then lists pending migrations in apply order (and
       fails if one was skipped in the middle), checks that `anon` is refused on `public.session`, and checks
-      the token issuer answers and names itself. The day before, the only expected blockers are the
-      migrations still to apply (a WARN) and DNS lines step 6–7 will add. Anything else: fix it first.
+      the token issuer answers and names itself. **The day before, expect exactly this and nothing else:**
+      - `WARN 11 migration(s) to apply, in this order: 0001_auth.sql, 0011_message_words.sql, …, 0020_auth_lockdown.sql`.
+        `0001_auth.sql` first is right: it was added after production reached 0010, and goes in with 0020;
+      - `WARN public.session does not exist yet` (0001 creates it);
+      - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
+      - US only: the DNS lines steps 6–7 add (SPF, DMARC, the app host) as MISSING.
+      Anything else MISSING (a secret, the Hyperdrive id, the token issuer): fix it first. A
+      `Migrations skipped in the middle` line means a file other than `0001_auth.sql` was skipped: stop.
 
 ---
 
@@ -61,8 +69,9 @@ git fetch origin && git checkout origin/main && git log -1 --oneline   # the com
 npm ci
 ```
 
-Optional: deploy with `MAIL_MAINTENANCE=1` to show a "being updated" page (English and Russian, 503 with
-`Retry-After`) for the window. Health checks, CSP reports and the cron tick keep working, so steps 5–9 can
+Optional: deploy with `MAIL_MAINTENANCE=1` (US: a variable in the `production-us` environment, then the
+deploy for `api`; RU: a container variable, new revision) to show a "being updated" page (English and
+Russian, 503 with `Retry-After: 600`) for the window. Health checks, CSP reports and the cron tick keep working, so steps 5–9 can
 still check the deploy. Unset it and redeploy to open the doors.
 
 **Rollback:** none needed.
@@ -109,12 +118,14 @@ npm run db:status        # expect: nothing pending, exit 0
 
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
-**Expected:** the second `db:status` exits 0. Every migration is additive (new tables, columns and
-indexes); none drops or rewrites data.
-Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code:
-with #161 merged that includes `0019_message_rev.sql`, which must be applied before that code is deployed.
-With #177 merged it also includes `0001_auth.sql` (pending on production) and `0020_auth_lockdown.sql`: let
-the one `db:migrate` run apply both. Then check that the anon key cannot read sign-in data:
+**Expected:** the first `db:status` lists **11** pending and exits 3: `0001_auth.sql`, then `0011` to
+`0020`. `db:migrate` prints `applied …` for each, in that order, and `done — 11 migration(s) applied` (under
+a second on the rehearsal's copy of production). The second `db:status` says `up to date` and exits 0.
+Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail
+already stored stays readable (the rehearsal read back every message after migrating).
+Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code,
+and **before** deploying it: the code needs `0019` and `0020`. Then check that the anon key cannot read
+sign-in data:
 `npm run cutover:check -- --region us` must show `ok anon is refused on public.session`. If it says this
 login cannot switch to anon, check in the Supabase SQL editor instead:
 `set role anon; select count(*) from public.session;` must fail with `permission denied`.
@@ -124,7 +135,8 @@ anything by hand; if a migration itself is the problem, `docs/ops/migrations.md`
 
 ## 3. Preflight (5 min)
 
-With the deploy's settings exported in your shell (the same values you just stored; they are never printed):
+`cutover:check` runs this as its first part; if you ran it after storing the secrets, this is the same
+check again. With the deploy's settings exported in your shell (the same values you just stored; they are never printed):
 
 ```sh
 npm run preflight -- --region us --selector <your DKIM selector>
@@ -220,8 +232,10 @@ npm run smoke -- --url https://<id>.apigw.yandexcloud.net --region ru
    proxied by Cloudflare**.
 2. The Yandex timer trigger, every minute: `POST https://ru.mail.cumuluscloud.app/api/cron/tick` with
    `Authorization: Bearer <CRON_SECRET>`. **Without it, scheduled send, the outbound queue and the purge of
-   deleted Russian mailboxes never run.** Check one call: it answers 200 with counts (`released`,
-   `deletions`), not 401 or 404.
+   deleted Russian mailboxes never run.** Check one call: it answers 200 with counts (`tenants`, `released`,
+   `outbound`, `deletions`). **401** means the trigger sends the wrong secret. **404** means the container
+   has no `CRON_SECRET`, or one shorter than 32 characters (the endpoint stays off); preflight for RU says
+   which.
 3. The client address the gateway passes on (sign-in rate limits are per address): in the container's
    request log, one request's `x-forwarded-for` should hold **one** address, the caller's. If it holds a
    chain (`client, gateway`), set `BETTER_AUTH_TRUSTED_PROXIES` to the gateway's ranges so the client hop is
@@ -267,3 +281,19 @@ spam.
 | Legitimate mail goes to Quarantine | Unset `MAIL_AUTH_DNS` | Check SPF/DKIM/DMARC with `npm run preflight` |
 | Outside mail bounces | Unset `MAIL_SMTP_HOST` (mail waits in the Outbox) | Relay dashboard; `docs/deploy/dns-records.md` |
 | `ru.mail` unreachable in Russia | Restore the old DNS record | Check it is DNS-only (no Cloudflare proxy) and the gateway certificate |
+
+---
+
+## Rollback and roll forward, for a bad deploy
+
+Rolling back is always "run the last good build". No step here undoes a migration, and none needs to: the
+previous build runs on the migrated database (the rehearsal rolled back and forward on it, both copies
+smoke-green each time). Detail in `docs/ops/runbook.md` §4.
+
+1. **Roll back.** US: Cloudflare → Workers → `cumulus-mail-api` (and/or `cumulus-mail-inbound`) →
+   Deployments → the previous version → Rollback. RU: Yandex console → Serverless Containers → the
+   container → Revisions → make the previous revision active.
+2. **Check:** `/api/health` shows the previous `commit`, and
+   `npm run smoke -- --url https://mail.cumuluscloud.app` (and the `ru.mail` one) is all ok.
+3. **Roll forward** once the fix is on `main`: run the deploy workflow again (`deploy us` / `deploy ru`).
+   Check `commit` and smoke the same way.

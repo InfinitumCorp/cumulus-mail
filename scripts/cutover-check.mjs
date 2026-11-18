@@ -32,11 +32,18 @@ const warn = (what, fix, see = RUNBOOK) => ({ level: "warn", what, fix, see });
  * @param {string[]} files migration file names in the repo
  * @param {string[]} applied names in `_migrations`
  */
+/**
+ * Files that are older by name than migrations production already has, on purpose: `0001_auth.sql` was
+ * copied up from `migrations/auth/` when sign-in was turned on (#177), after production reached 0010.
+ * Pending, it is applied in the same `db:migrate` as `0020_auth_lockdown.sql`; it is not a hole.
+ */
+export const ADDED_LATE = new Set(["0001_auth.sql"]);
+
 export function checkMigrations(files, applied) {
   const pending = pendingMigrations(files, applied);
   const out = [];
   const newestApplied = [...applied].sort().at(-1) ?? "";
-  const skipped = pending.filter((item) => item.name < newestApplied);
+  const skipped = pending.filter((item) => item.name < newestApplied && !ADDED_LATE.has(item.name));
   if (skipped.length) {
     out.push(
       missing(
