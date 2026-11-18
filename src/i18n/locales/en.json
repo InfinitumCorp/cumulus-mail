@@ -197,6 +197,7 @@
  "Handed to Architect. It will not send the mail.": "Handed to Architect. It will not send the mail.",
  "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.": "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.",
  "Held in the outbox. This mailbox is not set up for sending.": "Held in the outbox. This mailbox is not set up for sending.",
+ "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.": "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.",
  "Held in the outbox. Verify your Cumulus ID email to send outside Cumulus.": "Held in the outbox. Verify your Cumulus ID email to send outside Cumulus.",
  "Holds that belong to this CID. Spectre can read titles only while you allow it.": "Holds that belong to this CID. Spectre can read titles only while you allow it.",
  "Identity provider:": "Identity provider:",

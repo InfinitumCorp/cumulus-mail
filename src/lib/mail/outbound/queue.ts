@@ -89,18 +89,31 @@ type Row = {
 
 export type QueueReport = { sent: number; retried: number; bounced: number };
 
-/** Rows waiting to send, and how long the oldest has waited: the queue-depth metric. */
-export async function queueDepth(db: MailQuery, now = new Date()): Promise<{ queued: number; sending: number; oldestQueuedSeconds: number }> {
-  const rows = await db.query<{ queued: number | string; sending: number | string; oldest: string | Date | null }>(
-    `select count(*) filter (where status = 'queued') as queued,
-            count(*) filter (where status = 'sending') as sending,
-            min(created_at) filter (where status in ('queued', 'sending')) as oldest
-       from cumulus_mail.outbound_queue`,
-    [],
+/**
+ * Rows waiting to send, and how long the oldest has waited: the queue-depth metric. Mail of a paused
+ * mailbox is counted apart (`paused`): it waits on purpose, and must not page "Outbound stuck".
+ */
+export async function queueDepth(
+  db: MailQuery,
+  now = new Date(),
+): Promise<{ queued: number; sending: number; oldestQueuedSeconds: number; paused: number }> {
+  const rows = await db.query<{ queued: number | string; sending: number | string; paused: number | string; oldest: string | Date | null }>(
+    `select count(*) filter (where q.status = 'queued' and p.tenant_id is null) as queued,
+            count(*) filter (where q.status = 'sending') as sending,
+            count(*) filter (where q.status = 'queued' and p.tenant_id is not null) as paused,
+            min(q.created_at) filter (where q.status in ('queued', 'sending') and p.tenant_id is null) as oldest
+       from cumulus_mail.outbound_queue q
+       left join cumulus_mail.outbound_pauses p on p.tenant_id = q.tenant_id and p.paused_until > $1::timestamptz`,
+    [now.toISOString()],
   );
   const row = rows[0];
   const oldest = row?.oldest ? new Date(row.oldest).getTime() : now.getTime();
-  return { queued: Number(row?.queued ?? 0), sending: Number(row?.sending ?? 0), oldestQueuedSeconds: Math.max(0, Math.round((now.getTime() - oldest) / 1000)) };
+  return {
+    queued: Number(row?.queued ?? 0),
+    sending: Number(row?.sending ?? 0),
+    oldestQueuedSeconds: Math.max(0, Math.round((now.getTime() - oldest) / 1000)),
+    paused: Number(row?.paused ?? 0),
+  };
 }
 
 /**

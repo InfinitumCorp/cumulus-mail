@@ -18,9 +18,11 @@ const args = process.argv.slice(2);
 
 /** Parse the command line, or return an error to print. */
 export function parsePauseArgs(argv) {
+  // A flag's value is the next word, unless that word is itself a flag (`--address --resume`).
   const get = (name) => {
     const at = argv.indexOf(name);
-    return at >= 0 ? argv[at + 1] ?? "" : "";
+    const next = at >= 0 ? argv[at + 1] ?? "" : "";
+    return next.startsWith("--") ? "" : next;
   };
   if (argv.includes("--list")) return { action: "list" };
   const address = get("--address").trim().toLowerCase();
@@ -55,12 +57,22 @@ async function main() {
     }
     let tenant = parsed.tenant;
     if (!tenant) {
-      const { findTenantByAddress } = await import("../src/lib/mail/directory.ts");
-      tenant = await findTenantByAddress(db, parsed.address);
+      if (!process.env.MAIL_BLIND_KEY && !process.env.MAIL_BLOB_KEY) {
+        console.error("[pause] set MAIL_BLIND_KEY (or MAIL_BLOB_KEY) to find a mailbox by address");
+        process.exit(2);
+      }
+      // The exact owner only: a domain's catch-all would pause someone else for a mistyped address.
+      const { findOwnerOfAddress } = await import("../src/lib/mail/directory.ts");
+      tenant = await findOwnerOfAddress(db, parsed.address);
       if (!tenant) {
         console.error(`[pause] no mailbox has the address ${parsed.address} in this region`);
         process.exit(1);
       }
+    }
+    const known = await db.query(`select 1 from cumulus_mail.mailboxes where tenant_id = $1`, [tenant]);
+    if (!known.length) {
+      console.error(`[pause] no mailbox ${tenant} in this region`);
+      process.exit(1);
     }
     const { pauseSending, resumeSending } = await import("../src/lib/mail/outbound/safety.ts");
     if (parsed.action === "resume") {

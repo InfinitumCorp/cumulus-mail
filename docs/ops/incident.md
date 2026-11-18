@@ -73,7 +73,7 @@ of failure they hit (rate limit, blocked pop-up, cancelled, offline, failed at C
 4. **Back:** unset `MAIL_MAINTENANCE`, redeploy, `smoke --host` on both hosts.
 
 ## Spam wave going out
-**Alerts:** Outbound spike, Sign-up wave (`mail.outbound.held reason=new_accounts_busy`), any
+**Alerts:** Outbound spike, Sign-up wave (`mail.outbound.held reason=new_accounts_busy`, once that cap is on), any
 `mail.outbound.paused by=auto`, Outbound bounces with `5.7.x`.
 
 1. **First move: pause the mailboxes doing it.** This stops all their outside sending, including mail
@@ -86,9 +86,10 @@ of failure they hit (rate limit, blocked pop-up, cancelled, offline, failed at C
 2. **Everything at once (the reputation is at stake):** unset `MAIL_SMTP_HOST`. All outside mail waits in
    the queue.
 3. **Tighten for everyone without a deploy of code:**
-   - `MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY`: all mailboxes under a week old, together; default 300 an hour.
+   - `MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY`: all mailboxes under a week old, together, per hour; off until set
+     (for example 300). In launch week every mailbox is under a week old: set it high enough for real use.
    - `MAIL_OUTBOUND_HOURLY_LIMIT` and `MAIL_OUTBOUND_DAILY_LIMIT`: per mailbox; default 100 and 500.
-   - `MAIL_OUTBOUND_MAX_RECIPIENTS`: per message; default 50.
+   - `MAIL_OUTBOUND_MAX_RECIPIENTS`: distinct outside addresses per message; default 50.
 4. **After:** check blocklists for the sending IP and domain, and the DMARC aggregate reports. Resume a
    mailbox that was not abusive with `npm run outbound:pause -- --address <mailbox> --resume`.
 

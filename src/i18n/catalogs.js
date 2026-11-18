@@ -199,6 +199,7 @@ export default {
   "Handed to Architect. It will not send the mail.": "Handed to Architect. It will not send the mail.",
   "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.": "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.",
   "Held in the outbox. This mailbox is not set up for sending.": "Held in the outbox. This mailbox is not set up for sending.",
+  "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.": "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.",
   "Held in the outbox. Verify your Cumulus ID email to send outside Cumulus.": "Held in the outbox. Verify your Cumulus ID email to send outside Cumulus.",
   "Holds that belong to this CID. Spectre can read titles only while you allow it.": "Holds that belong to this CID. Spectre can read titles only while you allow it.",
   "Identity provider:": "Identity provider:",
@@ -1055,11 +1056,12 @@ export default {
   "This page didn't load. Your mail is safe. Try again in a moment.": "Страница не загрузилась. Ваша почта в сохранности. Попробуйте ещё раз чуть позже.",
   "Try again": "Повторить",
   "Could not reach the server. Check your connection, then try again.": "Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз.",
-  "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.": "Задержано в исходящих. Новые ящики сейчас отправляют очень много писем, поэтому почта из ящиков младше недели ждёт. Попробуйте через час.",
+  "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.": "Задержано в «Исходящих». Новые ящики сейчас отправляют очень много писем, поэтому почта из ящиков младше недели ждёт. Попробуйте через час.",
   "Lost access to your Cumulus ID? Recover it at Cumulus ID first. Your mail stays here and opens again when you sign in.": "Потеряли доступ к Cumulus ID? Сначала восстановите его в Cumulus ID. Ваша почта остаётся здесь и откроется снова, когда вы войдёте.",
   "Sign-in did not finish at Cumulus ID. Try again; if it keeps happening, Cumulus ID may be down for a moment.": "Вход в Cumulus ID не завершился. Попробуйте ещё раз; если это повторяется, Cumulus ID может быть ненадолго недоступен.",
   "Sign-in was cancelled. Nothing changed; you can try again.": "Вход отменён. Ничего не изменилось, можно попробовать ещё раз.",
   "Too many sign-in attempts from this network. Wait a few minutes, then try again.": "Слишком много попыток входа из этой сети. Подождите несколько минут и попробуйте снова.",
-  "Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.": "Браузер заблокировал окно входа. Разрешите всплывающие окна для этого сайта и попробуйте снова."
+  "Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.": "Браузер заблокировал окно входа. Разрешите всплывающие окна для этого сайта и попробуйте снова.",
+  "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.": "Задержано в «Исходящих». У этого письма больше получателей вне Cumulus, чем разрешено для одного письма. Разделите его или используйте сервис рассылок."
  }
 };

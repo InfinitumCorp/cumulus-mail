@@ -14,6 +14,7 @@ import {
   markSendVerified,
   maxRecipientsFromEnv,
   newAccountsHourlyFromEnv,
+  outsideRecipients,
   outboundSafety,
   PAUSE_MS,
   pauseSending,
@@ -132,16 +133,25 @@ test("in delivery: an unverified mailbox's outside mail is held with the notice,
   assert.equal(transport.sent.length, 1);
 });
 
-test("one message can go to at most 50 people outside; more is held with the reason", async () => {
+test("one message can go to at most 50 people outside; more is held, inside and repeated addresses do not count", async () => {
   await mailbox("cap-a", { verified: true, ageDays: 30 });
   assert.equal(DEFAULT_MAX_RECIPIENTS, 50);
   assert.equal(maxRecipientsFromEnv({ MAIL_OUTBOUND_MAX_RECIPIENTS: "10" }), 10);
   assert.equal(maxRecipientsFromEnv({ MAIL_OUTBOUND_MAX_RECIPIENTS: "nonsense" }), 50);
   assert.equal((await outboundSafety(harness.db, "cap-a", msg("Team", ordinary.body, 50), DEFAULT_LIMITS)).allowed, true);
-  const many = { ...msg("Team", ordinary.body, 30), cc: msg("x", "y", 21).to };
+  const many = { ...msg("Team", ordinary.body, 30), cc: Array.from({ length: 21 }, (_, i) => ({ name: `C${i}`, email: `c${i}@example.org` })) };
+  assert.equal(outsideRecipients(many), 51);
   const held = await outboundSafety(harness.db, "cap-a", many, DEFAULT_LIMITS);
   assert.equal(held.allowed, false);
-  assert.match(held.allowed ? "" : held.reason, /at most 50 people.*this one has 51/);
+  assert.match(held.allowed ? "" : held.reason, /more people outside Cumulus than one message may/);
+  // An announcement to 60 colleagues and one outside address, with a repeated address, is not a list.
+  const internal = {
+    ...ordinary,
+    to: Array.from({ length: 60 }, (_, i) => ({ name: `K${i}`, email: `k${i}@cumuluscloud.app` })),
+    cc: [{ name: "X", email: "x@example.org" }, { name: "X again", email: "X@Example.org" }],
+  };
+  assert.equal(outsideRecipients(internal), 1);
+  assert.equal((await outboundSafety(harness.db, "cap-a", internal, DEFAULT_LIMITS)).allowed, true);
 });
 
 test("the admin kill switch holds mail already queued, and resuming releases it", async () => {
@@ -174,15 +184,35 @@ test("an expired pause no longer holds the queue", async () => {
 });
 
 test("a wave of new mailboxes is bounded as a whole, while established mailboxes still send", async () => {
-  assert.equal(newAccountsHourlyFromEnv({}), 300);
+  assert.equal(newAccountsHourlyFromEnv({}), null, "off unless set: in launch week every mailbox is new");
   assert.equal(newAccountsHourlyFromEnv({ MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY: "5" }), 5);
   for (const tenant of ["wave-1", "wave-2", "wave-3"]) await mailbox(tenant, { verified: true });
   await mailbox("wave-old", { verified: true, ageDays: 30 });
   await queueRows("wave-1", 2);
   await queueRows("wave-2", 2);
+  assert.equal((await outboundSafety(harness.db, "wave-3", ordinary, DEFAULT_LIMITS, new Date(), 50, null)).allowed, true, "off: never held");
   const busy = await outboundSafety(harness.db, "wave-3", ordinary, DEFAULT_LIMITS, new Date(), 50, 4);
   assert.equal(busy.allowed, false);
   assert.match(busy.allowed ? "" : busy.reason, /under a week old waits/);
   assert.equal((await outboundSafety(harness.db, "wave-3", ordinary, DEFAULT_LIMITS, new Date(), 50, 5)).allowed, true);
   assert.equal((await outboundSafety(harness.db, "wave-old", ordinary, DEFAULT_LIMITS, new Date(), 50, 4)).allowed, true, "an established mailbox is not held");
+});
+
+test("queue depth leaves paused mailboxes out, so a pause does not page Outbound stuck", async () => {
+  const { queueDepth } = await import("./queue.ts");
+  await mailbox("depth-a", { verified: true, ageDays: 30 });
+  const old = new Date(Date.now() - 2 * 3_600_000);
+  await enqueueOutbound(harness.db, "depth-a", { messageId: "d-a", from: "depth-a@cumuluscloud.app", recipient: "d-a@example.org", raw: "x" }, new Date(Date.now() + 86_400_000));
+  await harness.db.query(`update cumulus_mail.outbound_queue set created_at = $2 where tenant_id = $1`, ["depth-a", old.toISOString()]);
+  const before = await queueDepth(harness.db);
+  await pauseSending(harness.db, "depth-a", new Date(Date.now() + 3_600_000), "review");
+  const during = await queueDepth(harness.db);
+  assert.equal(during.queued, before.queued - 1);
+  assert.equal(during.paused, before.paused + 1);
+  assert.ok(during.oldestQueuedSeconds <= before.oldestQueuedSeconds);
+  await resumeSending(harness.db, "depth-a");
+  const after = await queueDepth(harness.db);
+  assert.deepEqual({ queued: after.queued, paused: after.paused }, { queued: before.queued, paused: before.paused });
+  assert.ok(after.oldestQueuedSeconds >= 7_000, "resumed: its 2-hour-old row counts again");
+  await harness.db.query(`delete from cumulus_mail.outbound_queue where tenant_id = $1`, ["depth-a"]);
 });

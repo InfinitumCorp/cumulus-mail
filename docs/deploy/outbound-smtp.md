@@ -23,8 +23,8 @@ runs the app (and, for retries, on the worker that runs the scheduled job).
 | `MAIL_DKIM_PRIVATE_KEY` | with selector (Workers) | **Secret.** PEM text, for hosts without a file system. `\n` escapes are accepted. |
 | `MAIL_OUTBOUND_HOURLY_LIMIT` | no | Outside recipients per mailbox per hour, default 100. Over it, mail is still queued but goes out when the hour frees up. |
 | `MAIL_OUTBOUND_DAILY_LIMIT` | no | Outside recipients per mailbox per 24 hours, default 500. Over it, mail is held (not queued) and its delivery line says so. |
-| `MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY` | no | Outside recipients per hour for all mailboxes under a week old together, default 300. Bounds a wave of scripted sign-ups; each new mailbox is also on its own warm-up caps. |
-| `MAIL_OUTBOUND_MAX_RECIPIENTS` | no | People one message may go to (To + Cc), default 50. More is held with the reason, before anything is queued. |
+| `MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY` | no | Outside recipients per hour for all mailboxes under a week old together. **Off unless set:** in launch week every mailbox is under a week old, so a fixed number would hold everyone's mail. Turn it on (for example 300) once most mailboxes are older, to bound a wave of scripted sign-ups; each new mailbox is also on its own warm-up caps. |
+| `MAIL_OUTBOUND_MAX_RECIPIENTS` | no | Distinct addresses outside Cumulus one message may go to (To + Cc), default 50; people inside Cumulus do not count. More is held with the reason, before anything is queued. |
 | `MAIL_OUTBOUND_DEV` | no | `memory`: accept every message in memory and never send. For local development only. |
 
 ## DKIM

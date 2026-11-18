@@ -15,6 +15,7 @@ import { assertTenantId } from "../../storage/adapter.ts";
 import type { MailMessage } from "../model.ts";
 import type { MailQuery } from "../query.ts";
 import { metric } from "../../observability/metrics.ts";
+import { isCumulus } from "../logic.ts";
 import type { SendLimits } from "./limits.ts";
 
 export const SPAM_THRESHOLD = 5;
@@ -22,18 +23,28 @@ export const BURST_WINDOW_MS = 10 * 60_000;
 export const BURST_RECIPIENTS = 30;
 export const PAUSE_MS = 24 * 3_600_000;
 
-/** Recipients one message may have (To + Cc). More than this is a mailing list, not a mailbox. */
+/** People outside Cumulus one message may go to (To + Cc, each address once). More is a mailing list. */
 export const DEFAULT_MAX_RECIPIENTS = 50;
 
 /**
- * All mailboxes under a week old, together, per hour. Each new mailbox is already capped (warm-up), but
- * a scripted wave of sign-ups would multiply that cap; this bounds the wave as a whole.
+ * All mailboxes under a week old, together, per hour: off unless MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY is
+ * set. Each new mailbox is already capped (warm-up), but a scripted wave of sign-ups would multiply that
+ * cap; this bounds the wave as a whole. Off by default because in launch week every mailbox is under a
+ * week old, so a fixed number would hold everyone's mail. Turn it on once most mailboxes are older.
  */
-export const DEFAULT_NEW_ACCOUNTS_HOURLY = 300;
-
-export function newAccountsHourlyFromEnv(env: Record<string, string | undefined> = process.env): number {
+export function newAccountsHourlyFromEnv(env: Record<string, string | undefined> = process.env): number | null {
   const n = Number.parseInt(env.MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY ?? "", 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : DEFAULT_NEW_ACCOUNTS_HOURLY;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : null;
+}
+
+/** Distinct addresses outside Cumulus on a message: what goes out by SMTP. */
+export function outsideRecipients(message: Pick<MailMessage, "to" | "cc">): number {
+  const seen = new Set<string>();
+  for (const person of [...message.to, ...message.cc]) {
+    const email = person.email.trim().toLowerCase();
+    if (email && !isCumulus(email)) seen.add(email);
+  }
+  return seen.size;
 }
 
 export function maxRecipientsFromEnv(env: Record<string, string | undefined> = process.env): number {
@@ -98,12 +109,13 @@ export async function outboundSafety(
   newAccountsHourly = newAccountsHourlyFromEnv(),
 ): Promise<SafetyDecision> {
   assertTenantId(tenantId);
-  const recipients = message.to.length + message.cc.length;
+  const recipients = outsideRecipients(message);
   if (recipients > maxRecipients) {
     metric("mail.outbound.held", { reason: "too_many_recipients", recipients });
     return {
       allowed: false,
-      reason: `Held in the outbox. One message can go to at most ${maxRecipients} people outside Cumulus; this one has ${recipients}. Split it, or use a mailing-list service.`,
+      // One fixed sentence, so the interface can translate it (the numbers are in the metric).
+      reason: "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.",
     };
   }
   const rows = await db.query<{ send_verified: boolean; created_at: string | Date; paused_until: string | Date | null; reason: string | null }>(
@@ -138,7 +150,7 @@ export async function outboundSafety(
     return { allowed: false, reason: `Held in the outbox. ${reason}` };
   }
   const ageDays = (now.getTime() - new Date(row.created_at).getTime()) / 86_400_000;
-  if (ageDays < 7) {
+  if (newAccountsHourly !== null && ageDays < 7) {
     const wave = await db.query<{ n: number | string }>(
       `select count(*) as n from cumulus_mail.outbound_queue q join cumulus_mail.mailboxes m on m.tenant_id = q.tenant_id
         where q.created_at > $1 and m.created_at > $2`,
