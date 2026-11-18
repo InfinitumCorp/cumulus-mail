@@ -8,6 +8,7 @@ import { addressOwnedByOther } from "./directory.ts";
 import { requestedDomainCount, sanitizeSettings } from "./settings.ts";
 import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
 import { mailDomain } from "./domain.ts";
+import { aliasProblem } from "./alias.ts";
 import { validEmail } from "./logic.ts";
 import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -148,6 +149,12 @@ export async function writeSnapshot(
     if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
     if (await addressOwnedByOther(db, email, tenantId)) {
       throw new TenantAccessError("That address belongs to another mailbox");
+    }
+    // New ones only: an alias saved before this rule keeps working.
+    if (!current.aliases.map((a) => a.toLowerCase()).includes(email)) {
+      const verified = sanitizeSettings(current.settings).domains.filter((d) => d.verified).map((d) => d.domain);
+      const problem = aliasProblem(email, current.me.email, verified);
+      if (problem) throw new Error(problem);
     }
     aliases.push(email);
   }

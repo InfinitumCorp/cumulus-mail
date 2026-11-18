@@ -48,6 +48,9 @@ export function SetupDialog({
   const [draftSignature, setDraftSignature] = useState(signature);
   const [alias, setAlias] = useState("");
   const domain = address.split("@")[1] ?? "";
+  // Extra addresses start with your own name (alex.shop@…): every other name may be someone's Cumulus://ID.
+  const own = address.split("@")[0] ?? "";
+  const extra = alias.replace(/^[.+-]+/, "");
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center md:items-center md:p-6" role="presentation" onClick={onClose}>
       <div
@@ -68,7 +71,7 @@ export function SetupDialog({
           className="space-y-6 px-5 py-6"
           onSubmit={(event) => {
             event.preventDefault();
-            onDone({ name: draftName.trim(), signature: draftSignature, alias: alias.trim().toLowerCase() });
+            onDone({ name: draftName.trim(), signature: draftSignature, alias: extra.trim() ? `${own}.${extra.trim().toLowerCase()}` : "" });
           }}
         >
           <fieldset>
@@ -79,11 +82,12 @@ export function SetupDialog({
               Add another address (optional)
             </label>
             <div className="mt-1 flex items-center gap-2">
+              <span className="font-mono text-sm text-muted" translate="no" aria-hidden="true">{own}.</span>
               <input
                 id="setup-alias"
                 className="h-11 min-w-0 flex-1 border border-line bg-paper px-3"
                 value={alias}
-                onChange={(event) => setAlias(event.target.value.replace(/@.*$/, ""))}
+                onChange={(event) => setAlias(event.target.value.replace(/@.*$/, "").toLowerCase().replace(/[^a-z0-9._+-]/g, ""))}
                 autoComplete="off"
                 inputMode="email"
                 aria-describedby="setup-alias-domain"

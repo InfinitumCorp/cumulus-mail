@@ -43,7 +43,7 @@ test("export and import round-trip the mailbox and blobs without crossing tenant
   await writeSnapshot(db, storageFor, "bak-ada", {
     me: ada,
     messages: [message],
-    aliases: ["press.bak@cumuluscloud.app"],
+    aliases: ["bak.ada.press@cumuluscloud.app"],
     briefs: { th: "short" },
     tasks: [],
     contacts: [],
@@ -71,7 +71,7 @@ test("export and import round-trip the mailbox and blobs without crossing tenant
   const restored = await importMailbox(db, storageFor, "bak-ada", forged);
   assert.equal(restored.me.email, ada.email);
   assert.equal(restored.messages[0]?.body, "original body");
-  assert.equal(restored.aliases[0], "press.bak@cumuluscloud.app");
+  assert.equal(restored.aliases[0], "bak.ada.press@cumuluscloud.app");
   const file = restored.messages[0]?.attachments?.[0];
   assert.ok(file?.id);
   const stored = await readAttachment(db, storageFor("bak-ada"), "bak-ada", "m-bak-1", file.id);

@@ -31,7 +31,7 @@ test("internal delivery copies the message and attachment, and external mail is 
   await openMailbox(db, "del-bea", bea);
   await writeSnapshot(db, storageFor, "del-bea", {
     ...snapshot(bea, []),
-    aliases: ["bea.alias@cumuluscloud.app"],
+    aliases: ["bea.del.alias@cumuluscloud.app"],
     rules: [{ id: "rule-1", from: "ada.del", action: "star" }],
   });
   const payload = new TextEncoder().encode("attachment-bytes");
@@ -48,7 +48,7 @@ test("internal delivery copies the message and attachment, and external mail is 
         threadId: "m-out-1",
         folder: "sent",
         from: { name: "Imposter", email: "imposter@example.test" },
-        to: [{ name: "Bea", email: "bea.alias@cumuluscloud.app" }],
+        to: [{ name: "Bea", email: "bea.del.alias@cumuluscloud.app" }],
         cc: [{ name: "Priya", email: "priya@vyral.example" }],
         subject: "Inside",
         body: "hand to Bea",
@@ -59,7 +59,7 @@ test("internal delivery copies the message and attachment, and external mail is 
         attachments: [{ name: "a.txt", size: payload.byteLength, contentType: "text/plain", dataBase64: bytesToBase64(payload) }],
       },
     ]));
-    const hopToBea = sent.messages.find((message) => message.id === "m-out-1")?.delivery?.find((hop) => hop.email === "bea.alias@cumuluscloud.app");
+    const hopToBea = sent.messages.find((message) => message.id === "m-out-1")?.delivery?.find((hop) => hop.email === "bea.del.alias@cumuluscloud.app");
     const hopOut = sent.messages.find((message) => message.id === "m-out-1")?.delivery?.find((hop) => hop.email === "priya@vyral.example");
     assert.equal(hopToBea?.status, "inside");
     assert.equal(hopOut?.status, "outbound");

@@ -48,7 +48,7 @@ test("every mailbox starts on Plus, and the server enforces the mailbox's own pl
   const base = await readSnapshot(db, "plan-a");
   await writeSnapshot(db, storageFor, "plan-a", {
     ...base,
-    aliases: ["pat.one@cumuluscloud.app", "pat.two@cumuluscloud.app"],
+    aliases: ["plan.a.one@cumuluscloud.app", "plan.a.two@cumuluscloud.app"],
     settings: { ...defaultSettings(), domains: [domain("pat.example")] },
   });
   // Verify the domain the way the DNS check does (only the server can set verified), then save again.
@@ -68,7 +68,7 @@ test("every mailbox starts on Plus, and the server enforces the mailbox's own pl
   const kept = await writeSnapshot(db, storageFor, "plan-a", { ...free, settings: { ...free.settings!, domains: [] } });
   assert.equal(kept.aliases.length, 2);
   await assert.rejects(
-    () => writeSnapshot(db, storageFor, "plan-a", { ...kept, aliases: [...kept.aliases, "pat.three@cumuluscloud.app"] }),
+    () => writeSnapshot(db, storageFor, "plan-a", { ...kept, aliases: [...kept.aliases, "plan.a.three@cumuluscloud.app"] }),
     /up to 1 addresses/,
   );
   assert.equal((await routedDomains("plan-a")).includes("pat.example"), false);
