@@ -28,7 +28,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Hide-my-email aliases | existing | “Disposable alias” in the account dialog. |
 | Plus addressing (`name+tag@domain`) | added | Routes to the base address. An exact address still wins. |
 | Additional addresses on the platform domain | added | Account dialog, cap 15. |
-| Custom domains | added | Up to 3. Verification is a TXT record `_cumulus-mail.<domain>` = `cumulus-mail-verify=cumuluscloud.app`. |
+| Custom domains | added | Up to 3. Verification is a TXT record `_cumulus-mail.<domain>` with a value bound to the mailbox (`cumulus-mail-verify=<32 hex>`, shown in the Domains panel), so one mailbox's record never verifies the domain for another. |
 | Catch-all | added | Published only after that TXT check succeeds. |
 | Live DNS and registrar changes | deferred | The default resolver is empty unless `MAIL_AUTH_DNS=live`. This change does not edit DNS. |
 | Paid plan billing | deferred (scoped) | No payment provider. Caps mirror a paid mailbox (3 domains, 15 addresses) without charging. Tiers, Stripe objects, where each limit is enforced, and the order of work are in `docs/plans.md`. |

@@ -13,6 +13,7 @@ import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } 
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
 import { limitsFor, planLabel } from "./plans.ts";
+import { ownershipTxt, withOwnershipTxt } from "./domain-ownership.ts";
 
 type MessageRow = {
   id: string;
@@ -401,7 +402,7 @@ export async function replaceMailboxContents(
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
     const previous = await readSettings(db, tenantId);
-    const settings = keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain())));
+    const settings = keepServerNotes(previous, keepVerified(previous, withOwnershipTxt(tenantId, sanitizeSettings(snapshot.settings, mailDomain()))));
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.messages where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
@@ -506,7 +507,11 @@ export type { ArchitectTask, Contact, MailRule };
 function parseSettings(tenantId: string, stored: string | null): MailSettings {
   if (!stored) return defaultSettings();
   try {
-    return sanitizeSettings(JSON.parse(openText(tenantId, stored)), mailDomain());
+    const raw = JSON.parse(openText(tenantId, stored)) as { domains?: Array<{ domain?: unknown; txtValue?: unknown }> };
+    const settings = withOwnershipTxt(tenantId, sanitizeSettings(raw, mailDomain()));
+    // A domain verified under the old shared record (anyone's TXT verified it for everyone) is checked again once.
+    const ownBound = new Set((raw.domains ?? []).filter((d) => typeof d?.domain === "string" && d.txtValue === ownershipTxt(tenantId, d.domain).value).map((d) => String(d.domain).toLowerCase()));
+    return { ...settings, domains: settings.domains.map((d) => (ownBound.has(d.domain) ? d : { ...d, verified: false })) };
   } catch {
     return defaultSettings();
   }
@@ -571,7 +576,7 @@ export async function readSettings(db: MailQuery, tenantId: string): Promise<Mai
 
 export async function writeSettings(db: MailQuery, tenantId: string, settings: MailSettings): Promise<void> {
   assertTenantId(tenantId);
-  const clean = sanitizeSettings(settings, mailDomain());
+  const clean = withOwnershipTxt(tenantId, sanitizeSettings(settings, mailDomain()));
   await db.query(`update cumulus_mail.mailboxes set settings_enc = $2 where tenant_id = $1`, [
     tenantId,
     sealText(tenantId, JSON.stringify(clean)),
