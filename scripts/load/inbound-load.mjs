@@ -10,9 +10,16 @@
  * connection from a shared pool, the way Hyperdrive pools for the worker. Reports p50/p95/p99, errors
  * and the peak number in flight. The schema must be migrated (scripts/migrate.mjs). Sender
  * authentication uses the default (no live DNS), as in production unless MAIL_AUTH_DNS=live.
+ *
+ * `--processes N` splits `--rate` across N Node processes (one tops out near 250/s) and adds up the
+ * results. Against anything but loopback (a staging Supabase, a real S3 bucket) it needs
+ * `--target staging` and real S3 settings; see docs/ops/staging-load.md.
  */
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { aggregate, loadTarget } from "./inbound-plan.mjs";
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -22,11 +29,44 @@ const RATE = Number(arg("rate", "200"));
 const SECONDS = Number(arg("seconds", "120"));
 const MAILBOXES = Number(arg("mailboxes", "50"));
 const POOL = Number(arg("pool", "20"));
+const PROCESSES = Math.max(1, Math.trunc(Number(arg("processes", "1"))));
+const CHILD = process.argv.includes("--child");
 const DATABASE_URL = process.env.DATABASE_URL;
 const S3_ENDPOINT = process.env.S3_ENDPOINT;
 if (!DATABASE_URL || !S3_ENDPOINT) {
   console.error("Set DATABASE_URL and S3_ENDPOINT (see the header of this file).");
   process.exit(1);
+}
+const target = loadTarget({ databaseUrl: DATABASE_URL, s3Endpoint: S3_ENDPOINT, target: arg("target", ""), env: process.env });
+if (target.error) {
+  console.error(`[load] ${target.error}`);
+  process.exit(2);
+}
+
+// One Node process tops out near 250 messages/s (docs/ops/load-test.md): split a higher rate across
+// processes and add their results up.
+if (PROCESSES > 1 && !CHILD) {
+  const passthrough = process.argv.slice(2).filter((_, i, all) => all[i] !== "--processes" && all[i - 1] !== "--processes" && all[i] !== "--rate" && all[i - 1] !== "--rate");
+  console.log(`[load] ${PROCESSES} processes at ${RATE / PROCESSES}/s each (${RATE}/s in all)`);
+  const results = await Promise.all(
+    Array.from({ length: PROCESSES }, (_, index) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), ...passthrough, "--rate", String(RATE / PROCESSES), "--child"], { stdio: ["ignore", "pipe", "inherit"] });
+      let out = "";
+      child.stdout.on("data", (chunk) => {
+        out += chunk;
+        for (const line of String(chunk).split("\n")) if (line && !line.startsWith("[load:json]")) console.log(`[p${index + 1}] ${line}`);
+      });
+      child.on("close", () => {
+        const line = out.split("\n").find((l) => l.startsWith("[load:json] "));
+        resolve(line ? JSON.parse(line.slice(12)) : { stored: [], errors: RATE * SECONDS / PROCESSES, errorKinds: { "process died": 1 }, peak: 0, elapsed: SECONDS });
+      });
+    })),
+  );
+  const all = aggregate(results);
+  console.log(`[load] all ${PROCESSES}: ${all.stored} stored, ${all.errors} errors, ${all.rate.toFixed(1)}/s achieved, peak in flight ${all.peak}`);
+  console.log(`[load] latency ms: p50 ${all.p50}  p95 ${all.p95}  p99 ${all.p99}  max ${all.max}`);
+  for (const [kind, count] of Object.entries(all.errorKinds)) console.log(`[load]   error x${count}: ${kind}`);
+  process.exit(all.errors ? 1 : 0);
 }
 
 // A loopback S3 stand-in (scripts/dry-run/fake-s3.mjs) starts with no buckets: create the load bucket, or
@@ -52,11 +92,7 @@ for (const tenant of tenants) {
 const env = {
   HYPERDRIVE: { connectionString: "postgres://load@pool.invalid:5432/db" },
   SUPABASE_S3_ENDPOINT: S3_ENDPOINT,
-  SUPABASE_S3_REGION: "us-east-1",
-  SUPABASE_S3_ACCESS_KEY_ID: "load",
-  SUPABASE_S3_SECRET_ACCESS_KEY: "load",
-  SUPABASE_S3_BUCKET: "cumulus-mail-load",
-  MAIL_S3_LOOPBACK_ONLY: "1",
+  ...target.s3,
   CUMULUS_ALLOW_SUPABASE: "1",
   MAIL_BLOB_KEY: process.env.MAIL_BLOB_KEY,
   MAIL_DOMAIN: "cumuluscloud.app",
@@ -125,5 +161,6 @@ const pct = (p) => latencies[Math.min(latencies.length - 1, Math.floor((p / 100)
 console.log(`[load] done in ${elapsed.toFixed(1)}s: ${latencies.length} stored, ${errors} errors, ${(latencies.length / elapsed).toFixed(1)}/s achieved, peak in flight ${peak}`);
 console.log(`[load] latency ms: p50 ${pct(50)}  p95 ${pct(95)}  p99 ${pct(99)}  max ${latencies.at(-1)?.toFixed(1)}`);
 for (const [kind, count] of errorKinds) console.log(`[load]   error x${count}: ${kind}`);
+if (CHILD) console.log(`[load:json] ${JSON.stringify({ stored: latencies.map((ms) => Math.round(ms * 10) / 10), errors, errorKinds: Object.fromEntries(errorKinds), peak, elapsed })}`);
 await pool.end();
 process.exit(errors ? 1 : 0);

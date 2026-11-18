@@ -1,5 +1,7 @@
 # Inbound mail load test
 
+The staging plan for a real 400/s figure on Workers + Supabase is in `staging-load.md`.
+
 `scripts/load/inbound-load.mjs` sends mail through the inbound worker's own `handleEmail`
 (`workers/email/src/index.ts`). It runs in Node against a real Postgres and an S3-compatible store, at a
 fixed arrival rate.
