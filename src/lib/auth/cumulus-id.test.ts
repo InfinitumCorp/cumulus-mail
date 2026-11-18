@@ -45,6 +45,7 @@ describe("Cumulus ID sign-in", () => {
       return json(200, {
         access_token: "opaque-token-abcdefghijklmnop",
         expires_in: 3600,
+        refresh_token: "rotating-refresh-token",
         profile: { cid: "cid_1", username: "alex", email: "alex@cumuluscloud.app" },
       });
     }) as unknown as typeof fetch;
@@ -65,6 +66,7 @@ describe("Cumulus ID sign-in", () => {
     });
     assert.equal(tokens.accessToken, "opaque-token-abcdefghijklmnop");
     assert.ok(tokens.accessTokenExpiresAt instanceof Date);
+    assert.equal(tokens.refreshToken, "rotating-refresh-token");
     const profile = await cidProfileFromTokens(config, tokens, (() => {
       throw new Error("no userinfo call expected");
     }) as unknown as typeof fetch);
