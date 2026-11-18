@@ -200,6 +200,9 @@ test("MOVE moves the messages, expunges the old UIDs and returns COPYUID pairs",
     assert.deepEqual(result.moved.map(([, to]) => to), [1, 2], "new UIDs in the destination");
     assert.equal(await folderOf(harness, "bw-move", "m1"), "archive");
     assert.equal(await folderOf(harness, "bw-move", "m3"), "inbox", "untouched");
+    // An open tab's older copy cannot move it back (src/lib/mail/mailbox.ts writeSnapshot).
+    const { readServerRevs } = await import("../records.ts");
+    assert.deepEqual(await readServerRevs(harness.db, "bw-move"), { m1: 1, m2: 1 });
 
     const inbox = await changesSince(harness.db, "bw-move", "inbox", before, 10);
     assert.deepEqual(inbox.map((r) => [r.uid, r.expunged]), [[u1, true], [u2, true]]);

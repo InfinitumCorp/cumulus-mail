@@ -46,6 +46,12 @@ function withoutBytes(file: Attachment): Attachment {
   };
 }
 
+/** A `knownRevs` map as the client sends it: message id -> a non-negative integer. */
+export function isRevMap(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every((rev) => Number.isSafeInteger(rev) && (rev as number) >= 0);
+}
+
 export async function writeSnapshot(
   db: MailQuery,
   storageFor: TenantStorage,
@@ -69,9 +75,20 @@ export async function writeSnapshot(
   const storage = storageFor(tenantId);
   const messages: MailMessage[] = [];
 
+  // A message the server changed after this client last loaded it (a scheduled send released, a delivery
+  // report, an IMAP move: each bumps its rev) keeps the server's version; the client's copy is stale.
+  // Without knownRevs (an older client) the client's copy is written, as before.
+  const serverRevs = current.revs ?? {};
+  const knownRevs = isRevMap(snapshot.knownRevs) ? snapshot.knownRevs : null;
+  const serverWins = new Set<string>();
+  if (knownRevs) {
+    for (const [id, rev] of Object.entries(serverRevs)) if (rev > (knownRevs[id] ?? 0)) serverWins.add(id);
+  }
+
   // Mail in a folder the saved settings no longer list goes back to the Inbox.
   const folders = sanitizeSettings(snapshot.settings).folders;
   for (const incoming of reconcileFolders(releaseDue(snapshot.messages), folders)) {
+    if (serverWins.has(incoming.id)) continue;
     assertId(incoming.id, "message id");
     assertId(incoming.threadId, "thread id");
     const message: MailMessage =
@@ -123,15 +140,23 @@ export async function writeSnapshot(
   // Mail the client never saw (it arrived after the client loaded: inbound, a delivery from another
   // mailbox, a scheduled release) is kept as it is on the server. Only a message the client knew about
   // and left out is deleted. Without knownIds (an older client) the save replaces the mailbox, as before.
+  const kept = new Set(messages.map((message) => message.id));
+  const keepServerCopy = (message: MailMessage) => {
+    messages.push(message);
+    kept.add(message.id);
+    keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
+    for (const file of existing.get(message.id) ?? []) storedFiles.push({ messageId: message.id, file });
+  };
   if (Array.isArray(snapshot.knownIds)) {
     const known = new Set(snapshot.knownIds);
-    const sent = new Set(messages.map((message) => message.id));
     for (const message of current.messages) {
-      if (sent.has(message.id) || known.has(message.id)) continue;
-      messages.push(message);
-      keptRaw.set(message.id, rawKeys.get(message.id) ?? null);
-      for (const file of existing.get(message.id) ?? []) storedFiles.push({ messageId: message.id, file });
+      if (kept.has(message.id) || known.has(message.id)) continue;
+      keepServerCopy(message);
     }
+  }
+  // The server's newer version of a message the client sent (or left out) stale.
+  for (const message of current.messages) {
+    if (serverWins.has(message.id) && !kept.has(message.id)) keepServerCopy(message);
   }
 
   // Refuse rather than silently keep the first few.
@@ -157,7 +182,7 @@ export async function writeSnapshot(
     throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
 
-  const { knownIds: _known, ...rest } = snapshot;
+  const { knownIds: _known, knownRevs: _knownRevs, revs: _revs, ...rest } = snapshot;
   const next: MailboxSnapshot = {
     ...rest,
     // Only the display name comes from the client (first-run setup); address, plan and quota never do.
@@ -168,7 +193,7 @@ export async function writeSnapshot(
     rules: snapshot.rules.filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label"),
   };
   const before = await blobIds(db, tenantId);
-  await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw);
+  await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw, serverRevs);
   await deliverPending(db, storageFor, tenantId);
   await discardUnreferenced(db, storage, tenantId, before);
   return readSnapshot(db, tenantId);

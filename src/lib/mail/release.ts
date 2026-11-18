@@ -93,7 +93,8 @@ async function releaseTenant(db: MailQuery, tenantId: string, now: number): Prom
     const moved = await withTransaction(db, async () => {
       const updated = await db.query<{ id: string }>(
         `update cumulus_mail.messages
-         set folder = 'sent', from_name = $3, from_email = $4, extras_enc = $5, due_at = null
+         set folder = 'sent', from_name = $3, from_email = $4, extras_enc = $5, due_at = null,
+             server_rev = server_rev + 1
          where tenant_id = $1 and id = $2 and folder = 'drafts' and extras_enc = $6
          returning id`,
         [

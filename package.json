@@ -42,6 +42,7 @@
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test --test-concurrency=1 'src/**/*.test.ts' 'workers/**/*.test.ts'",
     "test:e2e": "node scripts/e2e.mjs",
+    "authz:sweep": "node scripts/authz-sweep.mjs",
     "e2e:prod": "node scripts/e2e-prod.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -12,6 +12,14 @@ function asSnapshot(input: unknown): MailboxSnapshot {
   if (known !== undefined && (!Array.isArray(known) || known.length > 100_000 || known.some((id) => typeof id !== "string"))) {
     throw new Error("Invalid knownIds");
   }
+  const knownRevs = (input as MailboxSnapshot).knownRevs;
+  if (
+    knownRevs !== undefined &&
+    (!knownRevs || typeof knownRevs !== "object" || Array.isArray(knownRevs) || Object.keys(knownRevs).length > 100_000 ||
+      Object.values(knownRevs).some((rev) => !Number.isSafeInteger(rev) || rev < 0))
+  ) {
+    throw new Error("Invalid knownRevs");
+  }
   return input as MailboxSnapshot;
 }
 
