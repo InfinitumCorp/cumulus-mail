@@ -22,6 +22,9 @@ this repository.
       `0013_data_exports.sql` and `0014_account_deletion.sql` (Download my data and Delete mailbox, via #109),
       `0016_calendar_feeds.sql` (#108), `0017_outbound_safety.sql` (#126), `0015_spam_controls.sql` (#106) `0018_spam_votes.sql` (one shared spam
       vote per mailbox per domain) and `0019_message_rev.sql` (a stale tab cannot undo a server-side change).
+      **With #177: `0001_auth.sql` (not yet applied on production) and `0020_auth_lockdown.sql` go in the same
+      run.** On Supabase, `0001` alone leaves the sign-in tables readable with the public anon key (session
+      tokens); `0020` closes that. `db:migrate` applies them in name order in one run, so never stop between them.
       `npm run db:status` lists what is pending and exits 3 if anything is. Files apply by name, so applying them out
       of number order is fine; each is recorded in `public._migrations`.
 
