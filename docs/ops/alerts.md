@@ -7,6 +7,8 @@ The lines never contain addresses, subjects or message ids; anything that looks 
 | `metric` | Fields | Where it comes from |
 |---|---|---|
 | `mail.outbound.result` | `outcome`: `sent` / `retry` / `bounced`; `status` (SMTP enhanced, e.g. `5.1.1`); `permanent`; `attempts` | each recipient attempt in the outbound queue |
+| `mail.outbound.held` | `reason`: `too_many_recipients` (`recipients`) / `paused` / `new_accounts_busy` (all mailboxes under a week old, together, hit `MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY`) | outside mail refused before the queue |
+| `mail.outbound.paused` | `by`: `auto` (a spam burst, 24 h; `score`) / `admin` (`npm run outbound:pause`); `hours` | a mailbox's outside sending paused |
 | `mail.queue.depth` | `queued`, `sending`, `oldestQueuedSeconds` | every scheduled run (US: the inbound worker's cron; Russia: the scheduler tick, #88) |
 | `mail.inbound.result` | `outcome`: `stored` (`folder`: `mailbox` / `quarantine`) / `duplicate` / `rejected` (`reason`) / `no_mailbox` / `other_domain` / `failed` | every inbound message |
 | `mail.inbound.auth` | `spf`, `dkim`, `dmarc` (`pass` / `fail` / `none` / …), `disposition` | every inbound message that reaches a mailbox |
@@ -21,6 +23,9 @@ The thresholds are starting points. Set them from the first two weeks of real tr
 |---|---|---|---|
 | **Outbound bounces** | `bounced` ÷ (`sent` + `bounced`) > **5 %** with ≥ 20 attempts; or any `status` starting `5.7.` (policy/reputation) > 3 in 15 min | page | relay dashboard, `docs/deploy/dns-records.md` (SPF/DKIM still published?) |
 | **Outbound stuck** | `mail.queue.depth.oldestQueuedSeconds` > **1800** on two runs in a row, or `queued` > **500** | page | relay reachable? `MAIL_SMTP_*` settings? `retry` lines and their `status` |
+| **Outbound spike** | `mail.outbound.result.outcome = sent` > **3× the same hour last week**, or > **1,000 in 15 min** while traffic is new; or any `mail.outbound.paused` with `by=auto` | page | which mailboxes: `npm run outbound:pause -- --list`; pause one with `--address … --hours 72` (`docs/ops/incident.md`, "Spam going out") |
+| **Outbound held** | `mail.outbound.held` with `reason=paused` > **20 in an hour** (a paused mailbox keeps trying) | ticket | the mailbox's pause reason (`--list`); contact or resume |
+| **Sign-up wave** | any `mail.outbound.held` with `reason=new_accounts_busy` | page | many new mailboxes sending at once: scripted sign-ups? Check Cumulus ID sign-ups, pause the worst with `outbound:pause` |
 | **Retries climbing** | `retry` > **25 %** of attempts over 30 min | ticket | relay rate limits (4.x.x) |
 | **Inbound failing** | `mail.inbound.result.outcome = failed` > **0** in 5 min, or more than 10 in an hour | page | worker logs: `mail.inbound.failed` carries the error class |
 | **Inbound silent** | no `mail.inbound.result` lines for **60 min** in working hours (once there is steady traffic) | ticket | MX records, Email Routing catch-all → `cumulus-mail-inbound` |

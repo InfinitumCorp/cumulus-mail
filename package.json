@@ -18,6 +18,7 @@
     "i18n": "node scripts/i18n-extract.mjs",
     "perf": "node scripts/perf-budget.mjs",
     "preflight": "node scripts/preflight.mjs",
+    "outbound:pause": "node --experimental-strip-types --no-warnings scripts/outbound-pause.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:local": "node scripts/smoke-local.mjs",
     "bundle:check": "node scripts/client-bundle-guard.mjs",

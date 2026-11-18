@@ -128,6 +128,11 @@ export async function processOutboundQueue(
        select tenant_id, id from cumulus_mail.outbound_queue
        where ((status = 'queued' and next_attempt_at <= $1)
               or (status = 'sending' and updated_at <= $1::timestamptz - interval '${STALE_SENDING_MS / 1000} seconds'))
+         -- A paused mailbox (spam burst, or the admin kill switch) sends nothing, queued mail included.
+         and not exists (
+           select 1 from cumulus_mail.outbound_pauses p
+            where p.tenant_id = outbound_queue.tenant_id and p.paused_until > $1::timestamptz
+         )
          ${options.tenantId ? "and tenant_id = $3" : ""}
        order by next_attempt_at
        limit $2
