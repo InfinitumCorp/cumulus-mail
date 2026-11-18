@@ -7,13 +7,13 @@ it puts them in order.
 **Who:** the owner, holding the Cloudflare, Yandex Cloud, Supabase and DNS logins. **Nothing in this
 repository or its CI makes these changes**; every switch below is yours.
 
-**Needs on `main`:** `npm run preflight` (#144, merged), and the launch PRs:
-- #149, the post-deploy smoke (`npm run smoke -- --url`);
-- #147, the deletion purge on both copies;
-- #146, the spam reputation fix;
-- #148, the security re-check;
-- #150, the error and maintenance pages;
-- the save fix that keeps new mail (see #86).
+**Needs on `main`:** everything listed up to 18 Nov is merged (#144–#179). The launch PRs still open:
+- #175, a mailbox import is checked like a save (security);
+- #182, one-click unsubscribe pinned to the checked address, and protected links capped at 30 days (security);
+- #180, leaving mid-save asks first;
+- #181, the default issuer is the live realm (your call: merge it, or set `CUMULUS_OIDC_ISSUER`);
+- #183, `npm run cutover:check` (this page uses it at go/no-go and in step 2);
+- #184, staging load-test flags (after launch).
 
 #86 lists the merge order.
 
