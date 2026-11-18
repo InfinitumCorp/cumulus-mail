@@ -58,6 +58,27 @@ export function isRevMap(value: unknown): value is Record<string, number> {
  * this check existed) keeps them but cannot add more. Used by every path that writes aliases: a save
  * (writeSnapshot) and a backup import (backup.ts).
  */
+/** Names on the platform domain nobody may take: mail to them is about the service, not a person. */
+export const RESERVED_LOCAL_PARTS = new Set([
+  "postmaster", "abuse", "hostmaster", "webmaster", "admin", "administrator", "root", "security", "support",
+  "noreply", "no-reply", "mailer-daemon", "billing", "help", "info", "dmarc", "dmarc-reports", "privacy", "legal",
+]);
+
+/**
+ * Where an alias may be: the platform mail domain (not a reserved name), or one of this mailbox's own
+ * custom domains that the server has verified. The client sends the alias list, so without this an
+ * alias could claim any unrouted address, including one on another customer's verified domain, and
+ * receive that domain's mail. Aliases the mailbox already has stay valid.
+ */
+export function aliasAllowed(email: string, current: MailboxSnapshot): boolean {
+  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return true;
+  const at = email.lastIndexOf("@");
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (domain === mailDomain()) return !RESERVED_LOCAL_PARTS.has(local.split("+")[0]!);
+  return (current.settings?.domains ?? []).some((item) => item.verified && item.domain.toLowerCase() === domain);
+}
+
 export async function checkedAliases(
   db: MailQuery,
   tenantId: string,
@@ -72,6 +93,10 @@ export async function checkedAliases(
     if (typeof alias !== "string") continue;
     const email = alias.trim().toLowerCase();
     if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
+    if (!aliasAllowed(email, current)) {
+      if (ownedByOther === "skip") continue;
+      throw new TenantAccessError(`An address can be on ${mailDomain()} or on one of your verified domains.`);
+    }
     if (await addressOwnedByOther(db, email, tenantId)) {
       if (ownedByOther === "skip") continue;
       throw new TenantAccessError("That address belongs to another mailbox");

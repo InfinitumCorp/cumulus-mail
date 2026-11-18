@@ -81,6 +81,14 @@ test("an imported backup cannot take another mailbox's address, and keeps to the
     await backupOf("imp-eve", { aliases: ["imp.dan@cumuluscloud.app", "eve.extra@cumuluscloud.app"] }),
   );
   assert.deepEqual(restored.aliases, ["eve.extra@cumuluscloud.app"]);
+  // Nor can an import (or a save) claim a reserved platform name or an address on someone else's domain.
+  const claimed = await importMailbox(
+    db,
+    storageFor,
+    "imp-eve",
+    await backupOf("imp-eve", { aliases: ["postmaster@cumuluscloud.app", "ceo@acme.example", "x@gmail.com", "eve.two@cumuluscloud.app"] }),
+  );
+  assert.deepEqual(claimed.aliases, ["eve.two@cumuluscloud.app"]);
   const limit = (await readSnapshot(db, "imp-eve")).me.limits!.messages;
   const tooMany = Array.from({ length: limit + 1 }, (_, i) => mail(`m-${i}`, "inbox", "x@example.com", "imp.eve@cumuluscloud.app", "hi"));
   await assert.rejects(importMailbox(db, storageFor, "imp-eve", await backupOf("imp-eve", { messages: tooMany })), /too large/);
