@@ -99,8 +99,11 @@ RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Ru
 
 **Expected:** the second `db:status` exits 0. Every migration is additive (new tables, columns and
 indexes); none drops or rewrites data.
+Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code:
+with #161 merged that includes `0019_message_rev.sql`, which must be applied before that code is deployed.
+
 **Rollback:** not needed for additive migrations: the old page worker ignores these tables. Do not drop
-anything by hand.
+anything by hand; if a migration itself is the problem, `docs/ops/migrations.md` has the per-file undo.
 
 ## 3. Preflight (5 min)
 
@@ -202,6 +205,11 @@ npm run smoke -- --url https://<id>.apigw.yandexcloud.net --region ru
    `Authorization: Bearer <CRON_SECRET>`. **Without it, scheduled send, the outbound queue and the purge of
    deleted Russian mailboxes never run.** Check one call: it answers 200 with counts (`released`,
    `deletions`), not 401 or 404.
+3. The client address the gateway passes on (sign-in rate limits are per address): in the container's
+   request log, one request's `x-forwarded-for` should hold **one** address, the caller's. If it holds a
+   chain (`client, gateway`), set `BETTER_AUTH_TRUSTED_PROXIES` to the gateway's ranges so the client hop is
+   used; until then every chained request shares one sign-in bucket (safe, but one busy client could slow
+   sign-in for the rest).
 
 ```sh
 npm run smoke -- --url https://ru.mail.cumuluscloud.app

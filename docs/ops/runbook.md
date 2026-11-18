@@ -127,6 +127,8 @@ Then deploy from `main`. `/api/health` shows `schema.pending: 0` *(after #91)*.
   Fix forward with a new migration file; never edit one that has been applied anywhere.
 - Some migrations need a follow-up job, named in their PR: e.g. after `0011` (search, #84) run
   `scripts/reindex-words.mjs`.
+- Undoing a migration (rarely needed: roll back the code instead) is per file in `docs/ops/migrations.md`,
+  with the SQL, what each loses, and the checks it was verified with.
 
 ---
 
