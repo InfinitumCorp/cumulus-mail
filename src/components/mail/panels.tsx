@@ -414,7 +414,7 @@ export function AccountPanel({
                 {settings.domains.map((domain) => (
                   <div key={domain.domain} className="text-sm">
                     <p className="font-mono text-xs">{domain.domain}</p>
-                    <p className="mt-1 text-muted">{domain.verified ? "Verified" : "Pending DNS"} · TXT {domain.txtName} = {domain.txtValue}</p>
+                    <p className="mt-1 text-muted">{domain.verified ? "Verified" : "Pending DNS"} · TXT {domain.txtName} = {domain.txtValue || <span>Your record appears in a moment.</span>}</p>
                     <label className="mt-2 inline-flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -457,7 +457,7 @@ export function AccountPanel({
                     const txt = expectedTxt(domain);
                     onSettings({
                       ...settings,
-                      domains: [...settings.domains, { domain, catchAll: false, verified: false, txtName: txt.name, txtValue: txt.value }],
+                      domains: [...settings.domains, { domain, catchAll: false, verified: false, txtName: txt.name, txtValue: "" }],
                     });
                     event.currentTarget.reset();
                   }}

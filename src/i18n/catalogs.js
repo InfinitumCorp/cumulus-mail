@@ -517,7 +517,8 @@ export default {
   "You're all caught up.": "You're all caught up.",
   "Your address": "Your address",
   "Your data": "Your data",
-  "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute."
+  "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute.",
+  "Your record appears in a moment.": "Your record appears in a moment."
  },
  "ru": {
   ". SMTP": ". SMTP",
@@ -1046,6 +1047,7 @@ export default {
   "Page not found": "Страница не найдена",
   "This address doesn't lead anywhere in Cumulus://Mail. It may have been mistyped, or the link has expired.": "По этому адресу в Cumulus://Mail ничего нет. Возможно, в нём опечатка или срок действия ссылки истёк.",
   "This page didn't load. Your mail is safe. Try again in a moment.": "Страница не загрузилась. Ваша почта в сохранности. Попробуйте ещё раз чуть позже.",
-  "Try again": "Повторить"
+  "Try again": "Повторить",
+  "Your record appears in a moment.": "Ваша запись появится через мгновение."
  }
 };
