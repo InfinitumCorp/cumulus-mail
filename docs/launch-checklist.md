@@ -132,7 +132,7 @@ Setup details: `docs/deploy/outbound-smtp.md`.
       set `MAIL_DKIM_SELECTOR` and `MAIL_DKIM_PRIVATE_KEY` (secret) or `MAIL_DKIM_KEY_PATH`.
 - [ ] SPF and DMARC records that include the relay. The exact records, and how to check them once published, are in
       `docs/deploy/dns-records.md` (#122); `npm run dkim:record` prints the DKIM TXT record from the key.
-- [ ] Optional rate limits: `MAIL_OUTBOUND_HOURLY_LIMIT` (default 100), `MAIL_OUTBOUND_DAILY_LIMIT` (default 500).
+- [ ] Optional rate limits: `MAIL_OUTBOUND_HOURLY_LIMIT` (default 100), `MAIL_OUTBOUND_DAILY_LIMIT` (default 500), `MAIL_OUTBOUND_MAX_RECIPIENTS` (default 50 per message). The kill switch for one mailbox: `npm run outbound:pause` (`docs/ops/incident.md`).
 - [ ] Know what the abuse controls do (#126), so support can answer: only mailboxes whose Cumulus ID email is
       verified send outside Cumulus; a new mailbox starts at 10/hour and 20/day and reaches the limits above after
       7 days; a burst of spam-shaped mail pauses outside sending for 24 hours, with the reason shown in the

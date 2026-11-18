@@ -259,6 +259,8 @@ spam.
 
 ## If something goes wrong after cutover
 
+The full per-symptom playbook, with the alert for each and the kill switch for spam going out, is `docs/ops/incident.md`.
+
 | Symptom | First move | Then |
 |---|---|---|
 | The site is down or erroring | Move the custom domain back to `cumulus-mail` (step 6 rollback) | Read `cumulus-mail-api` logs; fix; redeploy; smoke on workers.dev; move it again |
