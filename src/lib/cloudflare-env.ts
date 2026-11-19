@@ -41,6 +41,7 @@ export const COPIED_PREFIXES = [
   "STRIPE_",
   "BILLING_",
   "GOOGLE_CLIENT_",
+  "MICROSOFT_CLIENT_",
   "CID_",
   "CUMULUS_",
   "SUPABASE_S3_",

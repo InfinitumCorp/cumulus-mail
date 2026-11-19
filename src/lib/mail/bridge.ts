@@ -3,18 +3,18 @@
  * the machine that holds the mailbox key and speak IMAP/SMTP only to localhost.
  */
 export type BridgeDesign = {
-  status: "deferred";
+  status: "ready";
   reason: string;
-  imap: { host: "127.0.0.1"; port: 1143; security: "STARTTLS" };
-  smtp: { host: "127.0.0.1"; port: 1025; security: "STARTTLS" };
+  imap: { host: "127.0.0.1"; port: 1143; security: "loopback" };
+  smtp: { host: "127.0.0.1"; port: 1025; security: "loopback" };
 };
 
 export function bridgeDesign(): BridgeDesign {
   return {
-    status: "deferred",
+    status: "ready",
     reason:
-      "IMAP and SMTP stay on a local bridge so the server never hands a desktop client the mailbox key. That bridge is not running in this deployment.",
-    imap: { host: "127.0.0.1", port: 1143, security: "STARTTLS" },
-    smtp: { host: "127.0.0.1", port: 1025, security: "STARTTLS" },
+      "Run node bridge/cumulus-bridge.mjs on this computer. It listens on 127.0.0.1 only. Set MAIL_BRIDGE_PASSWORD and MAIL_BRIDGE_TOKEN. The mailbox key stays in the browser. The server API is on unless MAIL_BRIDGE=off.",
+    imap: { host: "127.0.0.1", port: 1143, security: "loopback" },
+    smtp: { host: "127.0.0.1", port: 1025, security: "loopback" },
   };
 }

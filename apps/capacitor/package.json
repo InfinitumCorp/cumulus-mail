@@ -1,0 +1,6 @@
+{
+  "name": "cumulus-mail-capacitor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Wraps the Cumulus://Mail web app. No separate UI."
+}

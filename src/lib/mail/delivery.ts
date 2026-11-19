@@ -14,6 +14,7 @@ import { createSuppressionList } from "./suppression.ts";
 import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
 import { encryptFor } from "./openpgp.ts";
+import { sealHybridText } from "./pqc.ts";
 import { autocryptHeader } from "./pgp-keys.ts";
 import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
@@ -80,14 +81,22 @@ async function copyInto(
     settings.folders,
   );
   let sealed = delivered;
+  const hybrid = settings.mailboxKey?.hybrid;
   const recipientKey = settings.mailboxKey?.publicKey;
-  if (recipientKey && !delivered.body.includes("-----BEGIN PGP MESSAGE-----")) {
+  if ((hybrid || recipientKey) && !delivered.body.includes("-----BEGIN PGP MESSAGE-----") && !delivered.body.startsWith("cmh1.")) {
     try {
-      sealed = {
-        ...delivered,
-        body: await encryptFor(delivered.body, [recipientKey]),
-        extra: { ...delivered.extra, pgp: true, zeroAccess: true },
-      };
+      sealed = hybrid
+        ? {
+            ...delivered,
+            subject: await sealHybridText(delivered.subject, hybrid),
+            body: await sealHybridText(delivered.body, hybrid),
+            extra: { ...delivered.extra, pgp: true, zeroAccess: true },
+          }
+        : {
+            ...delivered,
+            body: await encryptFor(delivered.body, [recipientKey!]),
+            extra: { ...delivered.extra, pgp: true, zeroAccess: true },
+          };
     } catch {
       sealed = delivered;
     }

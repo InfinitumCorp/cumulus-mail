@@ -35,7 +35,15 @@ function sieveProblem(source: string, folders: CustomFolder[]): string {
 const APPEARANCE_LABELS: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Device" };
 const APPEARANCE = THEMES.map((value) => [value, APPEARANCE_LABELS[value]] as const);
 
-export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; feed?: boolean }) {
+export function CalendarPanel({
+  events,
+  feed = false,
+  onShare,
+}: {
+  events: CalEvent[];
+  feed?: boolean;
+  onShare?: (event: CalEvent, email: string) => void;
+}) {
   const timeZone = useViewerTimeZone();
   return (
     <div className="aux-pane overflow-y-auto">
@@ -52,6 +60,22 @@ export function CalendarPanel({ events, feed = false }: { events: CalEvent[]; fe
                 <h3 className="text-2xl tracking-tight">{event.title}</h3>
                 <p className="mt-2 text-sm">{event.with}</p>
                 <p className="mt-1 text-sm text-muted">{event.where}</p>
+                {onShare ? (
+                  <form
+                    className="mt-3 flex gap-2"
+                    onSubmit={(eventForm) => {
+                      eventForm.preventDefault();
+                      const email = String(new FormData(eventForm.currentTarget).get("email") ?? "");
+                      if (email) onShare(event, email);
+                      eventForm.currentTarget.reset();
+                    }}
+                  >
+                    <input name="email" aria-label={`Share ${event.title}`} placeholder="Share with" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
+                    <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                      Share
+                    </button>
+                  </form>
+                ) : null}
               </div>
             </li>
           ))}
@@ -191,6 +215,7 @@ export function AccountPanel({
   onSettings,
   onExport,
   onImport,
+  onImportProvider,
   onCheckDomain,
   domainNote = "",
   pgpPublic = "",
@@ -217,6 +242,7 @@ export function AccountPanel({
   onSettings: (settings: MailSettings) => void;
   onExport: () => void;
   onImport: (text: string) => void;
+  onImportProvider?: (provider: "google" | "microsoft") => void;
   onCheckDomain: (domain: string) => void;
   domainNote?: string;
   pgpPublic?: string;
@@ -618,6 +644,16 @@ export function AccountPanel({
                 <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={onExport}>
                   Export
                 </button>
+                {onImportProvider ? (
+                  <>
+                    <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={() => onImportProvider("google")}>
+                      Gmail
+                    </button>
+                    <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={() => onImportProvider("microsoft")}>
+                      Outlook
+                    </button>
+                  </>
+                ) : null}
                 <label className="inline-flex h-11 cursor-pointer items-center border border-line px-3 text-sm hover:border-ink">
                   Import
                   <input

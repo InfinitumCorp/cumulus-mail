@@ -103,7 +103,7 @@ test("scheduled mail waits, and the bridge and identity stay outside this app", 
   const released = releaseDue([draft], Date.parse("2026-11-10T00:00:00.000Z"));
   assert.equal(released[0]?.folder, "sent");
   assert.equal(released[0]?.extra?.heldUntil, "2099-01-01T00:00:00.000Z");
-  assert.equal(bridgeDesign().status, "deferred");
+  assert.equal(bridgeDesign().status, "ready");
   assert.equal(identityPosture().issuer, DEFAULT_CUMULUS_ISSUER);
   assert.equal(identityPosture().twoFactor, "delegated-to-cumulus-id");
 });

@@ -189,7 +189,7 @@ export function formatSize(bytes: number): string {
 
 /** The one-line preview the message list renders. Armored mail does not leak the body into the preview. */
 export function messageSnippet(body: string): string {
-  if (body.includes("-----BEGIN PGP MESSAGE-----")) return "Encrypted message";
+  if (body.startsWith("cmh1.") || body.includes("-----BEGIN PGP MESSAGE-----")) return "Encrypted message";
   return body.replace(/\s+/g, " ").trim();
 }
 

@@ -15,6 +15,8 @@ import type { MailQuery } from "./query.ts";
 import { limitsFor } from "./plans.ts";
 import { insertAttachment, insertMessage, readSettings, storageUsedBytes } from "./records.ts";
 import { encryptFor } from "./openpgp.ts";
+import { sealHybrid, sealHybridText } from "./pqc.ts";
+import { feedsEnabled, loadFeeds } from "./spam-feed.ts";
 
 export type InboundEmail = {
   from: string;
@@ -69,16 +71,23 @@ export async function ingestInboundEmail(
     await createBounceHandler(db, tenantId).accept(new TextDecoder().decode(message.raw));
   }
 
+  const mailboxSettings = await readSettings(db, tenantId);
+  const hybrid = mailboxSettings.mailboxKey?.hybrid;
   const attachments = [];
   for (const [index, file] of parsed.attachments.entries()) {
     const attachmentId = `a-${id}-${index}`;
-    const saved = await storage.put(file.bytes);
+    let bytes = file.bytes;
+    let contentType = sanitizeContentType(file.contentType);
+    if (hybrid) {
+      bytes = new TextEncoder().encode(await sealHybrid(bytes, hybrid));
+      contentType = "application/vnd.cumulus.hybrid";
+    }
+    const saved = await storage.put(bytes);
     attachments.push({
       id: attachmentId,
-      // The sender chose these: the same cleaning as a file saved from the app (mailbox.ts).
       name: fileName(file.name),
-      size: file.bytes.byteLength,
-      contentType: sanitizeContentType(file.contentType),
+      size: bytes.byteLength,
+      contentType,
       sha256: saved.sha256,
       objectKey: saved.blobId,
     });
@@ -94,7 +103,8 @@ export async function ingestInboundEmail(
   );
   metric("mail.inbound.auth", { spf: auth.spf, dkim: auth.dkim, dmarc: auth.dmarc, disposition: auth.disposition });
   // Lists, shared reputation, RBL (off unless configured) and the sender's own DMARC policy.
-  const verdict = await inboundVerdict(db, tenantId, from.email, auth, options.spam);
+  const feedDomains = feedsEnabled() ? await loadFeeds() : undefined;
+  const verdict = await inboundVerdict(db, tenantId, from.email, auth, { ...options.spam, feedDomains });
   const draft: MailMessage = {
     id,
     threadId: id,
@@ -112,10 +122,15 @@ export async function ingestInboundEmail(
     auth,
     headers: parsed.headers,
   };
-  const mailboxKey = (await readSettings(db, tenantId)).mailboxKey?.publicKey;
-  if (mailboxKey && !draft.body.includes("-----BEGIN PGP MESSAGE-----")) {
+  const mailboxKey = mailboxSettings.mailboxKey?.publicKey;
+  if ((hybrid || mailboxKey) && !draft.body.includes("-----BEGIN PGP MESSAGE-----") && !draft.body.startsWith("cmh1.")) {
     try {
-      draft.body = await encryptFor(draft.body, [mailboxKey]);
+      if (hybrid) {
+        draft.subject = await sealHybridText(draft.subject, hybrid);
+        draft.body = await sealHybridText(draft.body, hybrid);
+      } else if (mailboxKey) {
+        draft.body = await encryptFor(draft.body, [mailboxKey]);
+      }
       draft.extra = { ...draft.extra, pgp: true, zeroAccess: true };
     } catch {
       // A key that cannot encrypt must not drop the message. It is stored as it arrived.

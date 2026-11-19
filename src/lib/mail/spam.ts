@@ -19,7 +19,7 @@ import type { MailQuery } from "./query.ts";
 
 export type SpamVerdict =
   | { folder: "inbox"; reason: "allowlisted" | "clean" }
-  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" | "own-domain" };
+  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" | "own-domain" | "feed" };
 
 /**
  * A domain needs this many votes before its reputation counts. A vote is one mailbox's verdict on one
@@ -213,7 +213,7 @@ export async function inboundVerdict(
   tenantId: string,
   from: string,
   auth: MailAuth | undefined,
-  options: { env?: Record<string, string | undefined>; resolve?: ResolveA; random?: () => number } = {},
+  options: { env?: Record<string, string | undefined>; resolve?: ResolveA; random?: () => number; feedDomains?: Set<string> } = {},
 ): Promise<SpamVerdict> {
   assertTenantId(tenantId);
   const domain = senderDomain(from);
@@ -232,6 +232,9 @@ export async function inboundVerdict(
   // allowlist overrides this. A person's custom domains are theirs to send from anywhere, so not these.
   if (domain && domain === mailDomain().toLowerCase() && auth?.dmarc !== "pass") {
     return { folder: "quarantine", reason: "own-domain" };
+  }
+  if (options.feedDomains && domain && (await import("./spam-feed.ts")).listedDomain(options.feedDomains, from)) {
+    return { folder: "quarantine", reason: "feed" };
   }
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };

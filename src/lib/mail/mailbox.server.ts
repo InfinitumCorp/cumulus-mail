@@ -609,9 +609,28 @@ export async function lookupPgpKeysForSession(
           return;
         }
       }
+      const { lookupDirectoryKey } = await import("./id-directory.ts");
+      const fromId = await lookupDirectoryKey(normalized);
+      if (fromId) {
+        keys[normalized] = fromId;
+        return;
+      }
       const remote = await fetchWkdKey(normalized);
       if (remote) keys[normalized] = remote;
     }),
   );
   return { keys };
+}
+
+export async function easySwitchForSession(
+  contextUserId: string,
+  provider: "google" | "microsoft",
+  bearerToken?: string,
+): Promise<{ configured: false } | { configured: true; url: string }> {
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  const { authorizeUrl, importConfigured, importState } = await import("./easy-switch.ts");
+  if (!importConfigured(provider)) return { configured: false };
+  const secret = process.env.MAIL_BLOB_KEY?.trim();
+  if (!secret) throw new Error("MAIL_BLOB_KEY is not set");
+  return { configured: true, url: authorizeUrl(provider, mailAppHost(), importState(provider, tenantId, secret)) };
 }

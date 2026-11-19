@@ -158,6 +158,19 @@ export const lookupPgpKeys = createServerFn({ method: "POST" })
     return lookupPgpKeysForSession(context.userId, data.emails, context.bearerToken);
   });
 
+/** Start Gmail or Outlook import. The provider client id is env-gated. */
+export const startEasySwitch = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { provider: "google" | "microsoft" } => {
+    const provider = (input as { provider?: unknown } | null)?.provider;
+    if (provider !== "google" && provider !== "microsoft") throw new Error("Unknown provider");
+    return { provider };
+  })
+  .handler(async ({ context, data }) => {
+    const { easySwitchForSession } = await import("./mailbox.server");
+    return easySwitchForSession(context.userId, data.provider, context.bearerToken);
+  });
+
 /** Account deletion: "status", "request" (starts a 7-day grace period) or "cancel". */
 export const accountDeletion = createServerFn({ method: "POST" })
   .middleware([authMiddleware])

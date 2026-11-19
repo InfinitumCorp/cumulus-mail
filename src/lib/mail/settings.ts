@@ -57,12 +57,24 @@ export type MailSettings = {
    * The passphrase is never stored. Absent until the owner creates or imports one.
    */
   mailboxKey?: MailboxKey;
+  /** Random salt for the client-held search index. Not a secret. */
+  indexSalt?: string;
+  /** Search index sealed to the mailbox hybrid key. The server cannot read the words. */
+  clientIndex?: string;
+};
+
+export type HybridMaterial = {
+  x25519Public: string;
+  mlkemPublic: string;
+  /** Passphrase-wrapped X25519 and ML-KEM secrets. The passphrase is not stored. */
+  wrappedSecrets: string;
 };
 
 export type MailboxKey = {
   publicKey: string;
   privateKey: string;
   fingerprint: string;
+  hybrid?: HybridMaterial;
 };
 
 export { THEMES, type Theme } from "../theme-names.ts";
@@ -119,6 +131,21 @@ function asDomain(value: unknown, platformDomain: string): CustomDomain | null {
   };
 }
 
+function b64url(value: unknown, min: number, max: number): string {
+  const textValue = text(value, max);
+  return /^[A-Za-z0-9_-]+$/.test(textValue) && textValue.length >= min ? textValue : "";
+}
+
+function asHybrid(value: unknown): HybridMaterial | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<HybridMaterial>;
+  const x25519Public = b64url(row.x25519Public, 40, 50);
+  const mlkemPublic = b64url(row.mlkemPublic, 1500, 1700);
+  const wrappedSecrets = b64url(row.wrappedSecrets, 40, 8000);
+  if (!x25519Public || !mlkemPublic || !wrappedSecrets) return undefined;
+  return { x25519Public, mlkemPublic, wrappedSecrets };
+}
+
 function asMailboxKey(value: unknown): MailboxKey | undefined {
   if (!value || typeof value !== "object") return undefined;
   const row = value as Partial<MailboxKey> & { passphrase?: unknown };
@@ -129,10 +156,12 @@ function asMailboxKey(value: unknown): MailboxKey | undefined {
   if (!privateKey.includes("-----BEGIN PGP PRIVATE KEY BLOCK-----")) return undefined;
   if (publicKey.includes("BEGIN PGP PRIVATE KEY")) return undefined;
   const fingerprint = text(row.fingerprint, 64).toLowerCase();
+  const hybrid = asHybrid((row as { hybrid?: unknown }).hybrid);
   return {
     publicKey,
     privateKey,
     fingerprint: /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(fingerprint) ? fingerprint : "",
+    ...(hybrid ? { hybrid } : {}),
   };
 }
 
@@ -217,6 +246,10 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
     setupPending: row.setupPending === true,
     theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
     ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
+    ...(b64url(row.indexSalt, 16, 64) ? { indexSalt: b64url(row.indexSalt, 16, 64) } : {}),
+    ...(typeof row.clientIndex === "string" && row.clientIndex.startsWith("cmh1.") && row.clientIndex.length < 120_000
+      ? { clientIndex: row.clientIndex }
+      : {}),
   };
 }
 

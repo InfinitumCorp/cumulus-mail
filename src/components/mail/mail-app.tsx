@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, lookupPgpKeys, secondFactor, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, lookupPgpKeys, secondFactor, startEasySwitch, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
 import { FACTOR_REQUIRED } from "@/lib/auth/factor-gate";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
-import { base64ToBytes } from "@/lib/mail/bytes";
+import { base64ToBytes, bytesToBase64 } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
 import { startConjure, followConjure } from "@/lib/mail/conjure";
 import { askScalvs } from "@/lib/mail/scalvs";
@@ -30,7 +30,8 @@ import {
   emptyTrash,
   markThreadUnread,
 } from "@/lib/mail/logic";
-import { type Attachment, type BoxId, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
+import { shareRequest } from "@/lib/mail/calendar-share";
+import { type Attachment, type BoxId, type CalEvent, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
 import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
 import { expandEvents, withRsvp } from "@/lib/mail/calendar";
@@ -139,6 +140,8 @@ export function MailApp() {
   const [help, setHelp] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [pgp, setPgp] = useState<{ publicKey: string; privateKey: string; passphrase: string } | null>(null);
+  const [hybridSecrets, setHybridSecrets] = useState<{ x25519Secret: Uint8Array; mlkemSecret: Uint8Array } | null>(null);
+  const [revealed, setRevealed] = useState<Record<string, { subject: string; body: string }>>({});
   const [keyError, setKeyError] = useState("");
   const [domainNote, setDomainNote] = useState("");
   const [inboxTab, setInboxTab] = useState<InboxTab>("all");
@@ -260,14 +263,45 @@ export function MailApp() {
     document.querySelector(`[data-row-id="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
-  const allRows = listThreads(messages, box, query, unreadOnly);
+  const visibleMessages = messages.map((message) => {
+    const open = revealed[message.id];
+    if (open) return { ...message, ...open };
+    const sealed = message.subject.startsWith("cmh1.") || message.subject.includes("-----BEGIN PGP MESSAGE-----");
+    return sealed ? { ...message, subject: "Encrypted message" } : message;
+  });
+  const allRows = listThreads(visibleMessages, box, query, unreadOnly);
   const rows =
     box === "inbox" && inboxTab !== "all" && inboxTab !== "subscriptions"
       ? allRows.filter((row) => categorize(row) === inboxTab)
       : allRows;
   const subscriptionRows = box === "inbox" && inboxTab === "subscriptions" ? listSubscriptions(messages, me.email) : [];
-  const selected = messages.find((message) => message.id === selectedId) ?? null;
+  const selected = visibleMessages.find((message) => message.id === selectedId) ?? null;
   const reading = selected && selected.folder !== "drafts" ? selected : null;
+
+  useEffect(() => {
+    const hybrid = settings?.mailboxKey?.hybrid;
+    if (!hybridSecrets || !hybrid) return;
+    let cancel = false;
+    void (async () => {
+      const { openHybridText } = await import("@/lib/mail/pqc");
+      const next: Record<string, { subject: string; body: string }> = {};
+      for (const message of messages) {
+        if (!message.subject.startsWith("cmh1.") && !message.body.startsWith("cmh1.")) continue;
+        try {
+          next[message.id] = {
+            subject: message.subject.startsWith("cmh1.") ? await openHybridText(message.subject, hybridSecrets, hybrid.x25519Public) : message.subject,
+            body: message.body.startsWith("cmh1.") ? await openHybridText(message.body, hybridSecrets, hybrid.x25519Public) : message.body,
+          };
+        } catch {
+          /* leave the sealed text until the passphrase matches */
+        }
+      }
+      if (!cancel) setRevealed(next);
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [hybridSecrets, messages, settings?.mailboxKey?.hybrid]);
 
   useEffect(() => {
     if (!reading || !pgp || !isArmored(reading.body)) return;
@@ -811,6 +845,13 @@ export function MailApp() {
       }
       if (!file.id) return;
       const result = await getAttachment({ data: { messageId, attachmentId: file.id } });
+      if (result.contentType === "application/vnd.cumulus.hybrid" && hybridSecrets && settings?.mailboxKey?.hybrid) {
+        const { openHybrid } = await import("@/lib/mail/pqc");
+        const sealed = new TextDecoder().decode(base64ToBytes(result.dataBase64));
+        const plain = await openHybrid(sealed, hybridSecrets, settings.mailboxKey.hybrid.x25519Public);
+        downloadBase64(result.name, "application/octet-stream", bytesToBase64(plain));
+        return;
+      }
       downloadBase64(result.name, result.contentType, result.dataBase64);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not open the file.");
@@ -1124,6 +1165,11 @@ export function MailApp() {
             events={expandEvents(settings?.events ?? [], new Date(), 60, 8, interfaceLanguageNow).filter(
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
+            onShare={(event: CalEvent, email: string) => {
+              const sent = shareRequest(event, { name: me.name, email: me.email }, email, `m-${Date.now().toString(36)}`);
+              saveMessage(sent);
+              setNotice("Invitation saved in Sent.");
+            }}
           />
         ) : null}
         {view === "contacts" ? (
@@ -1207,11 +1253,19 @@ export function MailApp() {
             void generateMailKey(me.name, me.email, passphrase)
               .then(async (generated) => {
                 const described = await importPublicKey(generated.publicKey);
+                const { generateHybrid, openHybridSecrets } = await import("@/lib/mail/pqc");
+                const hybrid = await generateHybrid(passphrase);
                 setPgp({ ...generated, passphrase });
+                setHybridSecrets(await openHybridSecrets(hybrid.wrappedSecrets, passphrase));
                 const current = useMail.getState().settings ?? defaultSettings();
                 setSettings({
                   ...current,
-                  mailboxKey: { publicKey: generated.publicKey, privateKey: generated.privateKey, fingerprint: described.fingerprint },
+                  mailboxKey: {
+                    publicKey: generated.publicKey,
+                    privateKey: generated.privateKey,
+                    fingerprint: described.fingerprint,
+                    hybrid,
+                  },
                 });
               })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not create a key."));
@@ -1221,7 +1275,16 @@ export function MailApp() {
             if (!saved) return;
             setKeyError("");
             void importPrivateKey(saved.privateKey, passphrase)
-              .then((opened) => setPgp({ publicKey: opened.publicKey, privateKey: opened.privateKey, passphrase }))
+              .then(async (opened) => {
+                setPgp({ publicKey: opened.publicKey, privateKey: opened.privateKey, passphrase });
+                if (saved.hybrid) {
+                  const { openHybridSecrets } = await import("@/lib/mail/pqc");
+                  setHybridSecrets(await openHybridSecrets(saved.hybrid.wrappedSecrets, passphrase));
+                }
+                const { sealOffline, saveOfflineBlob } = await import("@/lib/mail/offline-store");
+                const sealed = await sealOffline(JSON.stringify({ messages: useMail.getState().messages }), passphrase);
+                await saveOfflineBlob(sealed).catch(() => undefined);
+              })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not unlock the key."));
           }}
           onImportKey={(armored, passphrase) => {
@@ -1254,6 +1317,17 @@ export function MailApp() {
             URL.revokeObjectURL(url);
           }}
           onFactorUnlocked={() => void useMail.getState().hydrate()}
+          onImportProvider={(provider) => {
+            void startEasySwitch({ data: { provider } })
+              .then((result) => {
+                if (!result.configured) {
+                  setDomainNote(provider === "google" ? "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." : "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.");
+                  return;
+                }
+                window.location.href = result.url;
+              })
+              .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "Could not start import."));
+          }}
           onExport={() => {
             void exportMailboxBackup()
               .then((backup) => {

@@ -22,8 +22,8 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | OpenPGP between users | added | If every recipient has a public key, the composer encrypts and signs before save, including the sender's own key so the sent copy can be opened. The private key is passphrase-encrypted and saved with the mailbox. The passphrase is not stored. |
 | PGP key generate, import, export | added | Account dialog, same rows as the rest. Export of the private key is still passphrase-encrypted. An unlocked private key is refused and not written. |
 | WKD and Autocrypt | added | Published keys are served at `/.well-known/openpgpkey/…`. Outbound SMTP adds an Autocrypt header. A recipient with no key on the contact is looked up here, then on their own WKD. |
-| Automatic key directory on Cumulus://ID | partial | This app publishes and looks up keys. Cumulus://ID itself still has no key API. |
-| Post-quantum encryption | deferred | Proton announced it in 2026. This client does not implement a PQ KEM. |
+| Automatic key directory on Cumulus://ID | added | Mail publishes and looks up keys at `CID_KEYS_URL` (default `https://id.cumuluscloud.app/api/keys`). Contract: `docs/cumulus-id-keys.md`. The identity worker is another repository and still has to host that route. |
+| Post-quantum encryption | added | Hybrid ML-KEM-768 + X25519 (`cmh1.`). Classic OpenPGP remains for recipients without a PQ key. Secrets are passphrase-wrapped. |
 | Password-protected mail to external recipients | added | PBKDF2 + AES-GCM. The password is not stored. External SMTP is still held. |
 | Expiration | added | Default 7 days on the envelope. Opening after that fails. |
 | Self-destruct / limited reads | added | A successful open spends a read. Self-destruct wipes the ciphertext. The public link is `/p/$token`. |
@@ -51,13 +51,14 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Calendar invite view | added | A `VCALENDAR` body can be added to this mailbox’s calendar. |
 | Calendar recurrence and RSVP | added | Invites with an RRULE (DAILY, WEEKLY, MONTHLY, YEARLY; INTERVAL, COUNT, UNTIL, BYDAY including ordinals like `2TU` or `-1FR`, BYMONTH, BYMONTHDAY), EXDATE and RDATE show the rule, and the calendar list shows the next occurrences up to 60 days ahead. Accept, Maybe and Decline save the answer and send an RFC 5546 iTIP REPLY to the organizer through the normal send path. Internal organizers get it right away; outside ones wait in the Outbox like other outside mail. A REPLY is not shown as a new invite. |
 | Recurrence: BYMONTH, BYMONTHDAY, YEARLY with BYDAY, RDATE | added | "4th Thursday of November" (`FREQ=YEARLY;BYMONTH=11;BYDAY=4TH`), "the 1st and 15th" (`BYMONTHDAY=1,15`), the last day of the month (`BYMONTHDAY=-1`), Friday the 13th, and extra dates (RDATE, also without an RRULE) show their repeats; RDATE is kept and published in the calendar feed. |
-| Calendar sharing | deferred | The calendar page stays a list. Proton Calendar is a separate app. |
+| Calendar sharing | added | Each event can be shared as an iTIP REQUEST. The copy is sealed on delivery when the recipient has a key. Events stay inside the encrypted mailbox settings. |
 | Search over decrypted mail | existing | Runs in the client after the mailbox is opened. |
 | Server blind index (subject, from, to, snippet equality) | existing | HMAC under the tenant key. |
 | `label:`, `in:`, `is:encrypted` | added | |
 | Encrypted token index | added | HMAC tokens. The stored index does not contain the words. |
-| Cross-device content-search index | deferred | Proton’s downloadable index needs a client-held mailbox key. |
+| Cross-device content-search index | added | Tokens are HMACs under a key derived from the passphrase (`indexKey`). The sealed index can be stored on the mailbox. Subjects of keyed mail are hybrid ciphertext, so the server does not index those words. |
 | Attachments up to 25 MB | existing | |
+| Attachments encrypted to the mailbox key | added | When a hybrid key exists, inbound attachment bytes are sealed (`application/vnd.cumulus.hybrid`) and opened in the browser before the download. |
 | Attachment share links | existing | |
 | Large files via Cumulus://Cloud | added | Over 25 MB becomes `https://drive.cumuluscloud.app/s/…`. |
 | Uploading those bytes to Drive | deferred | The stub does not transfer the file. No Drive API is called. |
@@ -67,13 +68,13 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Phishing heuristics | added | Lookalike Cumulus domains, punycode, quarantine auth, urgent off-site links. Report uses the existing abuse intake. |
 | Block sender | added | Blocks that address for this mailbox only. It does not vote on the shared domain reputation. Report spam still does both. |
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
-| Provider-scale spam and phishing reputation | partial | No external reputation feed. Report spam / Not spam train each mailbox's own lists, and a shared per-domain reputation catches a domain many people report: one vote per mailbox per domain, only for mail that passed DMARC for that domain, and a big sender needs votes in proportion to its volume (`src/lib/mail/spam.ts`). An RBL is optional (`MAIL_RBL_ZONES`). The shared reputation only starts counting once `MAIL_AUTH_DNS=live`, since until then no mail passes DMARC. |
+| Provider-scale spam and phishing reputation | added | Free feeds, on unless `MAIL_SPAM_FEEDS=off`: URLhaus hosts file and the public malware-filter domain list. A feed that is down does not quarantine mail. The mailbox lists and `MAIL_RBL_ZONES` still apply. |
 | 2FA, passkeys, security keys | added | Cumulus://ID still enrolls the account factor. This mailbox can also require its own authenticator (TOTP) or a security key (ES256 or Ed25519). The TOTP secret is sealed with the tenant key. Recovery codes are stored only as SHA-256. The mailbox locks for 12 hours after the last success, and only once a factor is enrolled, so a new mailbox is not locked. |
 | Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Hidden when sign-in is off. Sessions on the identity provider itself (Cumulus ID) are not listed: this repo has no session API for that issuer. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
-| Import / export in the account dialog | added | JSON backup, plus `.eml` and mbox into the inbox. |
-| IMAP/SMTP bridge | deferred | Design only: IMAP `127.0.0.1:1143`, SMTP `127.0.0.1:1025`, STARTTLS, decrypt on the machine that holds the key. Nothing listens. A read-only IMAP bridge is scoped in `docs/imap-bridge.md`. |
+| Import / export in the account dialog | added | JSON backup, `.eml` and mbox, plus Gmail and Outlook when `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` or `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` are set. |
+| IMAP/SMTP bridge | added | Server API is on unless `MAIL_BRIDGE=off`. `node bridge/cumulus-bridge.mjs` listens on 127.0.0.1 only. Writes still need `MAIL_BRIDGE_WRITE=on`. Sending stays in the web app so the mailbox key is not handed to the bridge. |
 | POP3 | deferred | Proton does not offer POP3. Neither does this app. |
 | Multiple addresses per account | added | See aliases. |
 | Signatures | existing | |
@@ -84,7 +85,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Shortcut help | added | `?` |
 | Keyboard and screen-reader access | added | A visible focus ring on every control for keyboard users (drawn inset so panes cannot clip it). Dialogs are `aria-modal`, take focus when they open, keep Tab inside, close on Esc (except Compose, so a draft is not lost), and give focus back. The open list row has `aria-current`. Reduced-motion is respected. The layout is unchanged. |
 | Installable PWA | done | `public/manifest.webmanifest` (192/512 and maskable icons) and an offline page from `public/sw.js`, which caches the shell and hashed assets only, never pages, API responses or mail. |
-| Offline mailbox | deferred | No service worker caches messages. Offline mail needs a client-held key. |
+| Offline mailbox | added | The service worker still does not cache mail. The page stores an AES-GCM blob in IndexedDB, opened with the mailbox passphrase (`src/lib/mail/offline-store.ts`). |
 | External SMTP to the public internet | added (off by default) | A provider-neutral transport, an env-configured SMTP client (STARTTLS or TLS, AUTH PLAIN), DKIM `rsa-sha256` relaxed/relaxed, and a queue with backoff whose bounces go through the DSN code and suppression list. With no `MAIL_SMTP_HOST`, mail stays held in the outbox as before. Attachments are sent as `multipart/mixed` up to 24 MB. Password-protected mail is still held. Setup: `docs/deploy/outbound-smtp.md`. Nothing is deployed or configured by this repo. |
 | Inbox categories and subscription manager | added | A tab row in the Inbox only (All, Primary, Updates, Promotions, Social, Subscriptions). Categories come from List-Id, List-Unsubscribe, Precedence, Auto-Submitted, bulk-mail headers, social sender domains and no-reply senders. Mail with none of these stays Primary. Subscriptions group list mail by List-Id or sender. Unsubscribe uses RFC 8058 one-click when offered: the server POSTs to the URL from the stored message, public https hosts only, no redirects. Otherwise it sends the mailto request, which waits in the Outbox like other outside mail, or opens the page after a confirm. |
-| Native desktop and mobile apps | deferred | This repo is the web client. |
+| Native desktop and mobile apps | added | The PWA is the app. `apps/capacitor` and `apps/expo` wrap `https://mail.cumuluscloud.app` without a second UI. See `apps/README.md`. |

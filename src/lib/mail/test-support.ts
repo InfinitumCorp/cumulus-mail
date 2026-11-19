@@ -10,6 +10,7 @@ import type { MailProfile } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 
 if (!process.env.MAIL_BLOB_KEY) process.env.MAIL_BLOB_KEY = "ab".repeat(32);
+if (process.env.MAIL_SPAM_FEEDS === undefined) process.env.MAIL_SPAM_FEEDS = "off";
 
 export async function createHarness() {
   const pg = new PGlite();
