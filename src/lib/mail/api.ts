@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import type { MailboxBackup } from "./backup.ts";
+import type { FactorRequest } from "./mailbox.server.ts";
 import { rejectCallerTenant, type MailboxSnapshot } from "./snapshot.ts";
 
 function asSnapshot(input: unknown): MailboxSnapshot {
@@ -74,15 +75,87 @@ export const exportMailboxBackup = createServerFn({ method: "GET" })
 /** "Report spam" / "Not spam": trains this mailbox's lists and votes on the sender domain's reputation. */
 export const reportSpamMessage = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown): { messageId: string; verdict: "spam" | "ham" } => {
+  .validator((input: unknown): { messageId: string; verdict: "spam" | "ham" | "block" } => {
     const value = (input ?? {}) as { messageId?: unknown; verdict?: unknown };
     if (typeof value.messageId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,200}$/.test(value.messageId)) throw new Error("Invalid message id");
-    if (value.verdict !== "spam" && value.verdict !== "ham") throw new Error("Unknown verdict");
+    if (value.verdict !== "spam" && value.verdict !== "ham" && value.verdict !== "block") throw new Error("Unknown verdict");
     return { messageId: value.messageId, verdict: value.verdict };
   })
   .handler(async ({ context, data }) => {
     const { reportSpamForSession } = await import("./mailbox.server");
     return reportSpamForSession(context.userId, data.messageId, data.verdict, context.bearerToken);
+  });
+
+const FACTOR_ACTIONS = new Set([
+  "status",
+  "totp-begin",
+  "totp-confirm",
+  "totp-verify",
+  "totp-disable",
+  "webauthn-register-options",
+  "webauthn-register",
+  "webauthn-assert-options",
+  "webauthn-assert",
+  "webauthn-remove",
+]);
+
+function webauthnField(value: unknown, max: number): string {
+  if (typeof value !== "string" || value.length < 1 || value.length > max || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("Bad security-key field");
+  }
+  return value;
+}
+
+/** Mailbox authenticator and security keys. */
+export const secondFactor = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const value = (input ?? {}) as Record<string, unknown>;
+    const action = value.action;
+    if (typeof action !== "string" || !FACTOR_ACTIONS.has(action)) throw new Error("Unknown factor action");
+    if (action === "totp-confirm" || action === "totp-verify" || action === "totp-disable") {
+      if (typeof value.code !== "string" || value.code.length > 40) throw new Error("Missing code");
+      return { action, code: value.code };
+    }
+    if (action === "webauthn-register") {
+      return {
+        action,
+        name: typeof value.name === "string" ? value.name.slice(0, 80) : "",
+        id: webauthnField(value.id, 512),
+        clientDataJSON: webauthnField(value.clientDataJSON, 4096),
+        attestationObject: webauthnField(value.attestationObject, 16_000),
+      };
+    }
+    if (action === "webauthn-assert") {
+      return {
+        action,
+        id: webauthnField(value.id, 512),
+        clientDataJSON: webauthnField(value.clientDataJSON, 4096),
+        authenticatorData: webauthnField(value.authenticatorData, 1024),
+        signature: webauthnField(value.signature, 512),
+      };
+    }
+    if (action === "webauthn-remove") return { action, id: webauthnField(value.id, 512) };
+    return { action };
+  })
+  .handler(async ({ context, data }) => {
+    const { secondFactorForSession } = await import("./mailbox.server");
+    return secondFactorForSession(context.userId, data as FactorRequest, context.bearerToken);
+  });
+
+/** OpenPGP keys published for these addresses, from this server or the recipient's WKD. */
+export const lookupPgpKeys = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown): { emails: string[] } => {
+    const emails = (input as { emails?: unknown } | null)?.emails;
+    if (!Array.isArray(emails) || emails.length > 10 || emails.some((email) => typeof email !== "string" || email.length > 320)) {
+      throw new Error("Missing addresses");
+    }
+    return { emails };
+  })
+  .handler(async ({ context, data }) => {
+    const { lookupPgpKeysForSession } = await import("./mailbox.server");
+    return lookupPgpKeysForSession(context.userId, data.emails, context.bearerToken);
   });
 
 /** Account deletion: "status", "request" (starts a 7-day grace period) or "cancel". */

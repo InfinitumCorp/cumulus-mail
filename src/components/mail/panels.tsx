@@ -5,6 +5,7 @@ import { BillingControls } from "./billing-controls";
 import { DataExportControls } from "./data-export-controls";
 import { ContactsTransfer } from "./contacts-transfer";
 import { CalendarFeedControls } from "./calendar-feed-controls";
+import { SecondFactorControls } from "./second-factor-controls";
 import { SignedInDevices } from "./signed-in-devices";
 import { mailDomain } from "@/lib/mail/domain";
 import { newAlias } from "@/lib/mail/alias";
@@ -96,6 +97,7 @@ export function ContactsPanel({
                 {contact.phone ? <p className="mt-1 text-sm text-muted">{contact.phone}</p> : null}
                 {contact.address ? <p className="mt-1 text-sm text-muted">{contact.address}</p> : null}
                 {contact.publicKey ? <p className="mt-1 font-mono text-xs text-muted">OpenPGP key on file</p> : null}
+                {contact.groups?.length ? <p className="mt-1 text-sm text-muted">{contact.groups.join(", ")}</p> : null}
               </div>
               <button type="button" className="inline-flex h-11 items-center border border-line px-4 text-sm hover:border-ink" onClick={() => onWrite(contact)}>
                 Write
@@ -117,6 +119,10 @@ export function ContactsPanel({
                 phone: String(data.get("phone") ?? "").trim(),
                 address: String(data.get("address") ?? "").trim(),
                 publicKey: String(data.get("publicKey") ?? "").trim(),
+                groups: String(data.get("groups") ?? "")
+                  .split(",")
+                  .map((group) => group.trim())
+                  .filter(Boolean),
               });
               event.currentTarget.reset();
             }}
@@ -128,6 +134,7 @@ export function ContactsPanel({
               <input name="phone" aria-label="Phone" placeholder="Phone" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
               <input name="address" aria-label="Postal address" placeholder="Postal address" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
               <textarea name="publicKey" aria-label="OpenPGP public key" placeholder="OpenPGP public key" className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+              <input name="groups" aria-label="Contact groups" placeholder="Groups, comma separated" className="h-11 border border-line bg-transparent px-3 text-sm outline-none" />
               <button type="submit" className="inline-flex h-11 items-center self-start border border-line px-3 text-sm hover:border-ink">
                 Save encrypted fields
               </button>
@@ -188,6 +195,10 @@ export function AccountPanel({
   domainNote = "",
   pgpPublic = "",
   onCreateKey,
+  onUnlockKey,
+  onImportKey,
+  onExportKey,
+  onFactorUnlocked,
   keyError = "",
   usage,
 }: {
@@ -210,6 +221,10 @@ export function AccountPanel({
   domainNote?: string;
   pgpPublic?: string;
   onCreateKey: (passphrase: string) => void;
+  onUnlockKey?: (passphrase: string) => void;
+  onImportKey?: (armored: string, passphrase: string) => void;
+  onExportKey?: (which: "public" | "private") => void;
+  onFactorUnlocked?: () => void;
   keyError?: string;
 }) {
   const posture = identityPosture();
@@ -311,6 +326,7 @@ export function AccountPanel({
               </dd>
             </div>
             <SignedInDevices />
+            <SecondFactorControls onUnlocked={onFactorUnlocked} />
             <div className="border-b border-line py-4">
               <dt className="text-muted">Signature</dt>
               <dd className="mt-3">
@@ -531,20 +547,63 @@ export function AccountPanel({
                   onSubmit={(event) => {
                     event.preventDefault();
                     const data = new FormData(event.currentTarget);
-                    onCreateKey(String(data.get("passphrase") ?? ""));
+                    const passphrase = String(data.get("passphrase") ?? "");
+                    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+                    if (submitter instanceof HTMLButtonElement && submitter.value === "unlock") onUnlockKey?.(passphrase);
+                    else onCreateKey(passphrase);
                   }}
                 >
                   <input name="passphrase" type="password" aria-label="OpenPGP passphrase" placeholder="Passphrase" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
-                  <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
-                    Session key
+                  <button type="submit" value="create" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                    Create key
                   </button>
+                  {settings.mailboxKey ? (
+                    <button type="submit" value="unlock" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                      Unlock key
+                    </button>
+                  ) : null}
                 </form>
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    onImportKey?.(String(data.get("armored") ?? ""), String(data.get("passphrase") ?? ""));
+                  }}
+                >
+                  <textarea name="armored" aria-label="OpenPGP key to import" placeholder="Paste a key" className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
+                  <div className="flex gap-2">
+                    <input name="passphrase" type="password" aria-label="Import passphrase" placeholder="Passphrase" className="h-11 min-w-0 flex-1 border border-line bg-transparent px-3 text-sm outline-none" />
+                    <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+                      Import key
+                    </button>
+                  </div>
+                </form>
+                {settings.mailboxKey || pgpPublic ? (
+                  <div className="flex gap-2">
+                    <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={() => onExportKey?.("public")}>
+                      Export public key
+                    </button>
+                    <button type="button" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink" onClick={() => onExportKey?.("private")}>
+                      Export private key
+                    </button>
+                  </div>
+                ) : null}
                 {keyError ? <p className="text-sm">{keyError}</p> : null}
                 {pgpPublic ? (
                   <textarea readOnly aria-label="Session public key" value={pgpPublic} className="min-h-24 border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none" />
                 ) : (
-                  <p className="text-sm text-muted">The private key stays in this tab. It is not written to the mailbox.</p>
+                  <p className="text-sm text-muted">
+                    {settings.mailboxKey
+                      ? "The private key is encrypted with your passphrase and saved with this mailbox. The passphrase is not stored."
+                      : "Create or import a key to encrypt mail to you. The passphrase is not stored."}
+                  </p>
                 )}
+                {settings.mailboxKey?.fingerprint ? (
+                  <p className="break-all font-mono text-xs text-muted" translate="no">
+                    {settings.mailboxKey.fingerprint}
+                  </p>
+                ) : null}
               </dd>
             </div>
             <div className="border-b border-line py-4">
@@ -563,7 +622,7 @@ export function AccountPanel({
                   Import
                   <input
                     type="file"
-                    accept="application/json"
+                    accept="application/json,.eml,.mbox,message/rfc822,text/plain"
                     className="sr-only"
                     onChange={(event) => {
                       const file = event.target.files?.[0];

@@ -52,6 +52,17 @@ export type MailSettings = {
   setupPending: boolean;
   /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
   theme: Theme;
+  /**
+   * This mailbox's OpenPGP key. The private key is passphrase-encrypted armor.
+   * The passphrase is never stored. Absent until the owner creates or imports one.
+   */
+  mailboxKey?: MailboxKey;
+};
+
+export type MailboxKey = {
+  publicKey: string;
+  privateKey: string;
+  fingerprint: string;
 };
 
 export { THEMES, type Theme } from "../theme-names.ts";
@@ -105,6 +116,23 @@ function asDomain(value: unknown, platformDomain: string): CustomDomain | null {
     verified: row.verified === true,
     txtName: txt.name,
     txtValue: txt.value,
+  };
+}
+
+function asMailboxKey(value: unknown): MailboxKey | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<MailboxKey> & { passphrase?: unknown };
+  if ("passphrase" in row && row.passphrase) return undefined;
+  const publicKey = text(row.publicKey, 20_000).trim();
+  const privateKey = text(row.privateKey, 30_000).trim();
+  if (!publicKey.includes("-----BEGIN PGP PUBLIC KEY BLOCK-----")) return undefined;
+  if (!privateKey.includes("-----BEGIN PGP PRIVATE KEY BLOCK-----")) return undefined;
+  if (publicKey.includes("BEGIN PGP PRIVATE KEY")) return undefined;
+  const fingerprint = text(row.fingerprint, 64).toLowerCase();
+  return {
+    publicKey,
+    privateKey,
+    fingerprint: /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(fingerprint) ? fingerprint : "",
   };
 }
 
@@ -188,6 +216,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       : [],
     setupPending: row.setupPending === true,
     theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
+    ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
   };
 }
 

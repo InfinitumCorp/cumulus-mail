@@ -187,9 +187,28 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** The one-line preview the message list renders. */
+/** The one-line preview the message list renders. Armored mail does not leak the body into the preview. */
 export function messageSnippet(body: string): string {
+  if (body.includes("-----BEGIN PGP MESSAGE-----")) return "Encrypted message";
   return body.replace(/\s+/g, " ").trim();
+}
+
+/** Snooze targets, all at 08:00 UTC. `weekend` is the next Saturday, including today before 08:00. */
+export function snoozeChoice(choice: "tomorrow" | "weekend" | "next-week", now = new Date()): string {
+  if (choice === "tomorrow") return tomorrowMorning(now);
+  if (choice === "next-week") {
+    const until = new Date(now);
+    until.setUTCDate(until.getUTCDate() + 7);
+    until.setUTCHours(8, 0, 0, 0);
+    return until.toISOString();
+  }
+  const day = now.getUTCDay();
+  let add = (6 - day + 7) % 7;
+  const todayAtEight = Date.parse(`${now.toISOString().slice(0, 10)}T08:00:00.000Z`);
+  if (add === 0 && now.getTime() >= todayAtEight) add = 7;
+  const until = new Date(Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`) + add * 86_400_000);
+  until.setUTCHours(8, 0, 0, 0);
+  return until.toISOString();
 }
 
 function haystack(message: MailMessage): string {

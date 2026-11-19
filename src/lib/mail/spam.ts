@@ -257,6 +257,15 @@ export async function inboundVerdict(
  * The mailbox's own block / allow list is set either way: that only affects this mailbox.
  */
 
+/**
+ * Block this sender for this mailbox only. Unlike report spam, this does not vote on the
+ * domain's shared reputation, so one person cannot sink a domain by blocking a correspondent.
+ */
+export async function blockSender(db: MailQuery, tenantId: string, from: string): Promise<void> {
+  assertTenantId(tenantId);
+  await setList(db, tenantId, from, "block");
+}
+
 /** "Report spam": block this sender for this mailbox, and vote "spam" for its domain if the mail authenticated. */
 export async function reportSpam(db: MailQuery, tenantId: string, from: string, auth?: MailAuth): Promise<void> {
   assertTenantId(tenantId);

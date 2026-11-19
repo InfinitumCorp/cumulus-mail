@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
-import { exportMailboxBackup, getAttachment, importMailboxBackup, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
+import { exportMailboxBackup, getAttachment, importMailboxBackup, lookupPgpKeys, secondFactor, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
+import { FACTOR_REQUIRED } from "@/lib/auth/factor-gate";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { base64ToBytes } from "@/lib/mail/bytes";
 import { briefThread } from "@/lib/mail/brief";
@@ -19,6 +20,7 @@ import {
   quota,
   quote,
   threadOf,
+  snoozeChoice,
   tomorrowMorning,
   transcript,
   trashThreads,
@@ -32,7 +34,9 @@ import { type Attachment, type BoxId, type CustomFolderId, type FolderId, type M
 import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
 import { expandEvents, withRsvp } from "@/lib/mail/calendar";
+import { messagesFromMailFile } from "@/lib/mail/import-mail";
 import { decryptWith, encryptFor, generateMailKey, isArmored } from "@/lib/mail/openpgp";
+import { importPrivateKey, importPublicKey } from "@/lib/mail/pgp-keys";
 import { openWithPassword, PROTECTED_PLACEHOLDER, sealWithPassword, spendRead } from "@/lib/mail/protect";
 import { releaseDue } from "@/lib/mail/schedule";
 import { assessPhishing, classifyLink, extractLinks, stripRemoteImages } from "@/lib/mail/safety";
@@ -264,6 +268,20 @@ export function MailApp() {
   const subscriptionRows = box === "inbox" && inboxTab === "subscriptions" ? listSubscriptions(messages, me.email) : [];
   const selected = messages.find((message) => message.id === selectedId) ?? null;
   const reading = selected && selected.folder !== "drafts" ? selected : null;
+
+  useEffect(() => {
+    if (!reading || !pgp || !isArmored(reading.body)) return;
+    const id = reading.id;
+    let cancel = false;
+    void decryptWith(reading.body, pgp.privateKey, pgp.passphrase)
+      .then((text) => {
+        if (!cancel) setOpened((current) => (current[id] ? current : { ...current, [id]: text }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [reading, pgp]);
   const thread = visibleThread(messages, reading);
   const briefText = thread.length ? briefs[briefKey(thread)] ?? "" : "";
   const openTasks = tasks.filter((task) => !task.done).length;
@@ -390,13 +408,24 @@ export function MailApp() {
     let body = withSignature(composer.body, signature);
     let extra: MessageExtra | undefined = composer.cloudLinks?.length ? { cloudLinks: composer.cloudLinks } : undefined;
     const recipients = [...to, ...cc];
-    const keys = recipients
-      .map((person) => contacts.find((contact) => contact.email.toLowerCase() === person.email.toLowerCase())?.publicKey)
-      .filter((key): key is string => Boolean(key));
-    if (keys.length === recipients.length) {
+    const known = new Map(
+      contacts.filter((contact) => contact.publicKey).map((contact) => [contact.email.toLowerCase(), contact.publicKey as string]),
+    );
+    const missing = recipients.map((person) => person.email).filter((email) => !known.has(email.toLowerCase()));
+    if (missing.length) {
       try {
-        body = await encryptFor(body, keys);
-        extra = { ...extra, pgp: true };
+        const found = await lookupPgpKeys({ data: { emails: missing } });
+        for (const [email, key] of Object.entries(found.keys)) known.set(email.toLowerCase(), key);
+      } catch {
+        // A directory miss still sends. Encryption waits until every recipient has a key.
+      }
+    }
+    const keys = recipients.map((person) => known.get(person.email.toLowerCase())).filter((key): key is string => Boolean(key));
+    if (keys.length === recipients.length && keys.length > 0) {
+      try {
+        const all = pgp ? [...new Set([...keys, pgp.publicKey])] : keys;
+        body = await encryptFor(body, all, pgp ? { privateKey: pgp.privateKey, passphrase: pgp.passphrase } : undefined);
+        extra = { ...extra, pgp: true, zeroAccess: true };
       } catch (error) {
         setComposeError(error instanceof Error ? error.message : "OpenPGP could not encrypt this.");
         return;
@@ -845,7 +874,26 @@ export function MailApp() {
           Compose
         </button>
       </header>
-      {syncError ? <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p> : null}
+      {syncError === FACTOR_REQUIRED ? (
+        <form
+          className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const code = String(new FormData(event.currentTarget).get("code") ?? "");
+            void secondFactor({ data: { action: "totp-verify", code } })
+              .then(() => useMail.getState().hydrate())
+              .catch((error: unknown) => setNotice(error instanceof Error ? error.message : "That code is not valid."));
+          }}
+        >
+          <p className="text-sm">Second factor required.</p>
+          <input name="code" aria-label="Authenticator or recovery code" className="h-11 w-48 border border-line bg-transparent px-3 text-sm outline-none" />
+          <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
+            Confirm
+          </button>
+        </form>
+      ) : syncError ? (
+        <p className="border-b border-line px-5 py-2 text-sm">{syncError}</p>
+      ) : null}
       <div className="mail-body">
         <Sidebar
           open={navOpen}
@@ -945,6 +993,19 @@ export function MailApp() {
                 remember("Snoozed until tomorrow morning.");
                 snooze(reading.id, tomorrowMorning());
                 setSelectedId(null);
+              }}
+              onSnoozeUntil={(choice) => {
+                if (!reading) return;
+                const label = choice === "weekend" ? "Snoozed until this weekend." : choice === "next-week" ? "Snoozed until next week." : "Snoozed until tomorrow morning.";
+                remember(label);
+                snooze(reading.id, snoozeChoice(choice));
+                setSelectedId(null);
+              }}
+              onBlock={() => {
+                if (!reading) return;
+                void reportSpamMessage({ data: { messageId: reading.id, verdict: "block" } })
+                  .then(() => remember("Sender blocked."))
+                  .catch(() => setNotice("Could not block that sender."));
               }}
               onUnread={() => {
                 if (!reading) return;
@@ -1144,9 +1205,55 @@ export function MailApp() {
             }
             setKeyError("");
             void generateMailKey(me.name, me.email, passphrase)
-              .then((generated) => setPgp({ ...generated, passphrase }))
+              .then(async (generated) => {
+                const described = await importPublicKey(generated.publicKey);
+                setPgp({ ...generated, passphrase });
+                const current = useMail.getState().settings ?? defaultSettings();
+                setSettings({
+                  ...current,
+                  mailboxKey: { publicKey: generated.publicKey, privateKey: generated.privateKey, fingerprint: described.fingerprint },
+                });
+              })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not create a key."));
           }}
+          onUnlockKey={(passphrase) => {
+            const saved = settings?.mailboxKey;
+            if (!saved) return;
+            setKeyError("");
+            void importPrivateKey(saved.privateKey, passphrase)
+              .then((opened) => setPgp({ publicKey: opened.publicKey, privateKey: opened.privateKey, passphrase }))
+              .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not unlock the key."));
+          }}
+          onImportKey={(armored, passphrase) => {
+            setKeyError("");
+            const task = armored.includes("BEGIN PGP PRIVATE KEY BLOCK")
+              ? importPrivateKey(armored, passphrase)
+              : importPublicKey(armored).then((opened) => ({ ...opened, privateKey: "" }));
+            void task
+              .then((opened) => {
+                if (!opened.privateKey) {
+                  setKeyError("Import the private key to read mail. A public key alone cannot unlock this mailbox.");
+                  return;
+                }
+                setPgp({ publicKey: opened.publicKey, privateKey: opened.privateKey, passphrase });
+                const current = useMail.getState().settings ?? defaultSettings();
+                setSettings({ ...current, mailboxKey: { publicKey: opened.publicKey, privateKey: opened.privateKey, fingerprint: opened.fingerprint } });
+              })
+              .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not import the key."));
+          }}
+          onExportKey={(which) => {
+            const key = pgp ?? settings?.mailboxKey;
+            if (!key) return;
+            const text = which === "public" ? key.publicKey : key.privateKey;
+            const blob = new Blob([text], { type: "application/pgp-keys" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = which === "public" ? "cumulus-public.asc" : "cumulus-private.asc";
+            link.click();
+            URL.revokeObjectURL(url);
+          }}
+          onFactorUnlocked={() => void useMail.getState().hydrate()}
           onExport={() => {
             void exportMailboxBackup()
               .then((backup) => {
@@ -1162,6 +1269,23 @@ export function MailApp() {
               .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "Could not export."));
           }}
           onImport={(text) => {
+            const trimmed = text.trim();
+            if (!trimmed.startsWith("{")) {
+              void messagesFromMailFile(text)
+                .then((imported) => {
+                  if (!imported.length) {
+                    setDomainNote("Nothing in that file could be read.");
+                    return;
+                  }
+                  const state = useMail.getState();
+                  const ids = new Set(state.messages.map((message) => message.id));
+                  const fresh = imported.filter((message) => !ids.has(message.id));
+                  state.replaceMessages([...fresh, ...state.messages]);
+                  setDomainNote(fresh.length ? `Imported ${fresh.length} messages.` : "Those messages are already in this mailbox.");
+                })
+                .catch((error: unknown) => setDomainNote(error instanceof Error ? error.message : "Could not import."));
+              return;
+            }
             void importMailboxBackup({ data: JSON.parse(text) as MailboxBackup })
               .then((snapshot) => {
                 useMail.getState().replaceSnapshot(snapshot);

@@ -22,6 +22,7 @@ export function sanitizeExtra(extra: MessageExtra | undefined): MessageExtra | u
     next.readReceipt = extra.readReceipt;
   }
   if (extra.pgp) next.pgp = true;
+  if (extra.zeroAccess) next.zeroAccess = true;
   if (extra.autoReply) next.autoReply = true;
   const links = (extra.cloudLinks ?? []).filter((link) => isDriveShareHref(link.href)).slice(0, 8);
   if (links.length) {
@@ -42,6 +43,7 @@ function cleanExtra(extra: MessageExtra): MessageExtra | undefined {
   if (extra.protection) next.protection = extra.protection;
   if (extra.readReceipt) next.readReceipt = extra.readReceipt;
   if (extra.pgp) next.pgp = true;
+  if (extra.zeroAccess) next.zeroAccess = true;
   if (extra.autoReply) next.autoReply = true;
   if (extra.cloudLinks?.length) next.cloudLinks = extra.cloudLinks;
   return Object.keys(next).length ? next : undefined;

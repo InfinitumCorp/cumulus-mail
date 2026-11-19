@@ -8,6 +8,9 @@ import { messageSnippet } from "./logic.ts";
 import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
+import { cleanGroups } from "./groups.ts";
+import { acceptMailboxKey } from "./pgp-keys.ts";
+import { mailboxAddresses, publishMailboxKey } from "./wkd.ts";
 import { defaultSettings, keepServerNotes, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
@@ -421,7 +424,8 @@ export async function replaceMailboxContents(
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
     const previous = await readSettings(db, tenantId);
-    const settings = keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain())));
+    const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain()))));
+    await publishMailboxKey(db, tenantId, [snapshot.me?.email ?? "", ...snapshot.aliases], settings.mailboxKey?.publicKey ?? null);
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.messages where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
@@ -553,18 +557,21 @@ function sealPrivate(tenantId: string, contact: Contact): string | null {
   const phone = contact.phone?.trim().slice(0, 40) ?? "";
   const address = contact.address?.trim().slice(0, 300) ?? "";
   const publicKey = contact.publicKey?.trim().slice(0, 20_000) ?? "";
-  if (!phone && !address && !publicKey) return null;
-  return sealText(tenantId, JSON.stringify({ phone, address, publicKey }));
+  const groups = cleanGroups(contact.groups);
+  if (!phone && !address && !publicKey && groups.length === 0) return null;
+  return sealText(tenantId, JSON.stringify({ phone, address, publicKey, groups }));
 }
 
-function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "phone" | "address" | "publicKey"> {
+function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "phone" | "address" | "publicKey" | "groups"> {
   if (!stored) return {};
   try {
-    const parsed = JSON.parse(openText(tenantId, stored)) as { phone?: string; address?: string; publicKey?: string };
+    const parsed = JSON.parse(openText(tenantId, stored)) as { phone?: string; address?: string; publicKey?: string; groups?: unknown };
+    const groups = cleanGroups(parsed.groups);
     return {
       phone: parsed.phone || undefined,
       address: parsed.address || undefined,
       publicKey: parsed.publicKey || undefined,
+      ...(groups.length ? { groups } : {}),
     };
   } catch {
     return {};
@@ -591,9 +598,13 @@ export async function readSettings(db: MailQuery, tenantId: string): Promise<Mai
 
 export async function writeSettings(db: MailQuery, tenantId: string, settings: MailSettings): Promise<void> {
   assertTenantId(tenantId);
-  const clean = sanitizeSettings(settings, mailDomain());
+  const clean = await acceptMailboxKey(sanitizeSettings(settings, mailDomain()));
   await db.query(`update cumulus_mail.mailboxes set settings_enc = $2 where tenant_id = $1`, [
     tenantId,
     sealText(tenantId, JSON.stringify(clean)),
   ]);
+  const profile = await readProfile(db, tenantId);
+  if (profile) {
+    await publishMailboxKey(db, tenantId, await mailboxAddresses(db, tenantId, profile.email), clean.mailboxKey?.publicKey ?? null);
+  }
 }

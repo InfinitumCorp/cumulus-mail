@@ -13,6 +13,8 @@ import { noteAutoReply, shouldAutoReply } from "./settings.ts";
 import { createSuppressionList } from "./suppression.ts";
 import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
+import { encryptFor } from "./openpgp.ts";
+import { autocryptHeader } from "./pgp-keys.ts";
 import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
 import { limitsFromEnv, sendDecision } from "./outbound/limits.ts";
@@ -77,7 +79,20 @@ async function copyInto(
     settings.sieve,
     settings.folders,
   );
-  await insertMessage(db, destTenant, delivered, null);
+  let sealed = delivered;
+  const recipientKey = settings.mailboxKey?.publicKey;
+  if (recipientKey && !delivered.body.includes("-----BEGIN PGP MESSAGE-----")) {
+    try {
+      sealed = {
+        ...delivered,
+        body: await encryptFor(delivered.body, [recipientKey]),
+        extra: { ...delivered.extra, pgp: true, zeroAccess: true },
+      };
+    } catch {
+      sealed = delivered;
+    }
+  }
+  await insertMessage(db, destTenant, sealed, null);
   for (const [index, file] of files.entries()) {
     const stored = await storageFor(senderTenant).get(file.objectKey);
     if (!stored) continue;
@@ -127,6 +142,7 @@ export async function deliverMessage(
   const files = (await loadAttachmentMap(db, senderTenant)).get(message.id) ?? [];
   // Attachment bytes for SMTP, loaded once per message and only when outbound is on.
   let outgoing: OutgoingFile[] | null | undefined;
+  let autocrypt: string[] | undefined;
   let safety: SafetyDecision | undefined;
   const hops: DeliveryHop[] = [];
   for (const person of uniquePeople([...message.to, ...message.cc])) {
@@ -162,7 +178,16 @@ export async function deliverMessage(
         let raw: string | null = null;
         let unencodable = false;
         try {
-          raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing) : null;
+          if (!autocrypt) {
+            autocrypt = [];
+            try {
+              const senderKey = (await readSettings(db, senderTenant)).mailboxKey?.publicKey;
+              if (senderKey) autocrypt = [await autocryptHeader(from.email, senderKey)];
+            } catch {
+              autocrypt = [];
+            }
+          }
+          raw = outgoing ? buildRawMessage({ ...message, from }, from, domain, new Date(), outgoing, autocrypt) : null;
         } catch {
           unencodable = true;
         }

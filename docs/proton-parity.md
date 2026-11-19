@@ -1,6 +1,6 @@
 # Proton Mail parity
 
-Checked against the public Proton Mail product on 10 Nov 2026:
+Checked against the public Proton Mail product on 10 Nov 2026, and again on 19 Nov 2026 for keys, zero-access bodies, and a mailbox second factor:
 
 - [proton.me/mail](https://proton.me/mail)
 - [Proton Mail support](https://proton.me/support/mail)
@@ -17,10 +17,12 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Encryption at rest (AES-256-GCM on bodies, headers, addresses) | existing | `field-crypto.ts`, `storage/crypto.ts`. The key is `MAIL_BLOB_KEY`. |
-| Zero-access encryption (server cannot decrypt the mailbox) | deferred | The server holds `MAIL_BLOB_KEY` and opens fields to build the snapshot. A client-held mailbox key would replace that model. |
+| Zero-access encryption (server cannot decrypt the mailbox) | partial | Message bodies are sealed to the mailbox OpenPGP key once one is saved (`extra.zeroAccess`). The server still holds `MAIL_BLOB_KEY` and can open the outer field, the subject, and any mailbox that has not created a key. The passphrase never leaves the browser, so the server cannot open the inner layer. |
 | End-to-end marker for Cumulus-to-Cumulus mail | existing | Delivery stays inside the app. The stored body is still sealed with the tenant key. |
-| OpenPGP between users | added | Optional. If every recipient has a public key on the contact, the composer encrypts before save. The private key is created for the browser tab and is not written to the mailbox. |
-| Automatic key directory on Cumulus://ID | deferred | No key-publish API on `id.cumuluscloud.app` is wired here. |
+| OpenPGP between users | added | If every recipient has a public key, the composer encrypts and signs before save, including the sender's own key so the sent copy can be opened. The private key is passphrase-encrypted and saved with the mailbox. The passphrase is not stored. |
+| PGP key generate, import, export | added | Account dialog, same rows as the rest. Export of the private key is still passphrase-encrypted. An unlocked private key is refused and not written. |
+| WKD and Autocrypt | added | Published keys are served at `/.well-known/openpgpkey/…`. Outbound SMTP adds an Autocrypt header. A recipient with no key on the contact is looked up here, then on their own WKD. |
+| Automatic key directory on Cumulus://ID | partial | This app publishes and looks up keys. Cumulus://ID itself still has no key API. |
 | Post-quantum encryption | deferred | Proton announced it in 2026. This client does not implement a PQ KEM. |
 | Password-protected mail to external recipients | added | PBKDF2 + AES-GCM. The password is not stored. External SMTP is still held. |
 | Expiration | added | Default 7 days on the envelope. Opening after that fails. |
@@ -41,8 +43,9 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Scheduled send | added | Stays in Drafts until the time, then Sent on the next save, within a few seconds while the app is open, or by the worker cron within about a minute when it is closed. |
 | Server-side scheduler when the tab is closed | added | The inbound worker (`cumulus-mail-inbound`) runs a cron every minute (`triggers.crons`, and `dist/inbound/schedules.json` for the Workers API). It moves due drafts to Sent and delivers them, and releases expired undo holds (`src/lib/mail/release.ts`). It finds due drafts by an indexed `due_at` column that holds only the send time rounded down to the hour (`infinity` when there is no schedule; migration 0009). The exact time stays encrypted. An edit saved in the app after the cron reads a draft wins; that draft waits for the next run. The worker is not deployed by this repo, so production still needs the worker and its schedule set. |
 | Undo send | added | Existing undo toast, plus a hold (default 10s, max 30s) before delivery is recorded. |
-| Snooze | existing | Until 08:00 UTC the next day. |
+| Snooze | added | Tomorrow morning (the clock button), this weekend, or next week. All at 08:00 UTC. |
 | Contacts | existing | |
+| Contact groups | added | Up to 8 names, stored with the other sealed contact fields. |
 | Encrypted contact fields (phone, postal address, OpenPGP key) | added | Sealed with the tenant key. The ciphertext does not contain the phone number. |
 | Calendar list | existing | |
 | Calendar invite view | added | A `VCALENDAR` body can be added to this mailbox’s calendar. |
@@ -62,13 +65,14 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Remote image blocking | added | `<img src="https://…">` is stripped. On by default. |
 | Link confirmation | added | Links in a message open only after a confirm dialog. Suspicious hosts are called out. |
 | Phishing heuristics | added | Lookalike Cumulus domains, punycode, quarantine auth, urgent off-site links. Report uses the existing abuse intake. |
+| Block sender | added | Blocks that address for this mailbox only. It does not vote on the shared domain reputation. Report spam still does both. |
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
 | Provider-scale spam and phishing reputation | partial | No external reputation feed. Report spam / Not spam train each mailbox's own lists, and a shared per-domain reputation catches a domain many people report: one vote per mailbox per domain, only for mail that passed DMARC for that domain, and a big sender needs votes in proportion to its volume (`src/lib/mail/spam.ts`). An RBL is optional (`MAIL_RBL_ZONES`). The shared reputation only starts counting once `MAIL_AUTH_DNS=live`, since until then no mail passes DMARC. |
-| 2FA, passkeys, security keys | deferred | Enrolled on Cumulus://ID (`https://id.cumuluscloud.app`). Mail does not store a second factor. The account dialog says so. |
+| 2FA, passkeys, security keys | added | Cumulus://ID still enrolls the account factor. This mailbox can also require its own authenticator (TOTP) or a security key (ES256 or Ed25519). The TOTP secret is sealed with the tenant key. Recovery codes are stored only as SHA-256. The mailbox locks for 12 hours after the last success, and only once a factor is enrolled, so a new mailbox is not locked. |
 | Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Hidden when sign-in is off. Sessions on the identity provider itself (Cumulus ID) are not listed: this repo has no session API for that issuer. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
-| Import / export in the account dialog | added | |
+| Import / export in the account dialog | added | JSON backup, plus `.eml` and mbox into the inbox. |
 | IMAP/SMTP bridge | deferred | Design only: IMAP `127.0.0.1:1143`, SMTP `127.0.0.1:1025`, STARTTLS, decrypt on the machine that holds the key. Nothing listens. A read-only IMAP bridge is scoped in `docs/imap-bridge.md`. |
 | POP3 | deferred | Proton does not offer POP3. Neither does this app. |
 | Multiple addresses per account | added | See aliases. |

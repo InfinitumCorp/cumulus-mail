@@ -13,7 +13,8 @@ import { sanitizeContentType } from "../storage/adapter.ts";
 import type { MailMessage, MailRule } from "./model.ts";
 import type { MailQuery } from "./query.ts";
 import { limitsFor } from "./plans.ts";
-import { insertAttachment, insertMessage, storageUsedBytes } from "./records.ts";
+import { insertAttachment, insertMessage, readSettings, storageUsedBytes } from "./records.ts";
+import { encryptFor } from "./openpgp.ts";
 
 export type InboundEmail = {
   from: string;
@@ -111,6 +112,15 @@ export async function ingestInboundEmail(
     auth,
     headers: parsed.headers,
   };
+  const mailboxKey = (await readSettings(db, tenantId)).mailboxKey?.publicKey;
+  if (mailboxKey && !draft.body.includes("-----BEGIN PGP MESSAGE-----")) {
+    try {
+      draft.body = await encryptFor(draft.body, [mailboxKey]);
+      draft.extra = { ...draft.extra, pgp: true, zeroAccess: true };
+    } catch {
+      // A key that cannot encrypt must not drop the message. It is stored as it arrived.
+    }
+  }
   const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
     `select id, from_match, action, label from cumulus_mail.rules where tenant_id = $1`,
     [tenantId],

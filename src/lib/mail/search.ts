@@ -46,7 +46,10 @@ export function messageWords(message: MailMessage): Record<WordField, string[]> 
     subject: tokenize(message.subject, MAX_TOKENS_PER_FIELD.subject),
     from: tokenize(`${message.from.name} ${message.from.email}`, MAX_TOKENS_PER_FIELD.from),
     to: tokenize(people([...message.to, ...message.cc]), MAX_TOKENS_PER_FIELD.to),
-    body: tokenize(message.body, MAX_TOKENS_PER_FIELD.body),
+    body:
+      message.extra?.zeroAccess || message.body.includes("-----BEGIN PGP MESSAGE-----")
+        ? []
+        : tokenize(message.body, MAX_TOKENS_PER_FIELD.body),
   };
 }
 
