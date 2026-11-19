@@ -1,0 +1,6 @@
+{
+  "name": "cumulus-mail-expo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "WebView wrapper for Cumulus://Mail. The UI is the website."
+}

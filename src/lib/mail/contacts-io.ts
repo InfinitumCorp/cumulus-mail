@@ -285,7 +285,7 @@ export function mergeContacts(
 function fillGaps<T extends ImportedContact>(base: T, extra: ImportedContact): T {
   const out = { ...base };
   for (const key of ["name", "org", "note", "phone", "address"] as const) {
-    if (!out[key]?.trim() && extra[key]?.trim()) (out as Record<string, string>)[key] = extra[key]!;
+    if (!out[key]?.trim() && extra[key]?.trim()) out[key] = extra[key];
   }
   return out;
 }

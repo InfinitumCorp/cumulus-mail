@@ -21,13 +21,28 @@ export async function generateMailKey(
   return { publicKey: generated.publicKey, privateKey: generated.privateKey };
 }
 
-/** Encrypt on the caller. The private key is not sent anywhere by this function. */
-export async function encryptFor(body: string, publicKeys: string[]): Promise<string> {
+/**
+ * Encrypt on the caller. The private key is not sent anywhere by this function.
+ * When `signing` is set, the message is also signed. The passphrase never leaves this call.
+ */
+export async function encryptFor(
+  body: string,
+  publicKeys: string[],
+  signing?: { privateKey: string; passphrase: string },
+): Promise<string> {
   if (!publicKeys.length) throw new Error("No OpenPGP key for this recipient.");
   const openpgp = await lib();
   const encryptionKeys = await Promise.all(publicKeys.map((armoredKey) => openpgp.readKey({ armoredKey })));
+  const signingKeys = signing
+    ? [
+        await openpgp.decryptKey({
+          privateKey: await openpgp.readPrivateKey({ armoredKey: signing.privateKey }),
+          passphrase: signing.passphrase,
+        }),
+      ]
+    : undefined;
   const message = await openpgp.createMessage({ text: body });
-  const encrypted = await openpgp.encrypt({ message, encryptionKeys });
+  const encrypted = await openpgp.encrypt({ message, encryptionKeys, signingKeys });
   if (typeof encrypted !== "string") throw new Error("OpenPGP encryption did not return text.");
   return encrypted;
 }

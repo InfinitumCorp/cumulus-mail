@@ -14,6 +14,7 @@ import {
 } from "./model";
 import type { MailProfile, MailboxSnapshot } from "./snapshot";
 import { mailDomain } from "./domain";
+import { FACTOR_REQUIRED } from "../auth/factor-gate";
 import { defaultSettings, sanitizeSettings, type MailSettings } from "./settings";
 
 type MailStore = MailboxSnapshot & {
@@ -175,8 +176,9 @@ export const useMail = create<MailStore>((set, get) => ({
         if (pushing > 0 || revision !== before) return;
         remember(saved);
         set({ ...saved, syncError: "" });
-      } catch {
-        // offline or signed out: the next save or refresh reports it
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message === FACTOR_REQUIRED) set({ syncError: message });
       }
     };
     window.setInterval(() => void refresh(), 60_000);
