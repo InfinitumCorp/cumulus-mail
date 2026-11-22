@@ -12,6 +12,11 @@ test("migrations: up to date, a clean tail to apply in order, or a hole in the m
   assert.deepEqual(levels(tail), ["warn"]);
   assert.match(tail[0].what, /2 migration\(s\) to apply, in this order: 0003_c.sql, 0004_d.sql/);
 
+  // Production today: 0002–0010 applied, 0001_auth.sql copied up later. Pending, not a hole.
+  const prod = checkMigrations(["0001_auth.sql", "0002_b.sql", "0010_j.sql", "0011_k.sql"], ["0002_b.sql", "0010_j.sql"]);
+  assert.deepEqual(levels(prod), ["warn"]);
+  assert.match(prod[0].what, /in this order: 0001_auth.sql, 0011_k.sql/);
+
   const hole = checkMigrations(files, ["0001_a.sql", "0003_c.sql"]);
   assert.deepEqual(levels(hole), ["missing", "warn"]);
   assert.match(hole[0].what, /skipped in the middle: 0002_b.sql/);
