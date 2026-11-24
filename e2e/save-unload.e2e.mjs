@@ -58,3 +58,51 @@ test("while a save is in flight, leaving the page asks first; once it lands, it 
     await context.close();
   }
 });
+
+// The same with a real reload, not a dispatched event: the person trashes a conversation and reloads at
+// once, while its save is still on the wire. The browser asks (a beforeunload dialog); staying lets the
+// save land, and the conversation is still in Trash after the next reload.
+test("reloading right after a change, mid-save, asks first; staying keeps the change", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  try {
+    await page.goto(URL_BASE, { waitUntil: "networkidle" });
+    await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+    await page.waitForFunction(() => document.documentElement.dataset.saving !== "1");
+
+    let release;
+    const held = new Promise((resolve) => (release = resolve));
+    await page.route("**/_serverFn/**", async (route) => {
+      if (route.request().method() === "POST") await held;
+      await route.continue();
+    });
+
+    const first = page.locator("[data-row-id]").first();
+    const id = await first.getAttribute("data-row-id");
+    await first.click();
+    await page.locator('button[aria-label="Trash"]').first().click();
+    await page.locator(`[data-row-id="${id}"]`).waitFor({ state: "detached", timeout: 15_000 });
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.saving), "1", "the save is in flight");
+
+    // Reload now. The browser's "Leave site?" dialog comes up; the person chooses to stay.
+    const dialogs = [];
+    page.on("dialog", async (dialog) => {
+      dialogs.push(dialog.type());
+      await dialog.dismiss();
+    });
+    await page.reload({ timeout: 3_000 }).catch(() => undefined);
+    assert.deepEqual(dialogs, ["beforeunload"], "reloading mid-save asks first");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.saving), "1", "still the same page, save pending");
+
+    release();
+    await page.waitForFunction(() => document.documentElement.dataset.saving === "0", null, { timeout: 15_000 });
+    await page.reload({ waitUntil: "networkidle" });
+    assert.deepEqual(dialogs, ["beforeunload"], "once saved, a reload does not ask");
+    await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator(`[data-row-id="${id}"]`).count(), 0, "still gone from the Inbox after a reload");
+    await page.locator("aside.nav-pane").getByRole("button", { name: /^Trash/ }).first().click();
+    await page.locator(`[data-row-id="${id}"]`).waitFor({ timeout: 15_000 });
+  } finally {
+    await context.close();
+  }
+});
