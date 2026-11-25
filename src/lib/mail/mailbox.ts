@@ -21,6 +21,7 @@ import {
   type StoredAttachment,
 } from "./records.ts";
 import { fileName, type MailboxSnapshot } from "./snapshot.ts";
+import { applyDelta, type MailboxDelta } from "./delta.ts";
 import { assertId } from "./snapshot.ts";
 import { provisionMailbox } from "./seed.ts";
 import type { MailProfile } from "./snapshot.ts";
@@ -108,6 +109,25 @@ export async function checkedAliases(
     throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
   return aliases;
+}
+
+/** A small save (delta.ts): applied on top of what the server has, then written like a full save. */
+export async function writeDelta(
+  db: MailQuery,
+  storageFor: TenantStorage,
+  tenantId: string,
+  delta: MailboxDelta,
+): Promise<MailboxSnapshot> {
+  assertTenantId(tenantId);
+  await writeSnapshot(db, storageFor, tenantId, applyDelta(await readSnapshot(db, tenantId), delta));
+  // The full save this delta stands in for may still be on the wire, carrying an older copy of these
+  // messages. Counting the delta as a server-side change makes that save lose for them, by the same rule
+  // that keeps a scheduled release or a delivery report from being undone by an older tab.
+  const ids = delta.upsert.map((message) => message.id);
+  if (ids.length) {
+    await db.query(`update cumulus_mail.messages set server_rev = server_rev + 1 where tenant_id = $1 and id = any($2::text[])`, [tenantId, ids]);
+  }
+  return readSnapshot(db, tenantId);
 }
 
 export async function writeSnapshot(
