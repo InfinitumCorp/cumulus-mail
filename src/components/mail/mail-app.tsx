@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, lookupPgpKeys, secondFactor, startEasySwitch, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
@@ -49,7 +49,25 @@ import { useMail } from "@/lib/mail/store";
 import { Composer, type DraftForm } from "./composer";
 import { SetupCard, SetupDialog } from "./setup";
 import { MessageList, type InboxTab } from "./message-list";
-import { AccountPanel, CalendarPanel, ContactsPanel, TasksPanel } from "./panels";
+/**
+ * The account dialog and the calendar, contacts and tasks views load on first use: with their controls
+ * (billing, export, deletion, devices, contacts import) they are a large part of the mail chunk, and the
+ * inbox does not need them to paint. Nothing is shown for the moment the chunk takes to arrive.
+ */
+function onFirstUse<P extends object>(load: () => Promise<ComponentType<P>>): ComponentType<P> {
+  const Lazy = lazy(async () => ({ default: await load() })) as unknown as ComponentType<P>;
+  return function OnFirstUse(props: P) {
+    return (
+      <Suspense fallback={null}>
+        <Lazy {...props} />
+      </Suspense>
+    );
+  };
+}
+const AccountPanel = onFirstUse(() => import("./panels").then((m) => m.AccountPanel));
+const CalendarPanel = onFirstUse(() => import("./panels").then((m) => m.CalendarPanel));
+const ContactsPanel = onFirstUse(() => import("./panels").then((m) => m.ContactsPanel));
+const TasksPanel = onFirstUse(() => import("./panels").then((m) => m.TasksPanel));
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
 import { applyTheme } from "@/lib/theme";
