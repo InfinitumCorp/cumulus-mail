@@ -32,7 +32,7 @@ import {
   markThreadUnread,
   isSealedMessage,
 } from "@/lib/mail/logic";
-import { shareRequest } from "@/lib/mail/calendar-share";
+import { shareAddress, shareRequest } from "@/lib/mail/calendar-share";
 import { type Attachment, type BoxId, type CalEvent, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
 import { createFolder, deleteFolder, folderLabel, folderNameError, moveThreads, renameFolder } from "@/lib/mail/folders";
 import { buildReply, parseInvite } from "@/lib/mail/invite";
@@ -1209,6 +1209,10 @@ export function MailApp() {
               (event) => !query.trim() || `${event.title} ${event.with} ${event.where}`.toLowerCase().includes(query.trim().toLowerCase()),
             )}
             onShare={(event: CalEvent, email: string) => {
+              if (!shareAddress(email)) {
+                setNotice("Enter an email address to share with.");
+                return;
+              }
               const sent = shareRequest(event, { name: me.name, email: me.email }, email, `m-${Date.now().toString(36)}`);
               saveMessage(sent);
               setNotice("Invitation saved in Sent.");
