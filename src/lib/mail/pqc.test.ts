@@ -28,14 +28,15 @@ test("a client-held index matches on another device with the same passphrase and
   assert.deepEqual(await searchClientIndex(index, await indexKey("other-passphrase", salt), "budget"), []);
 });
 
-test("new passphrase wraps are versioned and older unversioned wraps still open", async () => {
+test("new passphrase wraps keep the plain format every build reads, and older wraps still open", async () => {
   const ada = await generateHybrid("passphrase-ada");
-  assert.match(ada.wrappedSecrets, /^w2\.[A-Za-z0-9_-]+$/);
+  // The pattern a build from before #200 accepts (settings.ts b64url): no prefix, so a rollback keeps the key.
+  assert.match(ada.wrappedSecrets, /^[A-Za-z0-9_-]+$/);
   const secrets = await openHybridSecrets(ada.wrappedSecrets, "passphrase-ada");
 
   // Re-wrap the same secrets the way builds before the version prefix did: PBKDF2 at 100,000 rounds, no prefix.
   const b64u = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
-  const packed = Buffer.from(ada.wrappedSecrets.slice(3), "base64url");
+  const packed = Buffer.from(ada.wrappedSecrets, "base64url");
   const plain = await (async () => {
     const salt = packed.subarray(0, 16);
     const base = await crypto.subtle.importKey("raw", new TextEncoder().encode("passphrase-ada"), "PBKDF2", false, ["deriveBits"]);
@@ -58,14 +59,20 @@ test("new passphrase wraps are versioned and older unversioned wraps still open"
   const reopened = await openHybridSecrets(legacy, "passphrase-ada");
   assert.deepEqual(reopened, secrets);
   await assert.rejects(() => openHybridSecrets(legacy, "wrong-passphrase-here"));
-  // A legacy wrap read as v2 (or the reverse) must not open.
+  // "w2." values (written by #200 for a while) still open, at the current rounds only.
+  const prefixed = "w2." + ada.wrappedSecrets;
+  assert.deepEqual(await openHybridSecrets(prefixed, "passphrase-ada"), secrets);
   await assert.rejects(() => openHybridSecrets("w2." + legacy, "passphrase-ada"));
 
-  // Unlocking re-wraps an old key once; the new wrap opens to the same secrets and is not upgraded again.
+  // Unlocking re-wraps an old or prefixed key once, into the plain current form; a current one is left alone.
   const upgraded = await upgradeHybridWrap(legacy, "passphrase-ada");
-  assert.match(upgraded ?? "", /^w2\./);
+  assert.match(upgraded ?? "", /^[A-Za-z0-9_-]+$/);
   assert.deepEqual(await openHybridSecrets(upgraded!, "passphrase-ada"), secrets);
   assert.equal(await upgradeHybridWrap(upgraded!, "passphrase-ada"), undefined);
+  assert.equal(await upgradeHybridWrap(ada.wrappedSecrets, "passphrase-ada"), undefined);
+  const unprefixed = await upgradeHybridWrap(prefixed, "passphrase-ada");
+  assert.match(unprefixed ?? "", /^[A-Za-z0-9_-]+$/);
+  assert.deepEqual(await openHybridSecrets(unprefixed!, "passphrase-ada"), secrets);
   await assert.rejects(() => upgradeHybridWrap(legacy, "wrong-passphrase-here"));
 
   // Both forms survive a settings save unchanged; anything else after the prefix is dropped.
@@ -79,5 +86,6 @@ test("new passphrase wraps are versioned and older unversioned wraps still open"
     }).mailboxKey?.hybrid?.wrappedSecrets;
   assert.equal(keep(ada.wrappedSecrets), ada.wrappedSecrets);
   assert.equal(keep(legacy), legacy);
+  assert.equal(keep(prefixed), prefixed);
   assert.equal(keep("w2.not base64!"), undefined);
 });

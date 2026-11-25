@@ -65,6 +65,9 @@ test("a security key registers and then signs in, and a bad origin or a replayed
   // A deployed copy refuses localhost, whichever signal says it is deployed.
   assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { NODE_ENV: "production" }), null);
   assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { BETTER_AUTH_URL: "https://mail.cumuluscloud.app" }), null);
+  // The Worker sets neither of those reliably: its committed runtime marker, or a real database, is enough.
+  assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { CUMULUS_RUNTIME: "cloudflare" }), null);
+  assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { DATABASE_URL: "postgres://db/mail" }), null);
   assert.deepEqual(relyingParty("https://mail.cumuluscloud.app", "mail.cumuluscloud.app", { NODE_ENV: "production" }), {
     origin: "https://mail.cumuluscloud.app",
     rpId: "mail.cumuluscloud.app",

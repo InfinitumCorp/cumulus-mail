@@ -10,7 +10,13 @@ const INDEX_INFO = new TextEncoder().encode("cumulus-mail-index-v1");
 /**
  * PBKDF2-SHA-256 rounds for the passphrase wrap. The server stores the wrapped secrets, so it is the
  * party that could test passphrases offline; 600,000 is OWASP's figure for this hash. Wraps made before
- * this used 100,000 and carry no prefix (base64 never contains a dot); new ones are "w2." + base64.
+ * this used 100,000.
+ *
+ * New wraps are plain base64url, the format every build reads. #200 briefly wrote a "w2." prefix; a build
+ * from before #200 (a rollback, a tab left open) rejects that value and, through sanitizeSettings, drops
+ * the whole hybrid key on its next settings save. So the rounds are not marked: a wrap is opened at the
+ * current rounds first and at the old ones if that fails. "w2." values still open, and the unlock upgrade
+ * rewrites them unprefixed.
  */
 export const WRAP_ITERATIONS = 600_000;
 const LEGACY_WRAP_ITERATIONS = 100_000;
@@ -92,13 +98,23 @@ async function wrapBytes(plain: Uint8Array, passphrase: string): Promise<string>
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: view(salt), iterations: WRAP_ITERATIONS, hash: "SHA-256" }, base, 256);
   const mixed = await hkdf(new Uint8Array(bits), WRAP_INFO, salt);
   const { iv, box } = await aesEncrypt(mixed, plain);
-  return WRAP_V2 + b64(concat(salt, iv, box));
+  return b64(concat(salt, iv, box));
 }
 
-async function unwrapBytes(packed: string, passphrase: string): Promise<Uint8Array> {
-  const v2 = packed.startsWith(WRAP_V2);
-  const iterations = v2 ? WRAP_ITERATIONS : LEGACY_WRAP_ITERATIONS;
-  const bytes = fromB64(v2 ? packed.slice(WRAP_V2.length) : packed);
+/** The secrets, and whether the stored wrap is already in the current form (current rounds, no prefix). */
+async function unwrapBytes(packed: string, passphrase: string): Promise<{ plain: Uint8Array; current: boolean }> {
+  if (packed.startsWith(WRAP_V2)) {
+    return { plain: await unwrapAt(packed.slice(WRAP_V2.length), passphrase, WRAP_ITERATIONS), current: false };
+  }
+  try {
+    return { plain: await unwrapAt(packed, passphrase, WRAP_ITERATIONS), current: true };
+  } catch {
+    return { plain: await unwrapAt(packed, passphrase, LEGACY_WRAP_ITERATIONS), current: false };
+  }
+}
+
+async function unwrapAt(packed: string, passphrase: string, iterations: number): Promise<Uint8Array> {
+  const bytes = fromB64(packed);
   const salt = bytes.slice(0, 16);
   const iv = bytes.slice(16, 28);
   const box = bytes.slice(28);
@@ -126,14 +142,14 @@ export async function generateHybrid(passphrase: string): Promise<HybridKey> {
   };
 }
 
-/** A wrap made before the version prefix, re-made with the current rounds; undefined when it is already current. */
+/** An old-rounds or "w2."-prefixed wrap, re-made in the current plain form; undefined when it is already current. */
 export async function upgradeHybridWrap(wrappedSecrets: string, passphrase: string): Promise<string | undefined> {
-  if (wrappedSecrets.startsWith(WRAP_V2)) return undefined;
-  return wrapBytes(await unwrapBytes(wrappedSecrets, passphrase), passphrase);
+  const { plain, current } = await unwrapBytes(wrappedSecrets, passphrase);
+  return current ? undefined : wrapBytes(plain, passphrase);
 }
 
 export async function openHybridSecrets(wrappedSecrets: string, passphrase: string): Promise<HybridSecrets> {
-  const packed = await unwrapBytes(wrappedSecrets, passphrase);
+  const { plain: packed } = await unwrapBytes(wrappedSecrets, passphrase);
   const xLen = packed[1] ?? 0;
   const x25519Secret = packed.slice(2, 2 + xLen);
   const mLen = ((packed[2 + xLen] ?? 0) << 8) | (packed[3 + xLen] ?? 0);
