@@ -20,7 +20,9 @@ export type MetricName =
   /** A Content-Security-Policy violation a browser reported: directive, blocked (origin or keyword), path, disposition. */
   | "csp.violation"
   /** A bounce report about mail this mailbox did not send to that address: ignored, never suppresses. */
-  | "mail.dsn.unverified";
+  | "mail.dsn.unverified"
+  /** A mailbox with a key whose message could not be sealed (stored as it arrived). kind: hybrid | openpgp; error: the error class. */
+  | "mail.inbound.seal_failed";
 
 export type MetricFields = Record<string, string | number | boolean | null>;
 

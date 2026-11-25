@@ -11,5 +11,5 @@ export default async function wkdMiddleware(event: WkdEvent, next: () => unknown
   if (!event.url.pathname.startsWith("/.well-known/openpgpkey/")) return next();
   const { getSql } = await import("../../src/lib/db.ts");
   const sql = await getSql();
-  return wkdResponse({ query: (text, params) => sql.query(text, params ?? []) }, event.url.pathname);
+  return wkdResponse({ query: (text, params) => sql.query(text, params ?? []) }, event.url.pathname, event.url.host);
 }

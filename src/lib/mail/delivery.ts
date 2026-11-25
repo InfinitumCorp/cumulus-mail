@@ -15,6 +15,8 @@ import { mailDomain } from "./domain.ts";
 import { currentOutbound } from "./outbound/config.ts";
 import { encryptFor } from "./openpgp.ts";
 import { sealHybridText } from "./pqc.ts";
+import { attachmentForSealed, headersForSealed } from "./zero-access.ts";
+import { metric } from "../observability/metrics.ts";
 import { autocryptHeader } from "./pgp-keys.ts";
 import { buildRawMessage, estimatedRawBytes, MAX_RAW_BYTES, type OutgoingFile } from "./outbound/message.ts";
 import { enqueueOutbound, processOutboundQueue, QUEUED } from "./outbound/queue.ts";
@@ -83,35 +85,44 @@ async function copyInto(
   let sealed = delivered;
   const hybrid = settings.mailboxKey?.hybrid;
   const recipientKey = settings.mailboxKey?.publicKey;
-  if ((hybrid || recipientKey) && !delivered.body.includes("-----BEGIN PGP MESSAGE-----") && !delivered.body.startsWith("cmh1.")) {
+  const sealing = Boolean(hybrid || recipientKey) && !delivered.body.includes("-----BEGIN PGP MESSAGE-----") && !delivered.body.startsWith("cmh1.");
+  if (sealing) {
     try {
+      // The recipient's copy is sealed whole: subject, body, the subject headers, and (with a hybrid
+      // key) every file. Zero-access is claimed only when nothing readable is left.
       sealed = hybrid
         ? {
             ...delivered,
             subject: await sealHybridText(delivered.subject, hybrid),
             body: await sealHybridText(delivered.body, hybrid),
+            headers: headersForSealed(delivered.headers),
             extra: { ...delivered.extra, pgp: true, zeroAccess: true },
           }
         : {
             ...delivered,
             body: await encryptFor(delivered.body, [recipientKey!]),
-            extra: { ...delivered.extra, pgp: true, zeroAccess: true },
+            headers: headersForSealed(delivered.headers),
+            // OpenPGP-only: the subject stays readable, so this copy is not zero-access.
+            extra: { ...delivered.extra, pgp: true },
           };
-    } catch {
+    } catch (error) {
+      metric("mail.inbound.seal_failed", { kind: hybrid ? "hybrid" : "openpgp", error: error instanceof Error ? error.name : "Error" });
       sealed = delivered;
     }
   }
   await insertMessage(db, destTenant, sealed, null);
+  const sealFiles = sealed !== delivered ? hybrid : undefined;
   for (const [index, file] of files.entries()) {
     const stored = await storageFor(senderTenant).get(file.objectKey);
     if (!stored) continue;
     const attachmentId = `a-${id}-${index}`;
-    const saved = await storageFor(destTenant).put(stored.body);
+    const kept = await attachmentForSealed(stored.body, file.contentType ?? "application/octet-stream", sealFiles);
+    const saved = await storageFor(destTenant).put(kept.bytes);
     await insertAttachment(db, destTenant, id, {
       id: attachmentId,
       name: file.name,
-      size: stored.body.byteLength,
-      contentType: file.contentType ?? "application/octet-stream",
+      size: kept.bytes.byteLength,
+      contentType: kept.contentType,
       sha256: saved.sha256,
       objectKey: saved.blobId,
     });

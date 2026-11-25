@@ -15,7 +15,8 @@ import type { MailQuery } from "./query.ts";
 import { limitsFor } from "./plans.ts";
 import { insertAttachment, insertMessage, readSettings, storageUsedBytes } from "./records.ts";
 import { encryptFor } from "./openpgp.ts";
-import { sealHybrid, sealHybridText } from "./pqc.ts";
+import { sealHybridText } from "./pqc.ts";
+import { attachmentForSealed, headersForSealed } from "./zero-access.ts";
 import { feedsEnabled, loadFeeds } from "./spam-feed.ts";
 
 export type InboundEmail = {
@@ -63,25 +64,26 @@ export async function ingestInboundEmail(
 
   const parsed = parseMime(message.raw);
   const storage: TenantBlobs = storageFor(tenantId);
-  const rawSaved = await storage.put(message.raw);
-  const rawKey = rawSaved.blobId;
+  const mailboxSettings = await readSettings(db, tenantId);
+  const hybrid = mailboxSettings.mailboxKey?.hybrid;
+  const mailboxKey = mailboxSettings.mailboxKey?.publicKey;
+  // A mailbox with a key is zero-access: the original MIME (which holds the subject, body and every
+  // file in the clear) is not kept beside the sealed copy. Its only reader is the "original .eml" in a
+  // data export, which such a mailbox goes without.
+  const sealing = Boolean(hybrid || mailboxKey);
+  const rawKey = sealing ? null : (await storage.put(message.raw)).blobId;
 
   const headerType = `${parsed.headers["content-type"] ?? ""} ${parsed.contentType}`;
   if (/multipart\/report|message\/delivery-status/i.test(headerType)) {
     await createBounceHandler(db, tenantId).accept(new TextDecoder().decode(message.raw));
   }
 
-  const mailboxSettings = await readSettings(db, tenantId);
-  const hybrid = mailboxSettings.mailboxKey?.hybrid;
   const attachments = [];
+  let plainFiles = 0;
   for (const [index, file] of parsed.attachments.entries()) {
     const attachmentId = `a-${id}-${index}`;
-    let bytes = file.bytes;
-    let contentType = sanitizeContentType(file.contentType);
-    if (hybrid) {
-      bytes = new TextEncoder().encode(await sealHybrid(bytes, hybrid));
-      contentType = "application/vnd.cumulus.hybrid";
-    }
+    const { bytes, contentType, sealed } = await attachmentForSealed(file.bytes, sanitizeContentType(file.contentType), hybrid);
+    if (!sealed) plainFiles += 1;
     const saved = await storage.put(bytes);
     attachments.push({
       id: attachmentId,
@@ -122,8 +124,7 @@ export async function ingestInboundEmail(
     auth,
     headers: parsed.headers,
   };
-  const mailboxKey = mailboxSettings.mailboxKey?.publicKey;
-  if ((hybrid || mailboxKey) && !draft.body.includes("-----BEGIN PGP MESSAGE-----") && !draft.body.startsWith("cmh1.")) {
+  if (sealing && !draft.body.includes("-----BEGIN PGP MESSAGE-----") && !draft.body.startsWith("cmh1.")) {
     try {
       if (hybrid) {
         draft.subject = await sealHybridText(draft.subject, hybrid);
@@ -131,9 +132,15 @@ export async function ingestInboundEmail(
       } else if (mailboxKey) {
         draft.body = await encryptFor(draft.body, [mailboxKey]);
       }
-      draft.extra = { ...draft.extra, pgp: true, zeroAccess: true };
-    } catch {
-      // A key that cannot encrypt must not drop the message. It is stored as it arrived.
+      draft.headers = headersForSealed(draft.headers);
+      // Zero-access only when nothing readable is left: with an OpenPGP-only key the subject and any
+      // files stay as they arrived (the reader cannot open sealed files without a hybrid key).
+      const whole = Boolean(hybrid) && plainFiles === 0;
+      draft.extra = { ...draft.extra, pgp: true, ...(whole ? { zeroAccess: true } : {}) };
+    } catch (error) {
+      // A key that cannot encrypt must not drop the message: it is stored as it arrived. Said out loud,
+      // so an operator sees a mailbox whose key does not work (docs/ops/alerts.md).
+      metric("mail.inbound.seal_failed", { kind: hybrid ? "hybrid" : "openpgp", error: error instanceof Error ? error.name : "Error" });
     }
   }
   const ruleRows = await db.query<{ id: string; from_match: string; action: string; label: string | null }>(
