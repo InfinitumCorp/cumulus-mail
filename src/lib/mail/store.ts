@@ -20,6 +20,8 @@ import { defaultSettings, sanitizeSettings, type MailSettings } from "./settings
 type MailStore = MailboxSnapshot & {
   syncError: string;
   hydrate: () => void;
+  /** Fetch the mailbox now (after a second-factor unlock): `hydrate` runs once per page. */
+  reload: () => Promise<void>;
   flush: () => Promise<void>;
   markThreadRead: (threadId: string) => void;
   toggleStar: (id: string) => void;
@@ -238,6 +240,16 @@ export const useMail = create<MailStore>((set, get) => ({
     };
     window.setInterval(() => void refresh(), 60_000);
     window.addEventListener("focus", () => void refresh());
+  },
+  reload: async () => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = await getMailbox();
+      remember(saved);
+      if (!dirty || pushing === 0) set({ ...saved, syncError: "" });
+    } catch (error) {
+      set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+    }
   },
   flush: () => (hydratePromise ? hydratePromise.then(() => pushChain) : pushChain),
   markThreadRead: (threadId) => {

@@ -19,6 +19,39 @@ function textOf(bytes: ArrayBuffer): string {
 }
 
 /**
+ * Pass the mailbox's second factor with a security key on this device (the locked screen's other way
+ * in, beside a code). Resolves once the server has checked the key.
+ */
+export async function unlockWithSecurityKey(): Promise<void> {
+  const options = (await secondFactor({ data: { action: "webauthn-assert-options" } })) as {
+    challenge: string;
+    rpId: string;
+    credentialIds: string[];
+  };
+  const got = await navigator.credentials.get({
+    publicKey: {
+      challenge: bytesOf(options.challenge),
+      rpId: options.rpId,
+      allowCredentials: options.credentialIds.map((id) => ({ type: "public-key" as const, id: bytesOf(id) })),
+      timeout: 60_000,
+      userVerification: "preferred",
+    },
+  });
+  if (!got || got.type !== "public-key") throw new Error("No security key answered.");
+  const credential = got as PublicKeyCredential;
+  const assertion = credential.response as AuthenticatorAssertionResponse;
+  await secondFactor({
+    data: {
+      action: "webauthn-assert",
+      id: credential.id,
+      clientDataJSON: textOf(assertion.clientDataJSON),
+      authenticatorData: textOf(assertion.authenticatorData),
+      signature: textOf(assertion.signature),
+    },
+  });
+}
+
+/**
  * Mailbox authenticator and security keys. Sits in the account dialog with the same rows as the rest.
  * Cumulus://ID remains the sign-in. This is a second check on the mailbox itself.
  */

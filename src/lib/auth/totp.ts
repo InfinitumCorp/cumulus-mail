@@ -51,16 +51,26 @@ export function totpCode(secret: string, at = Date.now(), step = 30): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
+/**
+ * The 30-second step `code` belongs to (this step or one either side), or -1. The caller records the
+ * step it accepted, so the same code cannot be used twice within its window (RFC 6238 §5.2).
+ */
+export function matchTotpStep(secret: string, code: string, at = Date.now()): number {
+  const clean = code.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(clean)) return -1;
+  const given = Buffer.from(clean);
+  let found = -1;
+  for (let delta = -1; delta <= 1; delta += 1) {
+    const when = at + delta * 30_000;
+    const expected = Buffer.from(totpCode(secret, when));
+    if (timingSafeEqual(expected, given) && found < 0) found = Math.floor(when / 1000 / 30);
+  }
+  return found;
+}
+
 /** True when `code` matches this step or one step either side. */
 export function verifyTotpCode(secret: string, code: string, at = Date.now()): boolean {
-  const clean = code.replace(/\s/g, "");
-  if (!/^\d{6}$/.test(clean)) return false;
-  const given = Buffer.from(clean);
-  for (let delta = -1; delta <= 1; delta += 1) {
-    const expected = Buffer.from(totpCode(secret, at + delta * 30_000));
-    if (timingSafeEqual(expected, given)) return true;
-  }
-  return false;
+  return matchTotpStep(secret, code, at) >= 0;
 }
 
 export function otpauthUri(email: string, secret: string): string {

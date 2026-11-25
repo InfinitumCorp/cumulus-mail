@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "@/lib/a11y/focus";
 import { Menu, Search, SquarePen } from "lucide-react";
 import { exportMailboxBackup, getAttachment, importMailboxBackup, lookupPgpKeys, secondFactor, startEasySwitch, submitAbuseReport, checkCustomDomain, unsubscribeList, reportSpamMessage } from "@/lib/mail/api";
+import { unlockWithSecurityKey } from "./second-factor-controls";
 import { FACTOR_REQUIRED } from "@/lib/auth/factor-gate";
 import { categorize, subscriptions as listSubscriptions, type Subscription } from "@/lib/mail/categories";
 import { base64ToBytes, bytesToBase64 } from "@/lib/mail/bytes";
@@ -931,7 +932,7 @@ export function MailApp() {
             event.preventDefault();
             const code = String(new FormData(event.currentTarget).get("code") ?? "");
             void secondFactor({ data: { action: "totp-verify", code } })
-              .then(() => useMail.getState().hydrate())
+              .then(() => useMail.getState().reload())
               .catch((error: unknown) => setNotice(error instanceof Error ? error.message : "That code is not valid."));
           }}
         >
@@ -939,6 +940,17 @@ export function MailApp() {
           <input name="code" aria-label="Authenticator or recovery code" className="h-11 w-48 border border-line bg-transparent px-3 text-sm outline-none" />
           <button type="submit" className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink">
             Confirm
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center border border-line px-3 text-sm hover:border-ink"
+            onClick={() =>
+              void unlockWithSecurityKey()
+                .then(() => useMail.getState().reload())
+                .catch((error: unknown) => setNotice(error instanceof Error ? error.message : "That security key did not work."))
+            }
+          >
+            Use security key
           </button>
         </form>
       ) : syncError ? (
@@ -1329,7 +1341,7 @@ export function MailApp() {
             link.click();
             URL.revokeObjectURL(url);
           }}
-          onFactorUnlocked={() => void useMail.getState().hydrate()}
+          onFactorUnlocked={() => void useMail.getState().reload()}
           onImportProvider={(provider) => {
             void startEasySwitch({ data: { provider } })
               .then((result) => {
