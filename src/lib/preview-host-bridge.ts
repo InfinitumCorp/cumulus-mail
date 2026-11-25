@@ -5,8 +5,8 @@
  * Top-level runs (download/export, local `npm run dev`, deployed sites) noop.
  */
 
-import { z } from "zod";
 import { CONNECTOR_TOKEN_READY_EVENT } from "./app-data/types";
+import { PREVIEW_BRIDGE_CHANNEL, PREVIEW_BRIDGE_VERSION, readEnvelope, readHostMessage } from "./preview-bridge-messages";
 import { resolveParentEmbedderOrigin } from "./preview-embedder-origin";
 
 export {
@@ -15,32 +15,7 @@ export {
   resolveParentEmbedderOrigin,
 } from "./preview-embedder-origin";
 
-export const PREVIEW_BRIDGE_CHANNEL = "grok-preview-bridge" as const;
-export const PREVIEW_BRIDGE_VERSION = 1 as const;
-
-const EnvelopeSchema = z.object({
-  channel: z.literal(PREVIEW_BRIDGE_CHANNEL),
-  version: z.number().int().positive(),
-  type: z.string().min(1),
-});
-
-const HelloSchema = EnvelopeSchema.extend({
-  type: z.literal("hello"),
-});
-
-const NavigateSchema = EnvelopeSchema.extend({
-  type: z.literal("navigate"),
-  path: z.string().min(1),
-});
-
-const HistorySchema = EnvelopeSchema.extend({
-  type: z.literal("history"),
-  delta: z.union([z.literal(-1), z.literal(1)]),
-});
-
-const ConnectorTokenReadySchema = EnvelopeSchema.extend({
-  type: z.literal("connector-token-ready"),
-});
+export { PREVIEW_BRIDGE_CHANNEL, PREVIEW_BRIDGE_VERSION } from "./preview-bridge-messages";
 
 export type PreviewHostBridgeOptions = {
   /** Prefer the app router when available; falls back to history.pushState. */
@@ -180,49 +155,35 @@ export function installPreviewHostBridge(
     });
   };
 
-  // Host re-handshake: it may have (re)mounted after our install-time
-  // announce, or asked before we hydrated. Announce again.
-  const onHello = (data: unknown) => {
-    if (!HelloSchema.safeParse(data).success) return;
-    announce();
-  };
-
-  const onNavigate = (data: unknown) => {
-    const parsed = NavigateSchema.safeParse(data);
-    if (!parsed.success) return;
-    navigate(parsed.data.path);
-    // Router navigations often update location asynchronously; report after a tick.
-    queueMicrotask(reportLocation);
-  };
-
-  const onHistory = (data: unknown) => {
-    const parsed = HistorySchema.safeParse(data);
-    if (!parsed.success) return;
-    // Do not history.go(-1) off the first entry — that leaves the preview.
-    if (parsed.data.delta === -1 && isAtHistoryRoot()) return;
-    // Location sync comes from the popstate listener once history settles.
-    window.history.go(parsed.data.delta);
-  };
-
-  const onConnectorTokenReady = (data: unknown) => {
-    if (!ConnectorTokenReadySchema.safeParse(data).success) return;
-    window.dispatchEvent(new Event(CONNECTOR_TOKEN_READY_EVENT));
-  };
-
-  const hostMessageHandlers = new Map<string, (data: unknown) => void>([
-    ["hello", onHello],
-    ["navigate", onNavigate],
-    ["history", onHistory],
-    ["connector-token-ready", onConnectorTokenReady],
-  ]);
-
   const onMessage = (event: MessageEvent) => {
     if (event.source !== window.parent) return;
     if (event.origin !== parentOrigin) return;
 
-    const envelope = EnvelopeSchema.safeParse(event.data);
-    if (!envelope.success || envelope.data.version !== PREVIEW_BRIDGE_VERSION) return;
-    hostMessageHandlers.get(envelope.data.type)?.(event.data);
+    const envelope = readEnvelope(event.data);
+    if (!envelope || envelope.version !== PREVIEW_BRIDGE_VERSION) return;
+    const message = readHostMessage(event.data);
+    if (!message) return;
+    switch (message.type) {
+      // Host re-handshake: it may have (re)mounted after our install-time announce, or asked before we
+      // hydrated. Announce again.
+      case "hello":
+        announce();
+        return;
+      case "navigate":
+        navigate(message.path);
+        // Router navigations often update location asynchronously; report after a tick.
+        queueMicrotask(reportLocation);
+        return;
+      case "history":
+        // Do not history.go(-1) off the first entry — that leaves the preview.
+        if (message.delta === -1 && isAtHistoryRoot()) return;
+        // Location sync comes from the popstate listener once history settles.
+        window.history.go(message.delta);
+        return;
+      case "connector-token-ready":
+        window.dispatchEvent(new Event(CONNECTOR_TOKEN_READY_EVENT));
+        return;
+    }
   };
 
   const onPopState = () => {

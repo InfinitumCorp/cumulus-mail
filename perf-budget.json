@@ -1,9 +1,9 @@
 {
-  "//": "Raised 2026-11-19: OpenPGP key management, the mailbox second factor, hybrid ML-KEM (a separate chunk), and the Gmail/Outlook and calendar-share controls. OpenPGP stays off the first paint of /.",
-  "totalJsGzip": 430000,
+  "//": "Lowered 2026-11-25 after zod left the browser bundle (#202): with every open PR merged, / measured 204.2 kB, /p 137.4 kB and all client JS 337.5 kB (kB = 1024 bytes); each budget keeps about 10 kB of room. Raised 2026-11-19 for OpenPGP key management, the second factor and hybrid ML-KEM (a separate chunk). OpenPGP stays off the first paint of /.",
+  "totalJsGzip": 370000,
   "largestChunkGzip": 160000,
   "routes": {
-    "/": { "jsGzip": 250000, "fcp": 1500, "load": 3000, "forbid": ["openpgp"] },
-    "/p/00000000000000000000000000000000": { "jsGzip": 165000, "fcp": 1500, "load": 3000 }
+    "/": { "jsGzip": 225000, "fcp": 1500, "load": 3000, "forbid": ["openpgp"] },
+    "/p/00000000000000000000000000000000": { "jsGzip": 150000, "fcp": 1500, "load": 3000 }
   }
 }
