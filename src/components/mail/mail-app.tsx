@@ -116,6 +116,8 @@ export function MailApp() {
   const [setupForced, setSetupForced] = useState(false);
   useEffect(() => {
     setSetupForced(new URLSearchParams(window.location.search).get("setup") === "1");
+    // Earlier builds left a sealed copy of the open mail in IndexedDB at every key unlock; remove it.
+    void import("@/lib/mail/offline-store").then(({ clearOfflineBlob }) => clearOfflineBlob());
   }, []);
   const saveBrief = useMail((s) => s.saveBrief);
   const addTask = useMail((s) => s.addTask);
@@ -1328,9 +1330,6 @@ export function MailApp() {
                   const { openHybridSecrets } = await import("@/lib/mail/pqc");
                   setHybridSecrets(await openHybridSecrets(saved.hybrid.wrappedSecrets, passphrase));
                 }
-                const { sealOffline, saveOfflineBlob } = await import("@/lib/mail/offline-store");
-                const sealed = await sealOffline(JSON.stringify({ messages: useMail.getState().messages }), passphrase);
-                await saveOfflineBlob(sealed).catch(() => undefined);
               })
               .catch((error: unknown) => setKeyError(error instanceof Error ? error.message : "Could not unlock the key."));
           }}

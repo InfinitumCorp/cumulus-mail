@@ -131,3 +131,28 @@ test("offline: the service worker shows the offline page, and nothing it stored 
   });
   await context.close();
 });
+
+test("a sealed offline copy left by an older build is removed when the app loads", async () => {
+  const { context, page } = await phone(390);
+  // What builds before this one wrote at a key unlock: IndexedDB "cumulus-mail", store "offline".
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("cumulus-mail", 1);
+        open.onupgradeneeded = () => open.result.createObjectStore("offline");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const tx = open.result.transaction("offline", "readwrite");
+          tx.objectStore("offline").put("cmo1.sealed-mail", "mailbox");
+          tx.oncomplete = () => {
+            open.result.close();
+            resolve();
+          };
+        };
+      }),
+  );
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+  await page.waitForFunction(async () => !(await indexedDB.databases()).some((db) => db.name === "cumulus-mail"), null, { timeout: 10_000 });
+  await context.close();
+});

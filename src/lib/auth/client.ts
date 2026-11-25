@@ -219,6 +219,8 @@ function waitForPopupToken(popup: Window): Promise<string | null> {
  * preview the local clear is sufficient, so it always resolves.
  */
 export async function signOut(redirectTo = "/"): Promise<void> {
+  // Nothing of the mailbox stays on this device after sign-out (offline-store.ts).
+  await import("../mail/offline-store").then(({ clearOfflineBlob }) => clearOfflineBlob()).catch(() => undefined);
   await runSignOut({
     livePreview: inLivePreview(),
     hasBearer: Boolean(getBearerToken()),
