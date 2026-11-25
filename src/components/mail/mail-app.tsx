@@ -1373,7 +1373,8 @@ export function MailApp() {
             void startEasySwitch({ data: { provider } })
               .then((result) => {
                 if (!result.configured) {
-                  setDomainNote(provider === "google" ? "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." : "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.");
+                  // Words for the person, not the operator's settings.
+                  setDomainNote("Importing straight from Gmail or Outlook is not available yet. Export your mail there as .mbox or .eml files and import those.");
                   return;
                 }
                 window.location.href = result.url;

@@ -10,7 +10,14 @@ const MS_AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 const MS_TOKEN = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const MS_LIST = "https://graph.microsoft.com/v1.0/me/messages";
 
+/**
+ * Off unless MAIL_PROVIDER_IMPORT=on as well as the provider's client: the provider sends the person
+ * back to /api/import/<provider>/callback, and that route does not exist yet (nothing calls
+ * readImportState, exchangeCode or listProviderMessages). Until it does, starting an import would only
+ * end on a 404 after the person granted access to their mail.
+ */
 export function importConfigured(provider: ImportProvider, env: Record<string, string | undefined> = process.env): boolean {
+  if (env.MAIL_PROVIDER_IMPORT?.trim().toLowerCase() !== "on") return false;
   if (provider === "google") return Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
   return Boolean(env.MICROSOFT_CLIENT_ID?.trim() && env.MICROSOFT_CLIENT_SECRET?.trim());
 }
@@ -24,8 +31,14 @@ function redirectUri(provider: ImportProvider, appHost: string): string {
   return `https://${appHost}/api/import/${provider}/callback`;
 }
 
+/**
+ * Signs with a key derived for this one use, like the data-export links and the deletion audit, so the
+ * state handed to the browser is never an HMAC under MAIL_BLOB_KEY itself (which also keys the blind
+ * indexes when MAIL_BLIND_KEY is unset). A state lives 10 minutes, so nothing issued before this matters.
+ */
 function sign(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+  const key = createHmac("sha256", secret).update("cumulus-mail/easy-switch-state/v1").digest();
+  return createHmac("sha256", key).update(payload).digest("base64url");
 }
 
 export function importState(provider: ImportProvider, tenantId: string, secret: string, now = Date.now()): string {
