@@ -933,6 +933,7 @@ export default {
   "Promotions": "Промоакции",
   "Quarantine": "Карантин",
   "Queued from mail · waiting on you": "Из почты · ждёт вас",
+  "Read receipt": "Уведомление о прочтении",
   "Read receipt for “{0}”.": "Уведомление о прочтении: «{0}».",
   "Read: {0}": "Прочитано: {0}",
   "Reading the thread": "Читаю переписку",
@@ -1152,8 +1153,7 @@ export default {
   "You're all caught up.": "Все письма прочитаны.",
   "Your address": "Ваш адрес",
   "Your data": "Ваши данные",
-  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
-  "Read receipt": "Уведомление о прочтении",
-  "Your message was read.": "Ваше письмо прочитано."
+  "Your message was read.": "Ваше письмо прочитано.",
+  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
  }
 };
