@@ -998,6 +998,8 @@ export default {
   "Sender blocked.": "Отправитель заблокирован.",
   "Sent": "Отправленные",
   "Session public key": "Открытый ключ сеанса",
+  "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.": "Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET.",
+  "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.": "Задайте MICROSOFT_CLIENT_ID и MICROSOFT_CLIENT_SECRET.",
   "Set up": "Настроить",
   "Set up authenticator": "Настроить аутентификатор",
   "Set up your mailbox": "Настройка почтового ящика",
@@ -1148,8 +1150,6 @@ export default {
   "You're all caught up.": "Все письма прочитаны.",
   "Your address": "Ваш адрес",
   "Your data": "Ваши данные",
-  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
-  "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.": "Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET.",
-  "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.": "Задайте MICROSOFT_CLIENT_ID и MICROSOFT_CLIENT_SECRET."
+  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
  }
 };
