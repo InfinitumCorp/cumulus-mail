@@ -7,7 +7,14 @@ export const HYBRID_PREFIX = "cmh1.";
 const INFO = new TextEncoder().encode("cumulus-mail-hybrid-v1");
 const WRAP_INFO = new TextEncoder().encode("cumulus-mail-pq-wrap-v1");
 const INDEX_INFO = new TextEncoder().encode("cumulus-mail-index-v1");
-const WRAP_ITERATIONS = 100_000;
+/**
+ * PBKDF2-SHA-256 rounds for the passphrase wrap. The server stores the wrapped secrets, so it is the
+ * party that could test passphrases offline; 600,000 is OWASP's figure for this hash. Wraps made before
+ * this used 100,000 and carry no prefix (base64 never contains a dot); new ones are "w2." + base64.
+ */
+export const WRAP_ITERATIONS = 600_000;
+const LEGACY_WRAP_ITERATIONS = 100_000;
+const WRAP_V2 = "w2.";
 
 export type HybridPublic = { x25519Public: string; mlkemPublic: string };
 export type HybridSecrets = { x25519Secret: Uint8Array; mlkemSecret: Uint8Array };
@@ -85,16 +92,18 @@ async function wrapBytes(plain: Uint8Array, passphrase: string): Promise<string>
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: view(salt), iterations: WRAP_ITERATIONS, hash: "SHA-256" }, base, 256);
   const mixed = await hkdf(new Uint8Array(bits), WRAP_INFO, salt);
   const { iv, box } = await aesEncrypt(mixed, plain);
-  return b64(concat(salt, iv, box));
+  return WRAP_V2 + b64(concat(salt, iv, box));
 }
 
 async function unwrapBytes(packed: string, passphrase: string): Promise<Uint8Array> {
-  const bytes = fromB64(packed);
+  const v2 = packed.startsWith(WRAP_V2);
+  const iterations = v2 ? WRAP_ITERATIONS : LEGACY_WRAP_ITERATIONS;
+  const bytes = fromB64(v2 ? packed.slice(WRAP_V2.length) : packed);
   const salt = bytes.slice(0, 16);
   const iv = bytes.slice(16, 28);
   const box = bytes.slice(28);
   const base = await crypto.subtle.importKey("raw", view(new TextEncoder().encode(passphrase)), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: view(salt), iterations: WRAP_ITERATIONS, hash: "SHA-256" }, base, 256);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: view(salt), iterations, hash: "SHA-256" }, base, 256);
   const mixed = await hkdf(new Uint8Array(bits), WRAP_INFO, salt);
   return aesDecrypt(mixed, iv, box);
 }
@@ -115,6 +124,12 @@ export async function generateHybrid(passphrase: string): Promise<HybridKey> {
     mlkemPublic: b64(kem.publicKey),
     wrappedSecrets: await wrapBytes(packed, passphrase),
   };
+}
+
+/** A wrap made before the version prefix, re-made with the current rounds; undefined when it is already current. */
+export async function upgradeHybridWrap(wrappedSecrets: string, passphrase: string): Promise<string | undefined> {
+  if (wrappedSecrets.startsWith(WRAP_V2)) return undefined;
+  return wrapBytes(await unwrapBytes(wrappedSecrets, passphrase), passphrase);
 }
 
 export async function openHybridSecrets(wrappedSecrets: string, passphrase: string): Promise<HybridSecrets> {

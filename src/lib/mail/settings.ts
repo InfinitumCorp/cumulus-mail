@@ -141,7 +141,11 @@ function asHybrid(value: unknown): HybridMaterial | undefined {
   const row = value as Partial<HybridMaterial>;
   const x25519Public = b64url(row.x25519Public, 40, 50);
   const mlkemPublic = b64url(row.mlkemPublic, 1500, 1700);
-  const wrappedSecrets = b64url(row.wrappedSecrets, 40, 8000);
+  // New wraps carry a "w2." version prefix (see pqc.ts); older ones are bare base64url.
+  const rawWrap = typeof row.wrappedSecrets === "string" ? row.wrappedSecrets : "";
+  const wrapPrefix = rawWrap.startsWith("w2.") ? "w2." : "";
+  const wrapBody = b64url(rawWrap.slice(wrapPrefix.length), 40, 8000);
+  const wrappedSecrets = wrapBody ? wrapPrefix + wrapBody : "";
   if (!x25519Public || !mlkemPublic || !wrappedSecrets) return undefined;
   return { x25519Public, mlkemPublic, wrappedSecrets };
 }
