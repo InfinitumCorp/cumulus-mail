@@ -4,14 +4,24 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #184. Still open, merge in this order, waiting for CI after each:
+Already on `main`: everything up to #191. Production still serves the old page (checked 25 Nov). Still
+open, merge in this order, waiting for CI after each:
 
-1. **#175**: a mailbox import is checked like a save (security).
-2. **#186**: outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, the
-   incident playbook.
-3. **#188**: one-click unsubscribe works on Workers.
-4. **#185**: compressed static files on the Russia copy.
-5. **#187**: these pages, `cutover:check` accepting the pending `0001_auth`, and `keep_vars` on both workers.
+1. **#192**: the mailbox second factor is per session (security; migration 0022).
+2. **#195**: zero-access mail keeps no readable copy; key upload and WKD bounded (security).
+3. **#193**: receipts and unlocks no longer overwrite a sealed message's stored copy.
+4. **#194**: the IMAP bridge is off unless `MAIL_BRIDGE=on`.
+5. **#186**: outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, the
+   incident playbook (migration 0023).
+6. **#196**: a hung save times out and retries by itself.
+7. **#198**: mailbox import held to the plan's limits.
+8. **#199**: Gmail/Outlook direct import off unless `MAIL_PROVIDER_IMPORT=on`.
+9. **#200**: stronger passphrase wrap for new hybrid keys.
+10. **#201**: no sealed copy of mail left on the device.
+11. **#203**: calendar sharing takes only a real address.
+12. **#202**: no zod in the browser (23 kB less on `/`).
+13. **#197**: small post-launch fixes.
+14. The PR that updates these pages.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
@@ -35,7 +45,7 @@ Run each in a shell with that region's settings and `DATABASE_URL` exported.
 npm ci
 npm run cutover:check -- --region us --selector <dkim selector>   # go/no-go, once the secrets exist; read-only
 npm run cutover:check -- --region ru --no-dns
-npm run db:status        # US, then RU: 11 pending (0001_auth, 0011–0020; a new RU database: 21), exit 3
+npm run db:status        # US, then RU: 0001_auth, then 0011 up to the newest file (a new RU database: all), exit 3
 npm run db:migrate       # applies them, in that order
 npm run db:status        # up to date, exit 0
 npm run cutover:check -- --region us                    # now: "ok anon is refused on public.session"
