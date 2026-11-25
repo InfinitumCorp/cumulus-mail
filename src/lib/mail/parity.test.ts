@@ -217,6 +217,19 @@ test("plus addresses, catch-all, auto-reply, holds, and sealed contact fields", 
     const garbled = await issueProtectedLink(db, "par-ada", { ...envelope, expiresAt: "soon" });
     await assert.rejects(() => readProtectedLink(db, garbled.token), /no longer available/);
 
+    // Inside Cumulus the envelope travels with the copy: its expiry gets the same 30-day cap.
+    const latest = await readSnapshot(db, "par-ada");
+    await writeSnapshot(db, storageFor, "par-ada", {
+      ...latest,
+      messages: [
+        ...latest.messages,
+        { ...outgoing, id: "par-prot", threadId: "par-prot", body: "", extra: { protection: { ...envelope, expiresAt: "2099-01-01T00:00:00.000Z" } } },
+      ],
+    });
+    const copy = (await readMessages(db, "par-bea")).find((message) => message.extra?.protection && message.from.email === ada.email);
+    assert.ok(copy, "the protected copy arrived");
+    assert.ok(Date.parse(copy!.extra!.protection!.expiresAt) <= Date.now() + 30 * 24 * 60 * 60 * 1000 + 1_000);
+
     await writeSnapshot(db, storageFor, "par-ada", {
       me: ada,
       messages: [],
