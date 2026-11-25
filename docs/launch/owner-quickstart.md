@@ -4,18 +4,13 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #197 (including #186 and #192–#197, migrations to 0023). Production
-still serves the old page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
+Already on `main`: everything up to #207 except #202 (migrations to 0023). Production still serves the old
+page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
 
-1. **#198**: mailbox import held to the plan's limits.
-2. **#199**: Gmail/Outlook direct import off unless `MAIL_PROVIDER_IMPORT=on`.
-3. **#200**: stronger passphrase wrap for new hybrid keys.
-4. **#201**: no sealed copy of mail left on the device.
-5. **#204**: a deployed copy refuses the localhost WebAuthn relying party.
-6. **#203**: calendar sharing takes only a real address.
-7. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
-8. **#206**: a tab closed mid-save still saves its last change.
-9. The PR that updates these pages.
+1. **#209**: hybrid key wraps keep the format every build reads; localhost WebAuthn check covers Workers.
+2. **#208**: delta save never writes a stale copy over a newer one.
+3. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
+4. The PR that updates these pages.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 

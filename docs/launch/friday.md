@@ -10,18 +10,14 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #197 is merged (25 Nov: including #186 and #192–#197, so migrations
+**Needs on `main`:** everything up to #207 is merged (25 Nov: #186 and #192–#207 except #202, so migrations
 0021–0023 are on main). **Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve
-the old page (no `/api/health`). The PRs still open, in the order to merge them, waiting for CI after each:
-1. #198, a mailbox import is held to the plan's limits;
-2. #199, importing straight from Gmail or Outlook stays off unless `MAIL_PROVIDER_IMPORT=on`;
-3. #200, a stronger passphrase wrap for new hybrid keys (older keys still open);
-4. #201, no sealed copy of mail is left on the device; old copies are deleted on load and at sign-out;
-5. #204, a deployed copy refuses the `http://localhost` WebAuthn relying party;
-6. #203, sharing a calendar event takes only a real address, and its text is escaped;
-7. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets;
-8. #206, a tab closed mid-save still saves its last change (a small keepalive save, `POST /api/mailbox/delta`);
-9. this page's PR.
+the old page (no `/api/health`). Still open, merge before the deploy commit, waiting for CI after each:
+1. #209, review follow-ups: hybrid key wraps keep the format every build reads (a rollback would otherwise drop
+   hybrid keys), and the localhost WebAuthn check also covers Workers. Do not deploy, or roll back to, a commit
+   between #200 and #209;
+2. #208, review follow-ups to the delta save (#206): a stale copy is never written over a newer server copy;
+3. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets.
 
 Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 on 25 Nov: 14 files).
 
