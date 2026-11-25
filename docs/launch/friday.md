@@ -20,7 +20,8 @@ the old page (no `/api/health`). The PRs still open, in the order to merge them,
 5. #204, a deployed copy refuses the `http://localhost` WebAuthn relying party;
 6. #203, sharing a calendar event takes only a real address, and its text is escaped;
 7. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets;
-8. this page's PR.
+8. #206, a tab closed mid-save still saves its last change (a small keepalive save, `POST /api/mailbox/delta`);
+9. this page's PR.
 
 Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 on 25 Nov: 14 files).
 

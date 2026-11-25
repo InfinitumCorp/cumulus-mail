@@ -14,7 +14,8 @@ still serves the old page (checked 25 Nov). Still open, merge in this order, wai
 5. **#204**: a deployed copy refuses the localhost WebAuthn relying party.
 6. **#203**: calendar sharing takes only a real address.
 7. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
-8. The PR that updates these pages.
+8. **#206**: a tab closed mid-save still saves its last change.
+9. The PR that updates these pages.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
