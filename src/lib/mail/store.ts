@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getMailbox, putMailbox } from "@/lib/mail/api";
+import { diffSnapshot } from "@/lib/mail/delta";
 import {
   ME,
   MAX_ALIASES,
@@ -96,7 +97,10 @@ let pushing = 0;
 let knownIds: string[] = [];
 /** The per-message server revs from that snapshot; sent back so the server can spot a stale copy. */
 let knownRevs: Record<string, number> = {};
+/** The last snapshot the server sent (a load or an acknowledged save): what a closing tab diffs against. */
+let savedSnapshot: MailboxSnapshot | null = null;
 const remember = (snapshot: MailboxSnapshot) => {
+  savedSnapshot = snapshot;
   knownIds = snapshot.messages.map((message) => message.id);
   knownRevs = snapshot.revs ?? {};
 };
@@ -240,6 +244,28 @@ export const useMail = create<MailStore>((set, get) => ({
     };
     window.setInterval(() => void refresh(), 60_000);
     window.addEventListener("focus", () => void refresh());
+    // The tab is going away (closed, reloaded, or left after the "leave page?" prompt) with a change the
+    // server has not acknowledged: a save still on the wire, or one waiting for a retry. A full snapshot is
+    // too big for a keepalive request, so send only what changed since the last acknowledged snapshot
+    // (delta.ts). Nothing is sent when nothing is pending, so an idle tab keeps the back/forward cache.
+    // The request must start synchronously here: a page that is unloading runs no later await, which is why
+    // this is a plain route (src/routes/api/mailbox/delta.ts) and not a server function.
+    window.addEventListener("pagehide", () => {
+      if (!savedSnapshot || (pushing === 0 && !retryTimer)) return;
+      const delta = diffSnapshot(savedSnapshot, pick(get()), knownRevs);
+      if (!delta) return;
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      try {
+        // The live preview's session rides a bearer token (src/lib/auth/client.ts BEARER_KEY), not a cookie.
+        const bearer = window.sessionStorage.getItem("grok-auth.bearer-token");
+        if (bearer) headers.authorization = `Bearer ${bearer}`;
+      } catch {
+        // No storage: the cookie carries the session.
+      }
+      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify(delta), headers, keepalive: true, credentials: "same-origin" }).catch(
+        () => undefined,
+      );
+    });
   },
   reload: async () => {
     if (typeof window === "undefined") return;

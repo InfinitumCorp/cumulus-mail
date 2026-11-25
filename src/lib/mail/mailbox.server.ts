@@ -15,7 +15,8 @@ import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
 import { createAbuseIntake } from "./abuse.ts";
 import { createBounceHandler } from "./dsn.ts";
-import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
+import { openMailbox, readAttachment, writeDelta, writeSnapshot } from "./mailbox.ts";
+import type { MailboxDelta } from "./delta.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailAppHost, mailboxAddress } from "./domain.ts";
@@ -149,6 +150,22 @@ export async function writeMailboxForSession(
   await openMailbox(db, tenantId, profile);
   if (verified) await markSendVerified(db, tenantId);
   return writeSnapshot(db, storageFor, tenantId, snapshot);
+}
+
+/** The change a closing tab could not finish saving (delta.ts), sent with keepalive. */
+export async function writeMailboxDeltaForSession(
+  contextUserId: string,
+  delta: MailboxDelta,
+  bearerToken?: string,
+): Promise<{ ok: true }> {
+  const { tenantId, profile, verified } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "delta");
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (verified) await markSendVerified(db, tenantId);
+  await writeDelta(db, storageFor, tenantId, delta);
+  // The page is gone: nobody reads a snapshot back.
+  return { ok: true };
 }
 
 export async function readAttachmentForSession(

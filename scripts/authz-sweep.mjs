@@ -69,6 +69,17 @@ export const ROUTES = {
     { method: "POST", path: "/api/bridge/move", ok: (s) => s === 401 },
     { method: "POST", path: "/api/bridge/move", headers: { authorization: "Bearer forged" }, ok: (s) => s === 401 },
   ],
+  "mailbox/delta": [
+    // A closing tab's small save: no session, no change; and never from another site.
+    { method: "POST", path: "/api/mailbox/delta", body: '{"base":{},"upsert":[],"remove":[]}', headers: { "content-type": "application/json" }, ok: (s) => s === 401 },
+    {
+      method: "POST",
+      path: "/api/mailbox/delta",
+      body: '{"base":{},"upsert":[],"remove":[]}',
+      headers: { "content-type": "application/json", "sec-fetch-site": "cross-site" },
+      ok: (s) => s === 403,
+    },
+  ],
   "bridge/sync": [
     { method: "POST", path: "/api/bridge/sync", ok: (s) => s === 401 },
     { method: "POST", path: "/api/bridge/sync", headers: { authorization: "Bearer forged" }, ok: (s) => s === 401 },
