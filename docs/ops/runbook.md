@@ -21,6 +21,8 @@ Items marked *(after #NN)* depend on a pull request that was open when this was 
 
 ## 1. Incident checklist
 
+Per-symptom first moves (mail not arriving or not sending, sign-in, database down, spam waves, rollback): `incident.md`.
+
 Work down it; write the time next to each step in the incident note.
 
 1. **Confirm and scope.** Which copy (US, RU, both)? What is broken: page, sign-in, sending, receiving?
