@@ -14,7 +14,8 @@ where, the commands in order, go/no-go and the rollback.
 0021–0023 are on main). **Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve
 the old page (no `/api/health`). Still open, merge before the deploy commit, waiting for CI after each:
 1. #209, review follow-ups: hybrid key wraps keep the format every build reads (a rollback would otherwise drop
-   hybrid keys), and the localhost WebAuthn check also covers Workers;
+   hybrid keys), and the localhost WebAuthn check also covers Workers. Do not deploy, or roll back to, a commit
+   between #200 and #209;
 2. #208, review follow-ups to the delta save (#206): a stale copy is never written over a newer server copy;
 3. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets.
 
