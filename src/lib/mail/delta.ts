@@ -53,8 +53,12 @@ export function diffSnapshot(
   const hasFields = Object.keys(fields).length > 0;
   if (!upsert.length && !remove.length && !hasFields) return null;
   if (upsert.length > MAX_UPSERT || remove.length > MAX_REMOVE) return null;
+  // Every message this tab knew and changed or removed carries the rev it saw. The server lists revs only
+  // above 0, so a missing one is 0: without it the server would fill in its own current rev, and a copy
+  // the server changed since (a released send, a delivery report) would not be recognised as newer.
   const base: Record<string, number> = {};
-  for (const message of upsert) if (knownRevs[message.id] !== undefined) base[message.id] = knownRevs[message.id]!;
+  for (const message of upsert) if (before.has(message.id)) base[message.id] = knownRevs[message.id] ?? 0;
+  for (const id of remove) base[id] = knownRevs[id] ?? 0;
   const delta: MailboxDelta = { base, upsert, remove, ...(hasFields ? { fields } : {}) };
   return new TextEncoder().encode(JSON.stringify(delta)).byteLength <= DELTA_MAX_BYTES ? delta : null;
 }

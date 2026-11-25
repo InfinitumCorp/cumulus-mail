@@ -55,7 +55,9 @@ test("a delta carries only what changed since the acknowledged snapshot", () => 
   assert.deepEqual(delta.upsert.map((message) => message.id), ["b", "d"]);
   assert.deepEqual(delta.remove, ["c"]);
   assert.deepEqual(delta.fields, { signature: "new" });
-  assert.deepEqual(delta.base, { b: 3 });
+  assert.deepEqual(delta.base, { b: 3, c: 1 }, "changed and removed messages the tab knew carry their rev; a new one does not");
+  const fromZero = diffSnapshot(saved, snap([{ ...letter("a"), unread: false }, letter("b"), letter("c")]), {});
+  assert.deepEqual(fromZero?.base, { a: 0 }, "a message at rev 0 when the tab loaded says so");
   assert.equal(diffSnapshot(saved, saved, {}), null, "nothing changed, nothing to send");
 });
 
@@ -123,6 +125,8 @@ test("a delta written on the server gives the same mailbox as the full save, and
   await writeDelta(db, storageFor, "delta-1", { base: {}, upsert: [], remove: [], fields: { signature: "again" } });
   assert.equal((await readSnapshot(db, "delta-1")).messages.some((message) => message.id === "d-new"), true);
 
+  let lastSnap: MailboxSnapshot | null = null;
+  const last0 = () => lastSnap!;
   // The full save the delta stood in for, still on the wire with an older copy, lands after it and loses.
   const before = await readSnapshot(db, "delta-1");
   await writeSnapshot(db, storageFor, "delta-1", {
@@ -134,6 +138,21 @@ test("a delta written on the server gives the same mailbox as the full save, and
   const raced = await readSnapshot(db, "delta-1");
   assert.equal(raced.messages.find((message) => message.id === "d-a")?.folder, "trash", "the older full save did not undo the delta");
   assert.ok((before.revs ?? {})["d-a"]! > 0);
+  lastSnap = await readSnapshot(db, "delta-1");
+
+  // The server changes a message after the tab loaded it at rev 0 (a delivery report, a released send);
+  // the tab's delta, built from its older copy, neither overwrites nor deletes it.
+  await writeSnapshot(db, storageFor, "delta-1", { ...last0(), messages: [...last0().messages, letter("d-r0")], knownIds: last0().messages.map((m) => m.id) });
+  const loaded = await readSnapshot(db, "delta-1");
+  await db.query(`update cumulus_mail.messages set server_rev = server_rev + 1, subject = 'server copy' where tenant_id = $1 and id = $2`, ["delta-1", "d-r0"]);
+  const tabCopy = loaded.messages.find((m) => m.id === "d-r0")!;
+  const upsertStale = diffSnapshot(loaded, { ...loaded, messages: loaded.messages.map((m) => (m.id === "d-r0" ? { ...tabCopy, unread: false } : m)) }, loaded.revs ?? {});
+  assert.deepEqual(upsertStale?.base, { "d-r0": 0 });
+  await writeDelta(db, storageFor, "delta-1", upsertStale!);
+  assert.equal((await readSnapshot(db, "delta-1")).messages.find((m) => m.id === "d-r0")?.subject, "server copy");
+  const removeStale = diffSnapshot(loaded, { ...loaded, messages: loaded.messages.filter((m) => m.id !== "d-r0") }, loaded.revs ?? {});
+  await writeDelta(db, storageFor, "delta-1", removeStale!);
+  assert.equal((await readSnapshot(db, "delta-1")).messages.some((m) => m.id === "d-r0"), true, "not deleted from a stale copy");
 
   // A message the server changed since the tab's base keeps the server's copy.
   await db.query(`update cumulus_mail.messages set server_rev = 5 where tenant_id = $1 and id = $2`, ["delta-1", "d-b"]);

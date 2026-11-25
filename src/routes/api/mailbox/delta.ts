@@ -32,8 +32,27 @@ export const Route = createFileRoute("/api/mailbox/delta")({
         }
         const declared = Number(request.headers.get("content-length") ?? "0");
         if (declared > MAX_BODY) return new Response("Too large", { status: 413 });
-        const text = await request.text();
-        if (text.length > MAX_BODY) return new Response("Too large", { status: 413 });
+        // Counted in bytes as it arrives, so a body with no length (chunked) is not read past the cap.
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        const reader = request.body?.getReader();
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > MAX_BODY) {
+            await reader.cancel().catch(() => undefined);
+            return new Response("Too large", { status: 413 });
+          }
+          chunks.push(value);
+        }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        const text = new TextDecoder().decode(bytes);
         const { asDelta } = await import("@/lib/mail/delta-check");
         let delta;
         try {
@@ -46,9 +65,13 @@ export const Route = createFileRoute("/api/mailbox/delta")({
           await writeMailboxDeltaForSession(userId, delta, bearer);
         } catch (error) {
           const { FACTOR_REQUIRED } = await import("@/lib/auth/factor-gate");
+          const { TenantAccessError } = await import("@/lib/storage");
           const message = error instanceof Error ? error.message : "";
-          const status = message === FACTOR_REQUIRED ? 403 : error instanceof Error && error.name === "RateLimitedError" ? 429 : 400;
-          return new Response(status === 400 ? "Not saved" : message, { status });
+          if (message === FACTOR_REQUIRED) return new Response(message, { status: 403 });
+          if (error instanceof TenantAccessError) return new Response("Forbidden", { status: 403 });
+          if (error instanceof Error && error.name === "RateLimitedError") return new Response(message, { status: 429 });
+          // A limit or a bad field, or a failure on our side: the page is gone and cannot retry either way.
+          return new Response("Not saved", { status: 400 });
         }
         return new Response(null, { status: 204 });
       },
