@@ -353,6 +353,7 @@
  "Promotions": "Promotions",
  "Quarantine": "Quarantine",
  "Queued from mail · waiting on you": "Queued from mail · waiting on you",
+ "Read receipt": "Read receipt",
  "Read receipt for “{0}”.": "Read receipt for “{0}”.",
  "Read: {0}": "Read: {0}",
  "Reading the thread": "Reading the thread",
@@ -572,5 +573,6 @@
  "You're all caught up.": "You're all caught up.",
  "Your address": "Your address",
  "Your data": "Your data",
+ "Your message was read.": "Your message was read.",
  "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute."
 }

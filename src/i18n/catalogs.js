@@ -355,6 +355,7 @@ export default {
   "Promotions": "Promotions",
   "Quarantine": "Quarantine",
   "Queued from mail · waiting on you": "Queued from mail · waiting on you",
+  "Read receipt": "Read receipt",
   "Read receipt for “{0}”.": "Read receipt for “{0}”.",
   "Read: {0}": "Read: {0}",
   "Reading the thread": "Reading the thread",
@@ -574,6 +575,7 @@ export default {
   "You're all caught up.": "You're all caught up.",
   "Your address": "Your address",
   "Your data": "Your data",
+  "Your message was read.": "Your message was read.",
   "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute."
  },
  "ru": {
@@ -1150,6 +1152,8 @@ export default {
   "You're all caught up.": "Все письма прочитаны.",
   "Your address": "Ваш адрес",
   "Your data": "Ваши данные",
-  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
+  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+  "Read receipt": "Уведомление о прочтении",
+  "Your message was read.": "Ваше письмо прочитано."
  }
 };
