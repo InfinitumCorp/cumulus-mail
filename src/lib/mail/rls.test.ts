@@ -33,6 +33,8 @@ const TABLES = [
   "data_exports",
   "account_deletions",
   "deletion_audit",
+  "wkd_keys",
+  "second_factors",
 ];
 
 test("row level security is enabled on every mail table and no policies are added", async () => {

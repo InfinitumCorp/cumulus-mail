@@ -81,3 +81,14 @@ test("the guarded API config keeps Nitro's module rules, so every chunk is uploa
   const guarded = guardConfig("api", parseJsonc(written), { hyperdriveId: "0".repeat(32) });
   assert.deepEqual(guarded.rules, [{ type: "ESModule", globs: ["**/*.mjs", "**/*.js"] }]);
 });
+
+test("both workers keep dashboard variables across deploys, and none of the day-of switches is pinned in config", () => {
+  for (const file of ["workers/api/wrangler.jsonc", "workers/email/wrangler.jsonc"]) {
+    const config = readWorkerConfig(file);
+    assert.equal(config.keep_vars, true, file);
+    // A var in the config overwrites the dashboard on every deploy, so these must stay out of it.
+    for (const name of ["MAIL_AUTH_DNS", "MAIL_MAINTENANCE", "MAIL_CSP", "MAIL_SMTP_HOST"]) {
+      assert.equal(Object.hasOwn(config.vars ?? {}, name), false, `${file}: ${name}`);
+    }
+  }
+});

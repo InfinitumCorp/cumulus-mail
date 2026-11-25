@@ -25,6 +25,9 @@ export const ACTION_LIMITS = {
   brief: [60, 3600],
   spamReport: [200, 3600],
   deletion: [20, 3600],
+  /** Authenticator and security-key attempts, and WKD lookups. */
+  factor: [30, 600],
+  pgpLookup: [60, 3600],
 } as const satisfies Record<string, readonly [number, number]>;
 
 export type LimitedAction = keyof typeof ACTION_LIMITS;

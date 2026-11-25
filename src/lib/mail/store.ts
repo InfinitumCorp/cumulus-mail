@@ -14,6 +14,7 @@ import {
 } from "./model";
 import type { MailProfile, MailboxSnapshot } from "./snapshot";
 import { mailDomain } from "./domain";
+import { FACTOR_REQUIRED } from "../auth/factor-gate";
 import { defaultSettings, sanitizeSettings, type MailSettings } from "./settings";
 
 type MailStore = MailboxSnapshot & {
@@ -98,11 +99,32 @@ const remember = (snapshot: MailboxSnapshot) => {
   knownRevs = snapshot.revs ?? {};
 };
 
+/**
+ * While a save is in flight, leaving the page (reload, close, typing another address) asks first, as
+ * Gmail does: the save is a normal request and dies with the page, so a change made a moment before a
+ * reload was lost. A full snapshot is far over the 64 KB keepalive limit, so it cannot simply be sent on
+ * the way out. The listener exists only while saving: an idle page keeps the back/forward cache.
+ * `<html data-saving="1|0">` says the same thing to tests.
+ */
+function warnWhileSaving(event: BeforeUnloadEvent) {
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function setPushing(next: number) {
+  const was = pushing;
+  pushing = next;
+  if (typeof window === "undefined") return;
+  document.documentElement.dataset.saving = pushing > 0 ? "1" : "0";
+  if (was === 0 && pushing > 0) window.addEventListener("beforeunload", warnWhileSaving);
+  if (was > 0 && pushing === 0) window.removeEventListener("beforeunload", warnWhileSaving);
+}
+
 function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
   if (typeof window === "undefined") return;
   const mine = ++revision;
   const snapshot = pick(get());
-  pushing += 1;
+  setPushing(pushing + 1);
   pushChain = pushChain
     .catch(() => undefined)
     .then(async () => {
@@ -112,7 +134,7 @@ function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) =
       set({ ...saved, syncError: "" });
     })
     .finally(() => {
-      pushing -= 1;
+      setPushing(pushing - 1);
     })
     .catch((error: unknown) => {
       set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
@@ -154,8 +176,9 @@ export const useMail = create<MailStore>((set, get) => ({
         if (pushing > 0 || revision !== before) return;
         remember(saved);
         set({ ...saved, syncError: "" });
-      } catch {
-        // offline or signed out: the next save or refresh reports it
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message === FACTOR_REQUIRED) set({ syncError: message });
       }
     };
     window.setInterval(() => void refresh(), 60_000);

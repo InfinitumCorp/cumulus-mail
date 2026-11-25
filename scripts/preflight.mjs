@@ -227,6 +227,53 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * The identity providers the copy depends on, checked live (OpenID discovery):
+ *   - the token issuer (CUMULUS_OIDC_ISSUER, else the code default): it must answer with exactly that
+ *     issuer, as the app requires before trusting its keys (src/lib/auth/cumulus-issuer.ts);
+ *   - the sign-in provider for the region (CID_ISSUER / CID_ISSUER_RU, else the defaults): it must answer.
+ * `fetcher` is injectable for tests.
+ */
+export async function checkIssuers(fetcher, env, { region }) {
+  const { DEFAULT_CUMULUS_ISSUER } = await import("../src/lib/auth/issuer-defaults.mjs");
+  const strip = (v) => String(v).trim().replace(/\/+$/, "");
+  const tokenIssuer = strip(env.CUMULUS_OIDC_ISSUER?.trim() || DEFAULT_CUMULUS_ISSUER);
+  const signIn = strip(
+    region === "ru"
+      ? env.CID_ISSUER_RU?.trim() || "https://ru.id.cumuluscloud.app"
+      : env.CID_ISSUER?.trim() || "https://id.cumuluscloud.app",
+  );
+  const out = [];
+  const probe = async (label, base, expectIssuer) => {
+    let response;
+    try {
+      response = await fetcher(`${base}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) });
+    } catch {
+      out.push(missing(`${label} ${base} could not be reached from this machine`, "run preflight where it can be reached, or check the issuer URL", "docs/launch/friday.md step 3"));
+      return;
+    }
+    if (!response.ok) {
+      out.push(missing(`${label} ${base} answers ${response.status} for discovery`, "point the setting at a live issuer (see #177 and the issuer decision in #86)", "docs/launch/friday.md step 3"));
+      return;
+    }
+    let document;
+    try {
+      document = await response.json();
+    } catch {
+      out.push(missing(`${label} ${base}: discovery is not JSON`, "point the setting at an OpenID Connect issuer", "docs/launch/friday.md step 3"));
+      return;
+    }
+    if (expectIssuer && document?.issuer !== base) {
+      out.push(missing(`${label}: discovery names issuer ${document?.issuer}, not ${base}`, `set CUMULUS_OIDC_ISSUER to ${document?.issuer} (the app refuses keys from a mismatched document)`, "docs/launch/friday.md step 3"));
+      return;
+    }
+    out.push(ok(`${label} ${base}`));
+  };
+  await probe("token issuer", tokenIssuer, true);
+  await probe(region === "ru" ? "sign-in (Russia)" : "sign-in", signIn, false);
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.region !== "us" && args.region !== "ru") {
@@ -235,6 +282,7 @@ async function main() {
   }
   const env = process.env;
   const findings = [...checkEnv(env, args), ...checkRepo(undefined, args, env)];
+  if (args.dns) findings.push(...(await checkIssuers(fetch, env, args)));
   if (args.dns) {
     let privatePem = env.MAIL_DKIM_PRIVATE_KEY?.includes("PRIVATE KEY") ? env.MAIL_DKIM_PRIVATE_KEY : undefined;
     if (!privatePem && env.MAIL_DKIM_KEY_PATH) {

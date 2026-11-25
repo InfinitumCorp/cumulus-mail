@@ -16,6 +16,6 @@ export function identityPosture(issuer = DEFAULT_CUMULUS_ISSUER): IdentityPostur
     issuer,
     twoFactor: "delegated-to-cumulus-id",
     methods: ["totp", "security-key", "passkey"],
-    note: "Two-factor codes, passkeys, and security keys are enrolled on Cumulus://ID. This mailbox trusts that sign-in and does not store a second factor.",
+    note: "Cumulus://ID enrolls authenticator codes, passkeys, and security keys. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.",
   };
 }

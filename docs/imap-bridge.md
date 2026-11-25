@@ -1,6 +1,6 @@
 # Read-only IMAP bridge: scope
 
-Status: **phase 1 and phase 2 (server side) built, off by default** (`MAIL_BRIDGE=on`; writes also need `MAIL_BRIDGE_WRITE=on`); the bridge program itself is not written. `src/lib/mail/bridge.ts` holds the placeholder design
+Status: **the server API is on unless `MAIL_BRIDGE=off`**. Writes still need `MAIL_BRIDGE_WRITE=on`. The local program is `bridge/cumulus-bridge.mjs` (127.0.0.1 only). `src/lib/mail/bridge.ts` holds the design
 (IMAP on `127.0.0.1:1143`, STARTTLS) that the account dialog shows, and the parity table lists the bridge as
 deferred. This page says what a first, **read-only** bridge would take, so it can be planned and estimated.
 
