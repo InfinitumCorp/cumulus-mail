@@ -112,3 +112,35 @@ test("restoring one's own export still works: mail, aliases and sent copies come
   assert.ok(restored.messages.some((m) => m.id === "fay-out"));
   assert.equal((await readSnapshot(db, "imp-gus")).messages.filter((m) => m.subject === "Hello Gus").length, 1, "not delivered again");
 });
+
+test("an import keeps to a save's limits the import way: trimmed to the plan, oversize files and unknown blobs left out", async () => {
+  const { db, storageFor } = harness;
+  const { bytesToBase64 } = await import("./bytes.ts");
+  const { checksumOf } = await import("../storage/adapter.ts");
+  const { MAX_ATTACHMENT, MAX_BODY, MAX_FILES } = await import("./mailbox.ts");
+  await openMailbox(db, "imp-lim", profile("imp-lim", "imp.lim@cumuluscloud.app", "Lim"));
+  const limits = (await readSnapshot(db, "imp-lim")).me.limits!;
+
+  const small = new TextEncoder().encode("a small file");
+  const big = new Uint8Array(MAX_ATTACHMENT + 1);
+  const blobs = [
+    { objectKey: "small", sha256: await checksumOf(small), dataBase64: bytesToBase64(small) },
+    { objectKey: "big", sha256: await checksumOf(big), dataBase64: bytesToBase64(big) },
+  ];
+  const file = (id: string, objectKey: string) => ({ messageId: "lim-1", id, name: `${id}.txt`, size: 10, contentType: "text/plain", sha256: "x", objectKey });
+  const attachments = [
+    ...Array.from({ length: MAX_FILES + 2 }, (_, i) => file(`f${i}`, "small")),
+    file("huge", "big"),
+    file("elsewhere", "not-in-this-backup"),
+  ];
+  const message = { ...mail("lim-1", "inbox", "x@example.com", "imp.lim@cumuluscloud.app", "Limits"), body: "y".repeat(MAX_BODY + 50), folder: "folder-missing" as MailMessage["folder"] };
+  const aliases = Array.from({ length: limits.aliases + 3 }, (_, i) => `lim.${i}@cumuluscloud.app`);
+  const restored = await importMailbox(db, storageFor, "imp-lim", await backupOf("imp-lim", { messages: [message], aliases, blobs, attachments }));
+
+  assert.equal(restored.aliases.length, limits.aliases, "aliases trimmed to the plan, not refused");
+  const back = restored.messages.find((item) => item.id === "lim-1")!;
+  assert.equal(back.folder, "inbox", "an unknown folder goes back to the Inbox");
+  assert.equal(back.body.length, MAX_BODY);
+  const rows = await db.query<{ object_key: string }>(`select object_key from cumulus_mail.attachments where tenant_id = $1`, ["imp-lim"]);
+  assert.equal(rows.length, MAX_FILES, "at most MAX_FILES files, none for the oversize or the missing blob");
+});

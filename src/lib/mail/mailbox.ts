@@ -26,9 +26,9 @@ import { assertId } from "./snapshot.ts";
 import { provisionMailbox } from "./seed.ts";
 import type { MailProfile } from "./snapshot.ts";
 
-const MAX_ATTACHMENT = 25 * 1024 * 1024;
-const MAX_FILES = 8;
-const MAX_BODY = 1_000_000;
+export const MAX_ATTACHMENT = 25 * 1024 * 1024;
+export const MAX_FILES = 8;
+export const MAX_BODY = 1_000_000;
 
 
 export async function openMailbox(db: MailQuery, tenantId: string, profile: MailProfile): Promise<MailboxSnapshot> {
@@ -105,6 +105,8 @@ export async function checkedAliases(
     aliases.push(email);
   }
   const allowed = Math.max(limits.aliases, current.aliases.length);
+  // An import restores what the plan allows and leaves the rest out; a save says no.
+  if (aliases.length > allowed && ownedByOther === "skip") return aliases.slice(0, allowed);
   if (aliases.length > allowed) {
     throw new Error(`You can have up to ${limits.aliases} addresses.`);
   }
