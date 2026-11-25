@@ -106,3 +106,46 @@ test("reloading right after a change, mid-save, asks first; staying keeps the ch
     await context.close();
   }
 });
+
+// A save that hangs is abandoned (SAVE_TIMEOUT_MS; shortened here) so it cannot hold the "leave page?"
+// prompt and every later save forever, and the change is retried by itself and lands.
+test("a hung save times out, the page says so, and the change is saved again by itself", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  await context.addInitScript(() => {
+    globalThis.__mailSaveTimeoutMs = 1_500;
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(URL_BASE, { waitUntil: "networkidle" });
+    await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+    await page.waitForFunction(() => document.documentElement.dataset.saving !== "1");
+
+    // Saves hang (never answer) until the page has said so; after that they go through.
+    let hang = true;
+    await page.route("**/_serverFn/**", async (route) => {
+      if (route.request().method() === "POST" && hang) {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        await route.abort().catch(() => undefined);
+        return;
+      }
+      await route.continue();
+    });
+    const first = page.locator("[data-row-id]").first();
+    const id = await first.getAttribute("data-row-id");
+    await first.click();
+    await page.locator('button[aria-label="Trash"]').first().click();
+    await page.getByText("Could not save your last change yet").waitFor({ timeout: 15_000 });
+    hang = false;
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.saving), "0", "the hung save no longer holds the page");
+    assert.equal(await leavingIsBlocked(page), false);
+
+    // The retry (5 s later) lands, and the notice goes.
+    await page.getByText("Could not save your last change yet").waitFor({ state: "detached", timeout: 20_000 });
+    await page.unroute("**/_serverFn/**");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator(`[data-row-id="${id}"]`).count(), 0, "the change was saved by the retry");
+  } finally {
+    await context.close();
+  }
+});

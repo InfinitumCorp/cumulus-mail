@@ -120,15 +120,52 @@ function setPushing(next: number) {
   if (was > 0 && pushing === 0) window.removeEventListener("beforeunload", warnWhileSaving);
 }
 
+/**
+ * A save that has not answered in this long is abandoned, so a request that hangs (a stalled mobile
+ * network, a proxy that never answers) cannot hold the "leave page?" prompt and every later save
+ * forever. The change stays in this tab and is retried (below). Tests may shorten it through
+ * `globalThis.__mailSaveTimeoutMs`.
+ */
+export const SAVE_TIMEOUT_MS = 60_000;
+/** Shown while a change waits for a retry (a `message` key, so the i18n extractor picks it up). */
+export const SAVE_RETRY = { message: "Could not save your last change yet. It is kept here and will be saved again shortly." };
+/** Waits before retrying a save that timed out or never reached the server: 5 s, 15 s, 60 s, then every 2 min. */
+export const SAVE_RETRY_MS = [5_000, 15_000, 60_000, 120_000];
+let failedSaves = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+const saveTimeoutMs = () => {
+  const override = (globalThis as { __mailSaveTimeoutMs?: unknown }).__mailSaveTimeoutMs;
+  return typeof override === "number" && override > 0 ? override : SAVE_TIMEOUT_MS;
+};
+
+/**
+ * Only failures of the transport are retried: a timeout, or a request that never got an answer
+ * (offline). A refusal from the server (a conflict, a missing second factor, a limit) comes back as
+ * an error message and needs the person, not another try.
+ */
+export function retryableSaveError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.name === "TimeoutError" || error.name === "TypeError";
+}
+
 function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
   if (typeof window === "undefined") return;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
   const mine = ++revision;
   const snapshot = pick(get());
   setPushing(pushing + 1);
   pushChain = pushChain
     .catch(() => undefined)
     .then(async () => {
-      const saved = await putMailbox({ data: { ...snapshot, knownIds, knownRevs } });
+      const saved = await putMailbox({
+        data: { ...snapshot, knownIds, knownRevs },
+        signal: AbortSignal.timeout(saveTimeoutMs()),
+      });
+      failedSaves = 0;
       remember(saved);
       if (mine !== revision) return;
       set({ ...saved, syncError: "" });
@@ -137,7 +174,25 @@ function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) =
       setPushing(pushing - 1);
     })
     .catch((error: unknown) => {
-      set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+      // A newer save is already queued behind this one and carries the same state: nothing to say.
+      if (retryableSaveError(error) && mine !== revision) throw error;
+      const retry = retryableSaveError(error) && mine === revision;
+      set({
+        syncError: retry
+          ? SAVE_RETRY.message
+          : error instanceof Error
+            ? error.message
+            : "Mailbox sync failed",
+      });
+      if (retry) {
+        // Nothing newer is queued (a newer change would carry this one): try the same state again.
+        const wait = SAVE_RETRY_MS[Math.min(failedSaves, SAVE_RETRY_MS.length - 1)]!;
+        failedSaves += 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (mine === revision) schedulePush(get, set);
+        }, wait);
+      }
       throw error;
     });
 }
