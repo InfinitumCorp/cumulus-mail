@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { shareRequest } from "./calendar-share.ts";
 import { assertLoopback, imapStep, type ImapSession } from "./bridge/imap-core.ts";
-import { authorizeUrl, importState, messagesFromGmail, messagesFromGraph, readImportState } from "./easy-switch.ts";
+import { authorizeUrl, importConfigured, importState, messagesFromGmail, messagesFromGraph, readImportState } from "./easy-switch.ts";
 import { keyUrl, lookupDirectoryKey, publishDirectoryKey } from "./id-directory.ts";
 import { openOffline, sealOffline } from "./offline-store.ts";
 import { listedDomain, parseFeed, resetFeedCache } from "./spam-feed.ts";
@@ -76,4 +76,11 @@ test("sharing an event builds an invitation the recipient can be sealed for", ()
   assert.match(message.body, /METHOD:REQUEST/);
   assert.match(message.body, /bea@cumuluscloud.app/);
   assert.equal(message.subject.includes(SEED_MESSAGES[0]!.subject), false);
+});
+
+test("provider import stays off until its switch is on (its callback route does not exist yet)", () => {
+  const google = { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret" };
+  assert.equal(importConfigured("google", google), false, "client ids alone do not send people to a 404");
+  assert.equal(importConfigured("google", { ...google, MAIL_PROVIDER_IMPORT: "on" }), true);
+  assert.equal(importConfigured("microsoft", { MAIL_PROVIDER_IMPORT: "on" }), false);
 });

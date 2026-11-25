@@ -237,6 +237,7 @@ export default {
   "Import the private key to read mail. A public key alone cannot unlock this mailbox.": "Import the private key to read mail. A public key alone cannot unlock this mailbox.",
   "Imported {0} messages.": "Imported {0} messages.",
   "Imported: {0}.": "Imported: {0}.",
+  "Importing straight from Gmail or Outlook is not available yet. Export your mail there as .mbox or .eml files and import those.": "Importing straight from Gmail or Outlook is not available yet. Export your mail there as .mbox or .eml files and import those.",
   "Inbox": "Inbox",
   "Inbox categories": "Inbox categories",
   "Invitation saved in Sent.": "Invitation saved in Sent.",
@@ -422,8 +423,6 @@ export default {
   "Sender blocked.": "Sender blocked.",
   "Sent": "Sent",
   "Session public key": "Session public key",
-  "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.": "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
-  "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.": "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.",
   "Set up": "Set up",
   "Set up authenticator": "Set up authenticator",
   "Set up your mailbox": "Set up your mailbox",
@@ -813,6 +812,7 @@ export default {
   "Import the private key to read mail. A public key alone cannot unlock this mailbox.": "Импортируйте закрытый ключ, чтобы читать почту. Одного открытого ключа недостаточно, чтобы открыть этот ящик.",
   "Imported {0} messages.": "Импортировано сообщений: {0}.",
   "Imported: {0}.": "Импортировано: {0}.",
+  "Importing straight from Gmail or Outlook is not available yet. Export your mail there as .mbox or .eml files and import those.": "Импорт напрямую из Gmail или Outlook пока недоступен. Выгрузите почту там в файлы .mbox или .eml и импортируйте их.",
   "Inbox": "Входящие",
   "Inbox categories": "Категории входящих",
   "Invitation saved in Sent.": "Приглашение сохранено в Отправленных.",
@@ -998,8 +998,6 @@ export default {
   "Sender blocked.": "Отправитель заблокирован.",
   "Sent": "Отправленные",
   "Session public key": "Открытый ключ сеанса",
-  "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.": "Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET.",
-  "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.": "Задайте MICROSOFT_CLIENT_ID и MICROSOFT_CLIENT_SECRET.",
   "Set up": "Настроить",
   "Set up authenticator": "Настроить аутентификатор",
   "Set up your mailbox": "Настройка почтового ящика",
@@ -1150,6 +1148,8 @@ export default {
   "You're all caught up.": "Все письма прочитаны.",
   "Your address": "Ваш адрес",
   "Your data": "Ваши данные",
-  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
+  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+  "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.": "Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET.",
+  "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.": "Задайте MICROSOFT_CLIENT_ID и MICROSOFT_CLIENT_SECRET."
  }
 };
