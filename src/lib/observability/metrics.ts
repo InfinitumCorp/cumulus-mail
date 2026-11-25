@@ -9,6 +9,10 @@
 export type MetricName =
   /** One per outbound recipient attempt. outcome: sent | retry | bounced; status: the SMTP enhanced status. */
   | "mail.outbound.result"
+  /** Outside mail not queued. reason: too_many_recipients | paused | new_accounts_busy. */
+  | "mail.outbound.held"
+  /** Outside sending paused for a mailbox. by: auto (spam burst) | admin (kill switch); hours. */
+  | "mail.outbound.paused"
   /** Per scheduled run: queued, sending, oldestQueuedSeconds. */
   | "mail.queue.depth"
   /** One per inbound message offered. outcome: stored | duplicate | rejected | no_mailbox | other_domain | failed. */
