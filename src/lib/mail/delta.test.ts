@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { TenantAccessError } from "../storage/adapter.ts";
-import { applyDelta, asDelta, diffSnapshot, DELTA_MAX_BYTES } from "./delta.ts";
+import { applyDelta, diffSnapshot, DELTA_MAX_BYTES } from "./delta.ts";
+import { asDelta } from "./delta-check.ts";
 import { openMailbox, writeDelta, writeSnapshot } from "./mailbox.ts";
 import { readSnapshot } from "./records.ts";
 import { createHarness, profile } from "./test-support.ts";

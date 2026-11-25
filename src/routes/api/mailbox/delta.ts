@@ -34,7 +34,7 @@ export const Route = createFileRoute("/api/mailbox/delta")({
         if (declared > MAX_BODY) return new Response("Too large", { status: 413 });
         const text = await request.text();
         if (text.length > MAX_BODY) return new Response("Too large", { status: 413 });
-        const { asDelta } = await import("@/lib/mail/delta");
+        const { asDelta } = await import("@/lib/mail/delta-check");
         let delta;
         try {
           delta = asDelta(JSON.parse(text));
