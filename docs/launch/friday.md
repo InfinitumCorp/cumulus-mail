@@ -10,26 +10,19 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #191 is merged (including #175, #185, #187, #188 and #190).
-**Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve the old page (no
-`/api/health`). The PRs still open, in the order to merge them, waiting for CI after each:
-1. #192, the mailbox second factor is per session and can no longer be skipped (security; migration 0022);
-2. #195, zero-access mail no longer keeps a readable copy beside it; uploaded keys and WKD are bounded (security);
-3. #193, a read receipt or unlock no longer saves the display copy of a sealed message over the stored one;
-4. #194, the IMAP bridge is off unless `MAIL_BRIDGE=on`;
-5. #186, outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, and
-   `docs/ops/incident.md` (the per-symptom playbook; migration 0023);
-6. #196, a hung save times out and is retried, and the change stays in the tab;
-7. #198, a mailbox import is held to the plan's limits;
-8. #199, importing straight from Gmail or Outlook stays off unless `MAIL_PROVIDER_IMPORT=on`;
-9. #200, a stronger passphrase wrap for new hybrid keys (older keys still open);
-10. #201, no sealed copy of mail is left on the device; old copies are deleted on load and at sign-out;
-11. #203, sharing a calendar event takes only a real address, and its text is escaped;
-12. #202, no zod in the browser (`/` loads 23 kB less JS);
-13. #197, small post-launch fixes (protected-link expiry inside Cumulus, load script);
-14. this page's PR.
+**Needs on `main`:** everything up to #197 is merged (25 Nov: including #186 and #192–#197, so migrations
+0021–0023 are on main). **Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve
+the old page (no `/api/health`). The PRs still open, in the order to merge them, waiting for CI after each:
+1. #198, a mailbox import is held to the plan's limits;
+2. #199, importing straight from Gmail or Outlook stays off unless `MAIL_PROVIDER_IMPORT=on`;
+3. #200, a stronger passphrase wrap for new hybrid keys (older keys still open);
+4. #201, no sealed copy of mail is left on the device; old copies are deleted on load and at sign-out;
+5. #204, a deployed copy refuses the `http://localhost` WebAuthn relying party;
+6. #203, sharing a calendar event takes only a real address, and its text is escaped;
+7. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets;
+8. this page's PR.
 
-Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 once #186 and #192 are in).
+Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 on 25 Nov: 14 files).
 
 **Decide before go:** `MAIL_SPAM_FEEDS`. Unset, inbound mail checks the sender's domain against the URLhaus host
 lists (#189). Those list *websites* that served malware, often compromised small-business sites, so a legitimate
@@ -73,7 +66,7 @@ Tick every line, or move the launch.
       fails if one was skipped in the middle), checks that `anon` is refused on `public.session`, and checks
       the token issuer answers and names itself. **The day before, expect exactly this and nothing else:**
       - `WARN N migration(s) to apply, in this order: 0001_auth.sql, 0011_message_words.sql, …` up to the newest
-        file in `migrations/` (on 25 Nov: 0021, so N = 12; with #186 and #192 merged, 0023 and N = 14).
+        file in `migrations/` (on 25 Nov: 0023, so N = 14).
         `0001_auth.sql` first is right: it was added after production reached 0010, and goes in with 0020;
       - `WARN public.session does not exist yet` (0001 creates it);
       - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
@@ -143,7 +136,7 @@ npm run db:status        # expect: nothing pending, exit 0
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
 **Expected:** the first `db:status` lists the pending files and exits 3: `0001_auth.sql`, then `0011` up to
-the newest file in `migrations/` (on 25 Nov, 12 files to 0021; 14 to 0023 once #186 and #192 are merged; a
+the newest file in `migrations/` (on 25 Nov, 14 files to 0023; a
 new RU database: every file). `db:migrate` prints `applied …` for each, in that order, and `done — N migration(s) applied` (under
 a second on the rehearsal's copy of production). The second `db:status` says `up to date` and exits 0.
 Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail

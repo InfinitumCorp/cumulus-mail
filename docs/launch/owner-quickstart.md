@@ -4,24 +4,17 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #191. Production still serves the old page (checked 25 Nov). Still
-open, merge in this order, waiting for CI after each:
+Already on `main`: everything up to #197 (including #186 and #192–#197, migrations to 0023). Production
+still serves the old page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
 
-1. **#192**: the mailbox second factor is per session (security; migration 0022).
-2. **#195**: zero-access mail keeps no readable copy; key upload and WKD bounded (security).
-3. **#193**: receipts and unlocks no longer overwrite a sealed message's stored copy.
-4. **#194**: the IMAP bridge is off unless `MAIL_BRIDGE=on`.
-5. **#186**: outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, the
-   incident playbook (migration 0023).
-6. **#196**: a hung save times out and retries by itself.
-7. **#198**: mailbox import held to the plan's limits.
-8. **#199**: Gmail/Outlook direct import off unless `MAIL_PROVIDER_IMPORT=on`.
-9. **#200**: stronger passphrase wrap for new hybrid keys.
-10. **#201**: no sealed copy of mail left on the device.
-11. **#203**: calendar sharing takes only a real address.
-12. **#202**: no zod in the browser (23 kB less on `/`).
-13. **#197**: small post-launch fixes.
-14. The PR that updates these pages.
+1. **#198**: mailbox import held to the plan's limits.
+2. **#199**: Gmail/Outlook direct import off unless `MAIL_PROVIDER_IMPORT=on`.
+3. **#200**: stronger passphrase wrap for new hybrid keys.
+4. **#201**: no sealed copy of mail left on the device.
+5. **#204**: a deployed copy refuses the localhost WebAuthn relying party.
+6. **#203**: calendar sharing takes only a real address.
+7. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
+8. The PR that updates these pages.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
