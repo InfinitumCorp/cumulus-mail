@@ -1,10 +1,12 @@
 import { createHash, createPublicKey, createVerify, randomBytes, verify as verifyEd } from "node:crypto";
+import { isDeployedRuntime } from "./auth-settings.ts";
 
 export type RelyingParty = { origin: string; rpId: string };
 
 /**
- * https on the mail host. localhost over http only on a copy that is not deployed (no BETTER_AUTH_URL and
- * NODE_ENV not production, the same test as authRateLimit): a deployed server must never accept a key
+ * https on the mail host. localhost over http only on a copy that is not deployed: not on Workers
+ * (CUMULUS_RUNTIME=cloudflare, committed in wrangler.jsonc), no DATABASE_URL (isDeployedRuntime, the test
+ * the auth secret uses), no BETTER_AUTH_URL and NODE_ENV not production. A deployed server must never accept a key
  * registered for, or an assertion made on, a page served from someone's own machine. Anything else is refused.
  */
 export function relyingParty(
@@ -12,7 +14,7 @@ export function relyingParty(
   appHost: string,
   env: Record<string, string | undefined> = process.env,
 ): RelyingParty | null {
-  const deployed = Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
+  const deployed = isDeployedRuntime(env) || Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
   let url: URL;
   try {
     url = new URL(origin);
