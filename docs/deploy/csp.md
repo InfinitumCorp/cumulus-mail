@@ -4,7 +4,7 @@ Every HTML page from a production build carries a strict, nonce-based policy (`s
 
 ## The policy
 - **Scripts:** this origin, plus the response's nonce. TanStack Router puts that nonce on its own inline bootstrap.
-- **No third-party origins.** No `unsafe-inline` for scripts, no `unsafe-eval`. Zod runs `jitless` (`src/lib/zod-config.ts`), because its JIT probe calls `new Function`.
+- **No third-party origins.** No `unsafe-inline` for scripts, no `unsafe-eval`. No zod in the browser bundle (its JIT probe calls `new Function`); the preview bridge checks its messages by hand.
 - **`frame-ancestors 'none'`.**
 - **Alongside it** (#87): HSTS on https, `Referrer-Policy` and `Permissions-Policy`.
 
