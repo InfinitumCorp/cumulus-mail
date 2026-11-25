@@ -406,3 +406,11 @@ export function quote(message: MailMessage): string {
 export function briefKey(messages: MailMessage[]): string {
   return messages.map((m) => m.id).join(":");
 }
+
+/**
+ * A message whose subject is still sealed (hybrid `cmh1.` or OpenPGP armor): the interface shows a
+ * placeholder or the decrypted text, and must never save either back over the stored message.
+ */
+export function isSealedMessage(message: Pick<MailMessage, "subject">): boolean {
+  return message.subject.startsWith("cmh1.") || message.subject.includes("-----BEGIN PGP MESSAGE-----");
+}

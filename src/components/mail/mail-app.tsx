@@ -29,6 +29,7 @@ import {
   archiveThreads,
   emptyTrash,
   markThreadUnread,
+  isSealedMessage,
 } from "@/lib/mail/logic";
 import { shareRequest } from "@/lib/mail/calendar-share";
 import { type Attachment, type BoxId, type CalEvent, type CustomFolderId, type FolderId, type MailMessage, type MailRule, type MessageExtra, type ViewId } from "@/lib/mail/model";
@@ -266,9 +267,14 @@ export function MailApp() {
   const visibleMessages = messages.map((message) => {
     const open = revealed[message.id];
     if (open) return { ...message, ...open };
-    const sealed = message.subject.startsWith("cmh1.") || message.subject.includes("-----BEGIN PGP MESSAGE-----");
-    return sealed ? { ...message, subject: "Encrypted message" } : message;
+    return isSealedMessage(message) ? { ...message, subject: "Encrypted message" } : message;
   });
+  /**
+   * The message as stored, for anything that saves it back. `reading` is the display copy: decrypted
+   * when the key is unlocked, "Encrypted message" when it is not. Saving that copy would put the
+   * plaintext on the server (breaking zero-access) or overwrite the sealed subject for good.
+   */
+  const storedOf = (id: string) => messages.find((message) => message.id === id) ?? null;
   const allRows = listThreads(visibleMessages, box, query, unreadOnly);
   const rows =
     box === "inbox" && inboxTab !== "all" && inboxTab !== "subscriptions"
@@ -412,10 +418,13 @@ export function MailApp() {
       if (pgp && isArmored(text)) text = await decryptWith(text, pgp.privateKey, pgp.passphrase);
       setOpened((current) => ({ ...current, [reading.id]: text }));
       const spent = spendRead(reading.extra.protection);
-      saveMessage({
-        ...reading,
-        extra: spent.ciphertext ? { ...reading.extra, protection: spent } : { ...reading.extra, protection: undefined },
-      });
+      const stored = storedOf(reading.id);
+      if (stored) {
+        saveMessage({
+          ...stored,
+          extra: spent.ciphertext ? { ...stored.extra, protection: spent } : { ...stored.extra, protection: undefined },
+        });
+      }
       setUnlockError("");
     } catch (error) {
       setUnlockError(error instanceof Error ? error.message : "Could not unlock.");
@@ -1123,8 +1132,12 @@ export function MailApp() {
               onRsvp={(answer) => void answerInvite(answer)}
               onReceipt={(accept) => {
                 if (!reading) return;
-                saveMessage({ ...reading, extra: { ...reading.extra, readReceipt: accept ? "accepted" : "declined" } });
+                const stored = storedOf(reading.id);
+                if (!stored) return;
+                saveMessage({ ...stored, extra: { ...stored.extra, readReceipt: accept ? "accepted" : "declined" } });
                 if (!accept) return;
+                // A sealed message's subject stays out of the (unsealed) receipt in Sent.
+                const named = isSealedMessage(stored) ? "" : reading.subject;
                 saveMessage({
                   id: `rcpt-${Date.now().toString(36)}`,
                   threadId: reading.threadId,
@@ -1132,8 +1145,8 @@ export function MailApp() {
                   from: { name: me.name, email: me.email },
                   to: [reading.from],
                   cc: [],
-                  subject: `Read: ${reading.subject}`,
-                  body: `Read receipt for “${reading.subject}”.`,
+                  subject: named ? `Read: ${named}` : "Read receipt",
+                  body: named ? `Read receipt for “${named}”.` : "Your message was read.",
                   at: new Date().toISOString(),
                   unread: false,
                   starred: false,
