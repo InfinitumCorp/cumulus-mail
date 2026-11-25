@@ -4,7 +4,7 @@ import { findTenantByAddress } from "./directory.ts";
 import { sealText } from "./field-crypto.ts";
 import { applyRules, isCumulus } from "./logic.ts";
 import type { DeliveryHop, MailMessage, MailRule, Person } from "./model.ts";
-import { issueProtectedLink } from "./protect-store.ts";
+import { issueProtectedLink, PROTECTED_LINK_MAX_MS } from "./protect-store.ts";
 import type { MailQuery } from "./query.ts";
 import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, readProfile, readSettings, writeDelivery, writeSettings, type StoredAttachment } from "./records.ts";
 import { isHeld } from "./schedule.ts";
@@ -80,6 +80,13 @@ async function copyInto(
     settings.sieve,
     settings.folders,
   );
+  // A protected message keeps its envelope, whose expiry the sender's client chose. Outside mail gets a
+  // link capped at 30 days (protect-store.ts); a copy inside Cumulus gets the same cap here.
+  if (delivered.extra?.protection) {
+    const asked = Date.parse(delivered.extra.protection.expiresAt);
+    const capped = Math.min(Number.isFinite(asked) ? asked : Date.now(), Date.now() + PROTECTED_LINK_MAX_MS);
+    delivered.extra = { ...delivered.extra, protection: { ...delivered.extra.protection, expiresAt: new Date(capped).toISOString() } };
+  }
   let sealed = delivered;
   const hybrid = settings.mailboxKey?.hybrid;
   const recipientKey = settings.mailboxKey?.publicKey;
