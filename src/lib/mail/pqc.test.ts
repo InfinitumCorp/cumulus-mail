@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sanitizeSettings } from "./settings.ts";
-import { buildClientIndex, generateHybrid, isHybrid, openHybridSecrets, openHybridText, sealHybridText, searchClientIndex, indexKey } from "./pqc.ts";
+import { buildClientIndex, upgradeHybridWrap, generateHybrid, isHybrid, openHybridSecrets, openHybridText, sealHybridText, searchClientIndex, indexKey } from "./pqc.ts";
 
 test("hybrid encryption needs both secrets and does not contain the plaintext", async () => {
   const ada = await generateHybrid("passphrase-ada");
@@ -60,6 +60,13 @@ test("new passphrase wraps are versioned and older unversioned wraps still open"
   await assert.rejects(() => openHybridSecrets(legacy, "wrong-passphrase-here"));
   // A legacy wrap read as v2 (or the reverse) must not open.
   await assert.rejects(() => openHybridSecrets("w2." + legacy, "passphrase-ada"));
+
+  // Unlocking re-wraps an old key once; the new wrap opens to the same secrets and is not upgraded again.
+  const upgraded = await upgradeHybridWrap(legacy, "passphrase-ada");
+  assert.match(upgraded ?? "", /^w2\./);
+  assert.deepEqual(await openHybridSecrets(upgraded!, "passphrase-ada"), secrets);
+  assert.equal(await upgradeHybridWrap(upgraded!, "passphrase-ada"), undefined);
+  await assert.rejects(() => upgradeHybridWrap(legacy, "wrong-passphrase-here"));
 
   // Both forms survive a settings save unchanged; anything else after the prefix is dropped.
   const keep = (wrappedSecrets: string) =>

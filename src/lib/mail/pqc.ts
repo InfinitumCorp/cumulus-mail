@@ -126,6 +126,12 @@ export async function generateHybrid(passphrase: string): Promise<HybridKey> {
   };
 }
 
+/** A wrap made before the version prefix, re-made with the current rounds; undefined when it is already current. */
+export async function upgradeHybridWrap(wrappedSecrets: string, passphrase: string): Promise<string | undefined> {
+  if (wrappedSecrets.startsWith(WRAP_V2)) return undefined;
+  return wrapBytes(await unwrapBytes(wrappedSecrets, passphrase), passphrase);
+}
+
 export async function openHybridSecrets(wrappedSecrets: string, passphrase: string): Promise<HybridSecrets> {
   const packed = await unwrapBytes(wrappedSecrets, passphrase);
   const xLen = packed[1] ?? 0;

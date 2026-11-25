@@ -1278,8 +1278,14 @@ export function MailApp() {
               .then(async (opened) => {
                 setPgp({ publicKey: opened.publicKey, privateKey: opened.privateKey, passphrase });
                 if (saved.hybrid) {
-                  const { openHybridSecrets } = await import("@/lib/mail/pqc");
+                  const { openHybridSecrets, upgradeHybridWrap } = await import("@/lib/mail/pqc");
                   setHybridSecrets(await openHybridSecrets(saved.hybrid.wrappedSecrets, passphrase));
+                  // Keys wrapped before the stronger setting are re-wrapped once, now that the passphrase is known.
+                  const upgraded = await upgradeHybridWrap(saved.hybrid.wrappedSecrets, passphrase).catch(() => undefined);
+                  const current = useMail.getState().settings;
+                  if (upgraded && current?.mailboxKey?.hybrid?.wrappedSecrets === saved.hybrid.wrappedSecrets) {
+                    setSettings({ ...current, mailboxKey: { ...current.mailboxKey, hybrid: { ...current.mailboxKey.hybrid, wrappedSecrets: upgraded } } });
+                  }
                 }
                 const { sealOffline, saveOfflineBlob } = await import("@/lib/mail/offline-store");
                 const sealed = await sealOffline(JSON.stringify({ messages: useMail.getState().messages }), passphrase);
