@@ -59,9 +59,16 @@ test("a security key registers and then signs in, and a bad origin or a replayed
   const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const jwk = privateKey.export({ format: "jwk" }) as { x: string; y: string };
   const credId = Buffer.from("credential-id-16b");
-  const party = relyingParty("http://localhost:8080", "mail.cumuluscloud.app");
+  const party = relyingParty("http://localhost:8080", "mail.cumuluscloud.app", {});
   assert.ok(party);
   assert.equal(relyingParty("http://mail.cumuluscloud.app", "mail.cumuluscloud.app"), null);
+  // A deployed copy refuses localhost, whichever signal says it is deployed.
+  assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { NODE_ENV: "production" }), null);
+  assert.equal(relyingParty("http://localhost:8080", "mail.cumuluscloud.app", { BETTER_AUTH_URL: "https://mail.cumuluscloud.app" }), null);
+  assert.deepEqual(relyingParty("https://mail.cumuluscloud.app", "mail.cumuluscloud.app", { NODE_ENV: "production" }), {
+    origin: "https://mail.cumuluscloud.app",
+    rpId: "mail.cumuluscloud.app",
+  });
   assert.equal(relyingParty("https://evil.example", "mail.cumuluscloud.app"), null);
 
   const challenge = newChallenge();
