@@ -58,7 +58,7 @@ const rfc822 = (from: string, subject: string, extra = "") =>
 test("writes are off unless MAIL_BRIDGE_WRITE=on as well as MAIL_BRIDGE=on", () => {
   assert.equal(bridgeWriteEnabled({}), false);
   assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE: "off", MAIL_BRIDGE_WRITE: "on" }), false, "writes stay off when the bridge is off");
-  assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE_WRITE: "on" }), true, "reads are on by default, so the write flag is enough");
+  assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE_WRITE: "on" }), false, "the bridge is off by default, so the write flag alone is not enough");
   assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE: "on" }), false);
   assert.equal(bridgeWriteEnabled(WRITE), true);
   assert.equal(idleSeconds({}), 25);

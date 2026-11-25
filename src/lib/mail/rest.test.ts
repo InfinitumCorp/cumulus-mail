@@ -60,6 +60,17 @@ test("the local bridge refuses other interfaces and answers a read-only IMAP ses
   assert.match(imapStep(session, "a3 LIST \"\" \"*\"", "secret-pass", folders).join("\n"), /INBOX/);
   assert.match(imapStep(session, "a4 SELECT INBOX", "secret-pass", folders).join("\n"), /READ-ONLY/);
   assert.match(imapStep(session, "a5 STORE 1 +FLAGS \\Seen", "secret-pass", folders).join("\n"), /read-only/);
+
+  // A literal counts octets: Cyrillic text is two bytes a letter, and the client must read exactly that.
+  const cyrillic = [{ name: "INBOX", messages: [{ uid: 7, subject: "Привет", from: "a@example.com", to: "b@example.com", body: "Тело письма", seen: true, bytes: 0 }] }];
+  const ru: ImapSession = { authed: true, folder: "INBOX" };
+  const fetched = imapStep(ru, "a6 UID FETCH 7 (BODY[])", "secret-pass", cyrillic);
+  const size = Number(/\{(\d+)\}/.exec(fetched[0]!)?.[1]);
+  assert.equal(size, new TextEncoder().encode(fetched[1]!).byteLength);
+  assert.notEqual(size, fetched[1]!.length);
+  // An unknown UID returns nothing, not the first message.
+  assert.deepEqual(imapStep(ru, "a7 UID FETCH 99 (BODY[])", "secret-pass", cyrillic), ["a7 OK FETCH"]);
+  assert.equal(imapStep({ authed: false, folder: null }, "a8 LOGIN bridge secret-pas", "secret-pass", folders)[0], "a8 NO LOGIN");
 });
 
 test("an offline mailbox round-trips and a wrong passphrase does not open it", async () => {

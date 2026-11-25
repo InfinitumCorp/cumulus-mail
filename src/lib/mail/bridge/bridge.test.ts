@@ -22,8 +22,9 @@ async function harnessWithMailbox() {
 }
 
 test("the bridge is on unless MAIL_BRIDGE=off, and off means no token can be made", async () => {
-  assert.equal(bridgeEnabled({}), true);
+  assert.equal(bridgeEnabled({}), false, "off unless turned on");
   assert.equal(bridgeEnabled({ MAIL_BRIDGE: "off" }), false);
+  assert.equal(bridgeEnabled({ MAIL_BRIDGE: "yes" }), false);
   assert.equal(bridgeEnabled({ MAIL_BRIDGE: " ON " }), true);
   const harness = await harnessWithMailbox();
   try {
