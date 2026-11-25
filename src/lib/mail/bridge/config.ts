@@ -2,8 +2,11 @@
  * Read-only IMAP bridge, phase 1 (docs/imap-bridge.md). Server-side only: app-password tokens scoped
  * read-only, IMAP UID semantics over the app's message ids, and an incremental sync read.
  *
- * **On unless `MAIL_BRIDGE=off`.** The local program is `bridge/cumulus-bridge.mjs` and only binds
- * 127.0.0.1. Writes still need `MAIL_BRIDGE_WRITE=on`.
+ * **Off unless `MAIL_BRIDGE=on`.** While it is off the API route answers 404, no token can be created
+ * or used, and no UID row is written. The local program is `bridge/cumulus-bridge.mjs` and only binds
+ * 127.0.0.1. Writes need `MAIL_BRIDGE_WRITE=on` as well. (#189 turned it on by default; nothing in the
+ * app creates a token yet, so that only wrote UID rows for every inbound message. Turn it on per region
+ * once the bridge program and token UI are ready.)
  */
 export type BridgeLimits = {
   /** Tokens one mailbox may hold at once (revoked ones do not count). */
@@ -36,9 +39,7 @@ function positive(value: string | undefined, fallback: number, max: number): num
 }
 
 export function bridgeEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  const value = env.MAIL_BRIDGE?.trim().toLowerCase();
-  if (value === "off" || value === "false" || value === "0") return false;
-  return true;
+  return env.MAIL_BRIDGE?.trim().toLowerCase() === "on";
 }
 
 /** Writes need both switches, so the write path stays off on a deployment that only wants reads. */
