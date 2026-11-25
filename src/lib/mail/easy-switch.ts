@@ -31,8 +31,14 @@ function redirectUri(provider: ImportProvider, appHost: string): string {
   return `https://${appHost}/api/import/${provider}/callback`;
 }
 
+/**
+ * Signs with a key derived for this one use, like the data-export links and the deletion audit, so the
+ * state handed to the browser is never an HMAC under MAIL_BLOB_KEY itself (which also keys the blind
+ * indexes when MAIL_BLIND_KEY is unset). A state lives 10 minutes, so nothing issued before this matters.
+ */
 function sign(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+  const key = createHmac("sha256", secret).update("cumulus-mail/easy-switch-state/v1").digest();
+  return createHmac("sha256", key).update(payload).digest("base64url");
 }
 
 export function importState(provider: ImportProvider, tenantId: string, secret: string, now = Date.now()): string {

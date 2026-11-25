@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { shareRequest } from "./calendar-share.ts";
@@ -38,6 +39,9 @@ test("easy switch state is signed and Gmail and Graph rows become messages", () 
   const state = importState("google", "tenant-ada", "secret", 1_000);
   assert.deepEqual(readImportState(state, "secret", 1_000), { provider: "google", tenantId: "tenant-ada" });
   assert.equal(readImportState(state, "other", 1_000), null);
+  // The MAC is not an HMAC under the raw secret.
+  const [p0, p1, p2, mac] = state.split(".");
+  assert.notEqual(mac, createHmac("sha256", "secret").update(`${p0}.${p1}.${p2}`).digest("base64url"));
   assert.equal(readImportState(state, "secret", 2_000_000), null);
   const url = authorizeUrl("google", "mail.example", state, { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "sec" });
   assert.equal(url.includes("accounts.google.com"), true);
