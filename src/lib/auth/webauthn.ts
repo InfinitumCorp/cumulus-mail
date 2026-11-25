@@ -124,7 +124,8 @@ function clientData(encoded: string, expectedType: string, challenge: string, pa
 
 function counterOf(authData: Uint8Array): number {
   if (authData.length < 37) throw new Error("Authenticator data is too short");
-  return (authData[33]! << 24) | (authData[34]! << 16) | (authData[35]! << 8) | authData[36]!;
+  // Unsigned: `<< 24` alone turns a counter of 2^31 or more negative, and the regression check fails open.
+  return ((authData[33]! << 24) | (authData[34]! << 16) | (authData[35]! << 8) | authData[36]!) >>> 0;
 }
 
 function rpMatches(authData: Uint8Array, rpId: string): void {

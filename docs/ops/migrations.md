@@ -28,6 +28,8 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 
 | File | Adds | What is lost on undo | Undo |
 |---|---|---|---|
+| `0022_factor_sessions.sql` | `second_factors.satisfied_sessions`, `totp_last_step`, `failures`, `failures_since` | Each session's second-factor pass (people enter a code again), code-replay and attempt-limit records. The code falls back to one window per mailbox without them | below |
+| `0021_wkd_and_factors.sql` (#189) | `wkd_keys`, `second_factors` | Published OpenPGP keys (re-publish from settings) and **every enrolled authenticator, security key and recovery code**: people must enrol again. Undo 0022 first | below |
 | `0020_auth_lockdown.sql` (#177) | RLS on, and no rights for `anon` / `authenticated`, on the sign-in tables and `_migrations` | **Do not undo it on Supabase**: it is what keeps session tokens away from the public anon key. Undo only on a database with no Data API | below |
 | `0019_message_rev.sql` | `messages.server_rev` | Nothing that matters: stale-tab protection (#161) stops until re-applied | below |
 | `0018_spam_votes.sql` | `spam_votes` | The one-vote-per-mailbox record; `sender_reputation` totals stay | below |
@@ -40,6 +42,22 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 | `0011_message_words.sql` | `message_words` | The server-side search index; search falls back until `scripts/reindex-words.mjs` runs again | below |
 
 ```sql
+begin;
+-- 0022
+alter table cumulus_mail.second_factors drop column if exists satisfied_sessions;
+alter table cumulus_mail.second_factors drop column if exists totp_last_step;
+alter table cumulus_mail.second_factors drop column if exists failures;
+alter table cumulus_mail.second_factors drop column if exists failures_since;
+delete from public._migrations where name = '0022_factor_sessions.sql';
+commit;
+
+begin;
+-- 0021
+drop table if exists cumulus_mail.second_factors;
+drop table if exists cumulus_mail.wkd_keys;
+delete from public._migrations where name = '0021_wkd_and_factors.sql';
+commit;
+
 begin;
 -- 0020 (never on Supabase: it re-exposes the sign-in tables to the anon key)
 alter table public.session disable row level security;

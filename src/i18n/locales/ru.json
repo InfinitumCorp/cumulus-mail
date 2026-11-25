@@ -572,5 +572,8 @@
  "You're all caught up.": "Все письма прочитаны.",
  "Your address": "Ваш адрес",
  "Your data": "Ваши данные",
- "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
+ "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+ "No security key answered.": "Ключ безопасности не ответил.",
+ "That security key did not work.": "Этот ключ безопасности не подошёл.",
+ "Use security key": "Использовать ключ безопасности"
 }

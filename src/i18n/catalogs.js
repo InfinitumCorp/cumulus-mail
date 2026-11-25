@@ -296,6 +296,7 @@ export default {
   "No messages match “{0}”.": "No messages match “{0}”.",
   "No one matches.": "No one matches.",
   "No organizer to answer. It is saved here only.": "No organizer to answer. It is saved here only.",
+  "No security key answered.": "No security key answered.",
   "No security key was created.": "No security key was created.",
   "No security key.": "No security key.",
   "No unread messages.": "No unread messages.",
@@ -480,6 +481,7 @@ export default {
   "TENTATIVE": "TENTATIVE",
   "That code is not valid.": "That code is not valid.",
   "That file is over 5 MB. Split it and import the parts.": "That file is over 5 MB. Split it and import the parts.",
+  "That security key did not work.": "That security key did not work.",
   "The filter could not be read.": "The filter could not be read.",
   "The filter is saved but not applied until this is fixed.": "The filter is saved but not applied until this is fixed.",
   "The link hides its real host behind a Cumulus-looking name.": "The link hides its real host behind a Cumulus-looking name.",
@@ -547,6 +549,7 @@ export default {
   "Upgrade": "Upgrade",
   "Use a passphrase of at least 8 characters.": "Use a passphrase of at least 8 characters.",
   "Use a password of at least 8 characters.": "Use a password of at least 8 characters.",
+  "Use security key": "Use security key",
   "used": "used",
   "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.": "vCard (.vcf) or CSV from Google Contacts, Outlook or Apple. Existing details are kept.",
   "Verified": "Verified",
@@ -1150,6 +1153,9 @@ export default {
   "You're all caught up.": "Все письма прочитаны.",
   "Your address": "Ваш адрес",
   "Your data": "Ваши данные",
-  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту."
+  "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+  "No security key answered.": "Ключ безопасности не ответил.",
+  "That security key did not work.": "Этот ключ безопасности не подошёл.",
+  "Use security key": "Использовать ключ безопасности"
  }
 };
