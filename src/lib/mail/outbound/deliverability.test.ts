@@ -149,3 +149,13 @@ test("round trip: a Russian message with a long subject and Cyrillic attachment 
   assert.deepEqual(parsed.attachments.map((a) => a.name), files.map((f) => f.name));
   assert.deepEqual([...parsed.attachments[0]!.bytes], [...files[0]!.bytes]);
 });
+
+test("outgoing mail carries only standard headers: no Received chain, internal address or X- header with an id", () => {
+  const raw = signed(buildRawMessage(message({ cc: [{ name: "Cy", email: "cy@example.org" }] }), message().from, DOMAIN));
+  const names = splitMessage(raw).headers.map((h) => h.name.toLowerCase());
+  const allowed = new Set(["dkim-signature", "from", "to", "cc", "subject", "date", "message-id", "mime-version", "content-type", "content-transfer-encoding"]);
+  assert.deepEqual(names.filter((name) => !allowed.has(name)), []);
+  assert.ok(names.includes("dkim-signature") && names.includes("date") && names.includes("message-id"));
+  assert.doesNotMatch(raw, /\b(?:10|127|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+/);
+  assert.doesNotMatch(raw, /tenant|cumulus_mail/i);
+});

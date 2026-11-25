@@ -2,8 +2,17 @@ import { createHash, createPublicKey, createVerify, randomBytes, verify as verif
 
 export type RelyingParty = { origin: string; rpId: string };
 
-/** localhost over http, or https on the mail host. Anything else is refused. */
-export function relyingParty(origin: string, appHost: string): RelyingParty | null {
+/**
+ * https on the mail host. localhost over http only on a copy that is not deployed (no BETTER_AUTH_URL and
+ * NODE_ENV not production, the same test as authRateLimit): a deployed server must never accept a key
+ * registered for, or an assertion made on, a page served from someone's own machine. Anything else is refused.
+ */
+export function relyingParty(
+  origin: string,
+  appHost: string,
+  env: Record<string, string | undefined> = process.env,
+): RelyingParty | null {
+  const deployed = Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
   let url: URL;
   try {
     url = new URL(origin);
@@ -11,7 +20,7 @@ export function relyingParty(origin: string, appHost: string): RelyingParty | nu
     return null;
   }
   const host = url.hostname.toLowerCase();
-  if (host === "localhost" && url.protocol === "http:") return { origin: url.origin, rpId: "localhost" };
+  if (host === "localhost" && url.protocol === "http:") return deployed ? null : { origin: url.origin, rpId: "localhost" };
   if (url.protocol !== "https:") return null;
   if (host !== appHost.toLowerCase()) return null;
   return { origin: url.origin, rpId: host };
@@ -124,7 +133,8 @@ function clientData(encoded: string, expectedType: string, challenge: string, pa
 
 function counterOf(authData: Uint8Array): number {
   if (authData.length < 37) throw new Error("Authenticator data is too short");
-  return (authData[33]! << 24) | (authData[34]! << 16) | (authData[35]! << 8) | authData[36]!;
+  // Unsigned: `<< 24` alone turns a counter of 2^31 or more negative, and the regression check fails open.
+  return ((authData[33]! << 24) | (authData[34]! << 16) | (authData[35]! << 8) | authData[36]!) >>> 0;
 }
 
 function rpMatches(authData: Uint8Array, rpId: string): void {

@@ -233,12 +233,15 @@ export async function inboundVerdict(
   if (domain && domain === mailDomain().toLowerCase() && auth?.dmarc !== "pass") {
     return { folder: "quarantine", reason: "own-domain" };
   }
-  if (options.feedDomains && domain && (await import("./spam-feed.ts")).listedDomain(options.feedDomains, from)) {
-    return { folder: "quarantine", reason: "feed" };
-  }
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };
   if (kind === "allow" && passed(auth)) return { folder: "inbox", reason: "allowlisted" };
+  // After the person's own lists: a feed like URLhaus lists compromised but legitimate hosts (and their
+  // parent domains), and someone who allowlisted a correspondent there must still get their mail when
+  // it authenticates.
+  if (options.feedDomains && domain && (await import("./spam-feed.ts")).listedDomain(options.feedDomains, from)) {
+    return { folder: "quarantine", reason: "feed" };
+  }
   if (domain && badReputation(await repOf(domain))) return { folder: "quarantine", reason: "reputation" };
   const zones = rblZones(options.env ?? process.env);
   if (domain && zones.length && (await rblListed(domain, zones, options.resolve ?? dohResolver(options.env)))) {

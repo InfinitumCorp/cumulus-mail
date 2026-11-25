@@ -1,4 +1,4 @@
-import { mailDomain } from "./domain.ts";
+import { mailAppHost, mailDomain } from "./domain.ts";
 import { openText } from "./field-crypto.ts";
 import { publicKeyBinary, splitAddress, wkdLocalHash } from "./pgp-keys.ts";
 import type { MailQuery } from "./query.ts";
@@ -46,18 +46,19 @@ export async function wkdAdvancedKey(db: MailQuery, domain: string, hash: string
 }
 
 /**
- * Binary key for the direct path. The hash is only the local part, so two domains can collide.
- * One match is returned. Several matches prefer the platform domain, otherwise nothing.
+ * Binary key for the direct path. The path has only the local part's hash; the domain is the host the
+ * request came to (RFC 7929 §3.1: https://<domain>/.well-known/openpgpkey/hu/<hash>). Matching the
+ * hash alone served bob@custom.example's key for bob@<any domain pointed here>.
  */
-export async function wkdDirectKey(db: MailQuery, hash: string): Promise<Uint8Array | null> {
-  const rows = await db.query<{ domain: string; public_key: string }>(
-    `select domain, public_key from cumulus_mail.wkd_keys where local_hash = $1`,
-    [hash],
-  );
-  if (rows.length === 0) return null;
-  const platform = mailDomain().toLowerCase();
-  const chosen = rows.length === 1 ? rows[0] : rows.find((row) => row.domain === platform);
-  return chosen ? publicKeyBinary(chosen.public_key) : null;
+export async function wkdDirectKey(db: MailQuery, hash: string, domain: string): Promise<Uint8Array | null> {
+  if (!domain) return null;
+  return wkdAdvancedKey(db, domain, hash);
+}
+
+/** The mail domain a direct WKD request is for: its host, or the platform domain on the app host. */
+export function directDomain(host: string): string {
+  const name = host.toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+  return name === mailAppHost().toLowerCase() ? mailDomain().toLowerCase() : name;
 }
 
 export async function mailboxAddresses(db: MailQuery, tenantId: string, primary: string): Promise<string[]> {
@@ -69,7 +70,7 @@ const HASH = /^[a-z0-9]{32}$/;
 const DOMAIN = /^[a-z0-9.-]+\.[a-z]{2,}$/;
 
 /** HTTP body for a WKD path, or null when the path is not WKD. A miss is a 404 response. */
-export async function wkdResponse(db: MailQuery, path: string): Promise<Response | null> {
+export async function wkdResponse(db: MailQuery, path: string, host = ""): Promise<Response | null> {
   if (path === "/.well-known/openpgpkey/policy") {
     return new Response("", { status: 200, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" } });
   }
@@ -81,7 +82,7 @@ export async function wkdResponse(db: MailQuery, path: string): Promise<Response
   if (!HASH.test(hash) || (advanced && !DOMAIN.test(domain))) {
     return new Response("Not found", { status: 404 });
   }
-  const bytes = advanced ? await wkdAdvancedKey(db, domain, hash) : await wkdDirectKey(db, hash);
+  const bytes = advanced ? await wkdAdvancedKey(db, domain, hash) : await wkdDirectKey(db, hash, directDomain(host));
   if (!bytes) return new Response("Not found", { status: 404 });
   return new Response(Buffer.from(bytes), {
     status: 200,

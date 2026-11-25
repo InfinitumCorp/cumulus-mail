@@ -4,14 +4,18 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #184. Still open, merge in this order, waiting for CI after each:
+Already on `main`: everything up to #197 (including #186 and #192–#197, migrations to 0023). Production
+still serves the old page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
 
-1. **#175**: a mailbox import is checked like a save (security).
-2. **#186**: outbound abuse limits, the `outbound:pause` kill switch, sign-in errors in EN/RU, the
-   incident playbook.
-3. **#188**: one-click unsubscribe works on Workers.
-4. **#185**: compressed static files on the Russia copy.
-5. **#187**: these pages, `cutover:check` accepting the pending `0001_auth`, and `keep_vars` on both workers.
+1. **#198**: mailbox import held to the plan's limits.
+2. **#199**: Gmail/Outlook direct import off unless `MAIL_PROVIDER_IMPORT=on`.
+3. **#200**: stronger passphrase wrap for new hybrid keys.
+4. **#201**: no sealed copy of mail left on the device.
+5. **#204**: a deployed copy refuses the localhost WebAuthn relying party.
+6. **#203**: calendar sharing takes only a real address.
+7. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
+8. **#206**: a tab closed mid-save still saves its last change.
+9. The PR that updates these pages.
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
@@ -35,7 +39,7 @@ Run each in a shell with that region's settings and `DATABASE_URL` exported.
 npm ci
 npm run cutover:check -- --region us --selector <dkim selector>   # go/no-go, once the secrets exist; read-only
 npm run cutover:check -- --region ru --no-dns
-npm run db:status        # US, then RU: 11 pending (0001_auth, 0011–0020; a new RU database: 21), exit 3
+npm run db:status        # US, then RU: 0001_auth, then 0011 up to the newest file (a new RU database: all), exit 3
 npm run db:migrate       # applies them, in that order
 npm run db:status        # up to date, exit 0
 npm run cutover:check -- --region us                    # now: "ok anon is refused on public.session"

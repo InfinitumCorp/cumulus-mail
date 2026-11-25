@@ -99,6 +99,9 @@ export async function acceptMailboxKey(settings: MailSettings): Promise<MailSett
   return next;
 }
 
+/** A primary key and up to 15 subkeys: more is not a real mail key, and each one costs an S2K run. */
+export const MAX_KEY_PACKETS = 16;
+
 /** True when the armored private key does not open with an empty passphrase. */
 export async function privateKeyIsLocked(armored: string): Promise<boolean> {
   const openpgp = await lib();
@@ -109,6 +112,16 @@ export async function privateKeyIsLocked(armored: string): Promise<boolean> {
     return false;
   }
   if (privateKey.isDecrypted?.() === true) return false;
+  // The key comes from the client, and so do its S2K settings. Trying a passphrase runs them: an Argon2
+  // S2K can ask for gigabytes and hundreds of passes, per subkey, on every save. So the server never
+  // runs Argon2 (a key protected with it is locked by construction: nothing derives from an empty
+  // passphrase cheaply), and refuses keys with an unreasonable number of subkeys.
+  const packets = [privateKey.keyPacket, ...privateKey.getSubkeys().map((subkey) => subkey.keyPacket)] as Array<{
+    s2k?: { type?: string } | null;
+    isDecrypted?: () => boolean | null;
+  }>;
+  if (packets.length > MAX_KEY_PACKETS) return false;
+  if (packets.some((packet) => packet.s2k?.type === "argon2")) return packets.every((packet) => packet.isDecrypted?.() !== true);
   try {
     await openpgp.decryptKey({ privateKey, passphrase: "" });
     return false;
@@ -189,11 +202,29 @@ function publicHttps(url: string): boolean {
  * Fetch a recipient's public key from their WKD. Redirects are not followed.
  * A miss or a bad answer is null. The caller does not send the user's private key.
  */
-export async function fetchWkdKey(email: string, fetcher: typeof fetch = fetch): Promise<string | null> {
+async function resolvesPublic(host: string, resolve: ((host: string) => Promise<string[]>) | null): Promise<boolean> {
+  const { assertPublicHost } = await import("./categories.ts");
+  try {
+    await assertPublicHost(host, resolve);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchWkdKey(
+  email: string,
+  fetcher: typeof fetch = fetch,
+  resolve: ((host: string) => Promise<string[]>) | null = null,
+): Promise<string | null> {
   const urls = [await wkdAdvancedUrl(email), await wkdDirectUrl(email)].filter((url): url is string => Boolean(url));
   const openpgp = await lib();
   for (const url of urls) {
     if (!publicHttps(url)) continue;
+    // The host comes from an address someone typed. On Node, refuse a name that resolves to a private,
+    // loopback or metadata address (the same check as one-click unsubscribe); Workers refuse those
+    // targets themselves.
+    if (!(await resolvesPublic(new URL(url).hostname, resolve))) continue;
     try {
       const response = await fetcher(url, { redirect: "manual", signal: AbortSignal.timeout(4000) });
       if (!response.ok) continue;

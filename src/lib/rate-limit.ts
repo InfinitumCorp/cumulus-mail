@@ -28,6 +28,8 @@ export const ACTION_LIMITS = {
   /** Authenticator and security-key attempts, and WKD lookups. */
   factor: [30, 600],
   pgpLookup: [60, 3600],
+  /** Small saves sent by a closing tab (src/routes/api/mailbox/delta.ts): at most one per tab close. */
+  delta: [120, 3600],
 } as const satisfies Record<string, readonly [number, number]>;
 
 export type LimitedAction = keyof typeof ACTION_LIMITS;

@@ -13,7 +13,7 @@ export function bridgeDesign(): BridgeDesign {
   return {
     status: "ready",
     reason:
-      "Run node bridge/cumulus-bridge.mjs on this computer. It listens on 127.0.0.1 only. Set MAIL_BRIDGE_PASSWORD and MAIL_BRIDGE_TOKEN. The mailbox key stays in the browser. The server API is on unless MAIL_BRIDGE=off.",
+      "Run node bridge/cumulus-bridge.mjs on this computer. It listens on 127.0.0.1 only. Set MAIL_BRIDGE_PASSWORD and MAIL_BRIDGE_TOKEN. The mailbox key stays in the browser. The server API is off unless MAIL_BRIDGE=on.",
     imap: { host: "127.0.0.1", port: 1143, security: "loopback" },
     smtp: { host: "127.0.0.1", port: 1025, security: "loopback" },
   };

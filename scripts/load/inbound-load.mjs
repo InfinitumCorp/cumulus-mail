@@ -58,7 +58,12 @@ if (PROCESSES > 1 && !CHILD) {
       });
       child.on("close", () => {
         const line = out.split("\n").find((l) => l.startsWith("[load:json] "));
-        resolve(line ? JSON.parse(line.slice(12)) : { stored: [], errors: RATE * SECONDS / PROCESSES, errorKinds: { "process died": 1 }, peak: 0, elapsed: SECONDS });
+        const died = { stored: [], errors: RATE * SECONDS / PROCESSES, errorKinds: { "process died": 1 }, peak: 0, elapsed: SECONDS };
+        try {
+          resolve(line ? JSON.parse(line.slice(12)) : died);
+        } catch {
+          resolve({ ...died, errorKinds: { "result line cut off": 1 } });
+        }
       });
     })),
   );
@@ -83,7 +88,8 @@ const { openMailbox } = await import("../../src/lib/mail/mailbox.ts");
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: POOL });
 const query = async (text, params) => (await pool.query(text, params)).rows;
 
-const run = Date.now().toString(36);
+// Per process: children started in the same millisecond must not share (and race on) mailboxes.
+const run = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 const tenants = Array.from({ length: MAILBOXES }, (_, i) => `load-${run}-${i}`);
 for (const tenant of tenants) {
   await openMailbox({ query }, tenant, { name: tenant, email: `${tenant}@cumuluscloud.app`, cid: `cid:${tenant}`, plan: "Free", quotaGb: 15 });
@@ -161,6 +167,11 @@ const pct = (p) => latencies[Math.min(latencies.length - 1, Math.floor((p / 100)
 console.log(`[load] done in ${elapsed.toFixed(1)}s: ${latencies.length} stored, ${errors} errors, ${(latencies.length / elapsed).toFixed(1)}/s achieved, peak in flight ${peak}`);
 console.log(`[load] latency ms: p50 ${pct(50)}  p95 ${pct(95)}  p99 ${pct(99)}  max ${latencies.at(-1)?.toFixed(1)}`);
 for (const [kind, count] of errorKinds) console.log(`[load]   error x${count}: ${kind}`);
-if (CHILD) console.log(`[load:json] ${JSON.stringify({ stored: latencies.map((ms) => Math.round(ms * 10) / 10), errors, errorKinds: Object.fromEntries(errorKinds), peak, elapsed })}`);
+if (CHILD) {
+  // A pipe write can still be in flight when the process exits (macOS): wait for it, or the parent
+  // reads half a line.
+  const line = `[load:json] ${JSON.stringify({ stored: latencies.map((ms) => Math.round(ms * 10) / 10), errors, errorKinds: Object.fromEntries(errorKinds), peak, elapsed })}\n`;
+  await new Promise((resolve) => process.stdout.write(line, resolve));
+}
 await pool.end();
 process.exit(errors ? 1 : 0);

@@ -67,7 +67,7 @@ test("queue depth counts queued and in-flight rows and the age of the oldest", a
   try {
     await openMailbox(harness.db, "m-q", profile("m-q", "m.q@cumuluscloud.app"));
     const empty = await queueDepth(harness.db);
-    assert.deepEqual(empty, { queued: 0, sending: 0, oldestQueuedSeconds: 0 });
+    assert.deepEqual(empty, { queued: 0, sending: 0, oldestQueuedSeconds: 0, paused: 0 });
     for (const [id, status, age] of [["q1", "queued", 600], ["q2", "queued", 30], ["q3", "sending", 5], ["q4", "sent", 9000]] as const) {
       await harness.db.query(
         `insert into cumulus_mail.outbound_queue (tenant_id, id, message_id, recipient, recipient_bidx, mail_from, raw, status, created_at)

@@ -1,6 +1,9 @@
 /**
  * Encrypted offline copy. The service worker still does not cache mail.
- * The page stores this blob in IndexedDB and opens it with the same passphrase as the mailbox key.
+ * The page used to store this blob in IndexedDB when a mailbox key was unlocked, but nothing ever read it
+ * back, and nothing removed it at sign-out: a passphrase-sealed copy of the open mail stayed on the device.
+ * The app no longer writes it, and `clearOfflineBlob` removes any copy left from before (on load and at
+ * sign-out). Reading mail offline needs a design with sign-out clearing before it comes back.
  */
 
 const PREFIX = "cmo1.";
@@ -72,6 +75,22 @@ export function loadOfflineBlob(): Promise<string | null> {
         request.onerror = () => resolve(null);
       }),
   );
+}
+
+/** Removes the offline copy and its database. Resolves either way: there is nothing to retry. */
+export function clearOfflineBlob(): Promise<void> {
+  if (typeof indexedDB === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.deleteDatabase(DB);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      // Another tab still has it open: it is deleted once that tab lets go.
+      request.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }
 
 function idb<T>(run: (db: IDBDatabase) => T | Promise<T>): Promise<T> {

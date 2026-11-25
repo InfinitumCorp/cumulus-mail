@@ -1,8 +1,9 @@
+import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { shareRequest } from "./calendar-share.ts";
 import { assertLoopback, imapStep, type ImapSession } from "./bridge/imap-core.ts";
-import { authorizeUrl, importState, messagesFromGmail, messagesFromGraph, readImportState } from "./easy-switch.ts";
+import { authorizeUrl, importConfigured, importState, messagesFromGmail, messagesFromGraph, readImportState } from "./easy-switch.ts";
 import { keyUrl, lookupDirectoryKey, publishDirectoryKey } from "./id-directory.ts";
 import { openOffline, sealOffline } from "./offline-store.ts";
 import { listedDomain, parseFeed, resetFeedCache } from "./spam-feed.ts";
@@ -38,6 +39,9 @@ test("easy switch state is signed and Gmail and Graph rows become messages", () 
   const state = importState("google", "tenant-ada", "secret", 1_000);
   assert.deepEqual(readImportState(state, "secret", 1_000), { provider: "google", tenantId: "tenant-ada" });
   assert.equal(readImportState(state, "other", 1_000), null);
+  // The MAC is not an HMAC under the raw secret.
+  const [p0, p1, p2, mac] = state.split(".");
+  assert.notEqual(mac, createHmac("sha256", "secret").update(`${p0}.${p1}.${p2}`).digest("base64url"));
   assert.equal(readImportState(state, "secret", 2_000_000), null);
   const url = authorizeUrl("google", "mail.example", state, { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "sec" });
   assert.equal(url.includes("accounts.google.com"), true);
@@ -60,6 +64,17 @@ test("the local bridge refuses other interfaces and answers a read-only IMAP ses
   assert.match(imapStep(session, "a3 LIST \"\" \"*\"", "secret-pass", folders).join("\n"), /INBOX/);
   assert.match(imapStep(session, "a4 SELECT INBOX", "secret-pass", folders).join("\n"), /READ-ONLY/);
   assert.match(imapStep(session, "a5 STORE 1 +FLAGS \\Seen", "secret-pass", folders).join("\n"), /read-only/);
+
+  // A literal counts octets: Cyrillic text is two bytes a letter, and the client must read exactly that.
+  const cyrillic = [{ name: "INBOX", messages: [{ uid: 7, subject: "Привет", from: "a@example.com", to: "b@example.com", body: "Тело письма", seen: true, bytes: 0 }] }];
+  const ru: ImapSession = { authed: true, folder: "INBOX" };
+  const fetched = imapStep(ru, "a6 UID FETCH 7 (BODY[])", "secret-pass", cyrillic);
+  const size = Number(/\{(\d+)\}/.exec(fetched[0]!)?.[1]);
+  assert.equal(size, new TextEncoder().encode(fetched[1]!).byteLength);
+  assert.notEqual(size, fetched[1]!.length);
+  // An unknown UID returns nothing, not the first message.
+  assert.deepEqual(imapStep(ru, "a7 UID FETCH 99 (BODY[])", "secret-pass", cyrillic), ["a7 OK FETCH"]);
+  assert.equal(imapStep({ authed: false, folder: null }, "a8 LOGIN bridge secret-pas", "secret-pass", folders)[0], "a8 NO LOGIN");
 });
 
 test("an offline mailbox round-trips and a wrong passphrase does not open it", async () => {
@@ -76,4 +91,11 @@ test("sharing an event builds an invitation the recipient can be sealed for", ()
   assert.match(message.body, /METHOD:REQUEST/);
   assert.match(message.body, /bea@cumuluscloud.app/);
   assert.equal(message.subject.includes(SEED_MESSAGES[0]!.subject), false);
+});
+
+test("provider import stays off until its switch is on (its callback route does not exist yet)", () => {
+  const google = { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret" };
+  assert.equal(importConfigured("google", google), false, "client ids alone do not send people to a 404");
+  assert.equal(importConfigured("google", { ...google, MAIL_PROVIDER_IMPORT: "on" }), true);
+  assert.equal(importConfigured("microsoft", { MAIL_PROVIDER_IMPORT: "on" }), false);
 });

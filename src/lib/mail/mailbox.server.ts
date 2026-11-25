@@ -15,7 +15,8 @@ import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
 import { createAbuseIntake } from "./abuse.ts";
 import { createBounceHandler } from "./dsn.ts";
-import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
+import { openMailbox, readAttachment, writeDelta, writeSnapshot } from "./mailbox.ts";
+import type { MailboxDelta } from "./delta.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailAppHost, mailboxAddress } from "./domain.ts";
@@ -78,11 +79,14 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
-): Promise<{ tenantId: string; profile: MailProfile; verified: boolean }> {
+): Promise<{ tenantId: string; profile: MailProfile; verified: boolean; factorSession: string }> {
   let resolved: { tenantId: string; profile: MailProfile; verified: boolean };
+  // Which sign-in the second factor is passed for: the session (cookie sign-in) or the bearer token.
+  let sessionRef = "";
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
     const tenantId = await tenantFromCumulusToken(bearerToken);
     assertTenantId(tenantId);
+    sessionRef = `bearer:${bearerToken}`;
     resolved = {
       verified: true, // a Cumulus ID token: the identity provider verified the email
       tenantId,
@@ -103,6 +107,7 @@ async function sessionMailbox(
         throw new TenantAccessError("Session does not match");
       }
       assertTenantId(session.id);
+      sessionRef = `session:${session.sessionId ?? session.id}`;
       const email = (session.email ?? "").trim().toLowerCase();
       const address = email.includes("@") ? email : mailboxAddress(session.id);
       const name = address.split("@")[0] || "Cumulus";
@@ -121,12 +126,13 @@ async function sessionMailbox(
       };
     }
   }
+  const { factorBlocks, factorSessionKey } = await import("./factors.ts");
+  const factorSession = await factorSessionKey(sessionRef || `dev:${resolved.tenantId}`);
   if (!skipFactorCheck.getStore()) {
-    const { factorBlocks } = await import("./factors.ts");
     const { FACTOR_REQUIRED } = await import("../auth/factor-gate.ts");
-    if (await factorBlocks(await database(), resolved.tenantId)) throw new Error(FACTOR_REQUIRED);
+    if (await factorBlocks(await database(), resolved.tenantId, factorSession)) throw new Error(FACTOR_REQUIRED);
   }
-  return resolved;
+  return { ...resolved, factorSession };
 }
 
 export async function readMailboxForSession(contextUserId: string, bearerToken?: string): Promise<MailboxSnapshot> {
@@ -144,6 +150,22 @@ export async function writeMailboxForSession(
   await openMailbox(db, tenantId, profile);
   if (verified) await markSendVerified(db, tenantId);
   return writeSnapshot(db, storageFor, tenantId, snapshot);
+}
+
+/** The change a closing tab could not finish saving (delta.ts), sent with keepalive. */
+export async function writeMailboxDeltaForSession(
+  contextUserId: string,
+  delta: MailboxDelta,
+  bearerToken?: string,
+): Promise<{ ok: true }> {
+  const { tenantId, profile, verified } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "delta");
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (verified) await markSendVerified(db, tenantId);
+  await writeDelta(db, storageFor, tenantId, delta);
+  // The page is gone: nobody reads a snapshot back.
+  return { ok: true };
 }
 
 export async function readAttachmentForSession(
@@ -541,22 +563,28 @@ async function secondFactorUnlocked(
   request: FactorRequest,
   bearerToken?: string,
 ): Promise<FactorResult> {
-  const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
+  const { tenantId, profile, factorSession } = await sessionMailbox(contextUserId, bearerToken);
   if (request.action !== "status") takeAction(tenantId, "factor");
   const db = await database();
   await openMailbox(db, tenantId, profile);
   const factors = await import("./factors.ts");
+  // A locked session may only check in. Enrolling a factor or removing one needs an unlocked session:
+  // otherwise a stolen session could add its own key (which unlocked it) or remove the owner's.
+  if (!factors.UNLOCK_ACTIONS.has(request.action) && (await factors.factorBlocks(db, tenantId, factorSession))) {
+    const { FACTOR_REQUIRED } = await import("../auth/factor-gate.ts");
+    throw new Error(FACTOR_REQUIRED);
+  }
   const origin = await factorOrigin();
   const host = mailAppHost();
   switch (request.action) {
     case "status":
-      return factors.factorStatus(db, tenantId);
+      return factors.factorStatus(db, tenantId, factorSession);
     case "totp-begin":
       return factors.beginTotp(db, tenantId, profile.email);
     case "totp-confirm":
-      return factors.confirmTotp(db, tenantId, request.code);
+      return factors.confirmTotp(db, tenantId, request.code, factorSession);
     case "totp-verify":
-      await factors.verifyTotp(db, tenantId, request.code);
+      await factors.verifyTotp(db, tenantId, request.code, factorSession);
       return { ok: true as const };
     case "totp-disable":
       await factors.disableTotp(db, tenantId, request.code);
@@ -568,11 +596,11 @@ async function secondFactorUnlocked(
         id: request.id,
         clientDataJSON: request.clientDataJSON,
         attestationObject: request.attestationObject,
-      });
+      }, factorSession);
     case "webauthn-assert-options":
       return factors.beginAssertion(db, tenantId, origin, host);
     case "webauthn-assert":
-      await factors.finishAssertion(db, tenantId, origin, host, request);
+      await factors.finishAssertion(db, tenantId, origin, host, request, factorSession);
       return { ok: true as const };
     case "webauthn-remove":
       await factors.removeCredential(db, tenantId, request.id);

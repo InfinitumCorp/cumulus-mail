@@ -10,16 +10,26 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #184 is merged (#144–#184, including #181's issuer default and #183's
-`cutover:check`). The launch PRs still open, in the order to merge them:
-1. #175, a mailbox import is checked like a save (security);
-2. #186, outbound abuse limits and the `outbound:pause` kill switch, sign-in errors in EN/RU, and
-   `docs/ops/incident.md` (the per-symptom playbook for today);
-3. #188, one-click unsubscribe on Workers (the US copy) through fetch, not a DNS lookup that may throw;
-4. #185, compressed static files on the Russia copy (faster first load on phones);
-5. #187, this page's corrections, `cutover:check` accepting the pending `0001_auth`, and `keep_vars`
-   (dashboard variables survive deploys).
+**Needs on `main`:** everything up to #197 is merged (25 Nov: including #186 and #192–#197, so migrations
+0021–0023 are on main). **Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve
+the old page (no `/api/health`). The PRs still open, in the order to merge them, waiting for CI after each:
+1. #198, a mailbox import is held to the plan's limits;
+2. #199, importing straight from Gmail or Outlook stays off unless `MAIL_PROVIDER_IMPORT=on`;
+3. #200, a stronger passphrase wrap for new hybrid keys (older keys still open);
+4. #201, no sealed copy of mail is left on the device; old copies are deleted on load and at sign-out;
+5. #204, a deployed copy refuses the `http://localhost` WebAuthn relying party;
+6. #203, sharing a calendar event takes only a real address, and its text is escaped;
+7. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets;
+8. #206, a tab closed mid-save still saves its last change (a small keepalive save, `POST /api/mailbox/delta`);
+9. this page's PR.
 
+Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 on 25 Nov: 14 files).
+
+**Decide before go:** `MAIL_SPAM_FEEDS`. Unset, inbound mail checks the sender's domain against the URLhaus host
+lists (#189). Those list *websites* that served malware, often compromised small-business sites, so a legitimate
+sender whose site was once hacked lands in quarantine. Each new worker isolate also downloads both lists on the
+inbound path (up to 2.5 s each). Recommended for launch: `MAIL_SPAM_FEEDS=off` (worker variable, survives
+deploys), and revisit with real quarantine numbers.
 #86 lists the merge order and why.
 
 **Rule for the whole day:** if a step's check does not show what is written here, stop, do that step's
@@ -56,14 +66,15 @@ Tick every line, or move the launch.
       It runs preflight (secrets, repo settings, DNS), then lists pending migrations in apply order (and
       fails if one was skipped in the middle), checks that `anon` is refused on `public.session`, and checks
       the token issuer answers and names itself. **The day before, expect exactly this and nothing else:**
-      - `WARN 11 migration(s) to apply, in this order: 0001_auth.sql, 0011_message_words.sql, …, 0020_auth_lockdown.sql`.
+      - `WARN N migration(s) to apply, in this order: 0001_auth.sql, 0011_message_words.sql, …` up to the newest
+        file in `migrations/` (on 25 Nov: 0023, so N = 14).
         `0001_auth.sql` first is right: it was added after production reached 0010, and goes in with 0020;
       - `WARN public.session does not exist yet` (0001 creates it);
       - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
       - US only: SPF, DKIM and DMARC as MISSING until step 7 publishes them, and the MTA-STS and TLS-RPT
         lines as WARN;
       - RU only: `WARN MAIL_LEGAL_RU_REVIEWED` until the lawyer's review is recorded. If D1 gave Russia
-        its own new database, it lists **all 21** migrations (no `_migrations` table yet); that is right.
+        its own new database, it lists **every** file in `migrations/` (no `_migrations` table yet); that is right.
       Anything else MISSING (a secret, the Hyperdrive id, the token issuer): fix it first. A
       `Migrations skipped in the middle` line means a file other than `0001_auth.sql` was skipped: stop.
 
@@ -125,13 +136,15 @@ npm run db:status        # expect: nothing pending, exit 0
 
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
-**Expected:** the first `db:status` lists **11** pending and exits 3: `0001_auth.sql`, then `0011` to
-`0020` (a new RU database: all 21). `db:migrate` prints `applied …` for each, in that order, and `done — 11 migration(s) applied` (under
+**Expected:** the first `db:status` lists the pending files and exits 3: `0001_auth.sql`, then `0011` up to
+the newest file in `migrations/` (on 25 Nov, 14 files to 0023; a
+new RU database: every file). `db:migrate` prints `applied …` for each, in that order, and `done — N migration(s) applied` (under
 a second on the rehearsal's copy of production). The second `db:status` says `up to date` and exits 0.
 Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail
 already stored stays readable (the rehearsal read back every message after migrating).
 Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code,
-and **before** deploying it: the code needs `0019` and `0020`. Then check that the anon key cannot read
+and **before** deploying it: the code reads what `0019` onwards add (0021–0022 hold the second factor; the
+mailbox fails without 0021). Then check that the anon key cannot read
 sign-in data:
 `npm run cutover:check -- --region us` must show `ok anon is refused on public.session`. If it says this
 login cannot switch to anon, check in the Supabase SQL editor instead:
@@ -279,6 +292,8 @@ spam.
 ---
 
 ## If something goes wrong after cutover
+
+The full per-symptom playbook, with the alert for each and the kill switch for spam going out, is `docs/ops/incident.md`.
 
 | Symptom | First move | Then |
 |---|---|---|
