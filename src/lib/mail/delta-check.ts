@@ -8,7 +8,7 @@ const isRecordOfRevs = (value: unknown): value is Record<string, number> =>
   Boolean(value) &&
   typeof value === "object" &&
   !Array.isArray(value) &&
-  Object.keys(value as object).length <= MAX_UPSERT &&
+  Object.keys(value as object).length <= MAX_UPSERT + MAX_REMOVE &&
   Object.values(value as object).every((rev) => Number.isSafeInteger(rev) && rev >= 0);
 
 /** Server-side shape check. The contents are checked by writeSnapshot, as for a full save. */

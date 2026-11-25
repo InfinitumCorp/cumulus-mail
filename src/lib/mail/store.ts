@@ -250,7 +250,9 @@ export const useMail = create<MailStore>((set, get) => ({
     // (delta.ts). Nothing is sent when nothing is pending, so an idle tab keeps the back/forward cache.
     // The request must start synchronously here: a page that is unloading runs no later await, which is why
     // this is a plain route (src/routes/api/mailbox/delta.ts) and not a server function.
-    window.addEventListener("pagehide", () => {
+    window.addEventListener("pagehide", (event) => {
+      // Going into the back/forward cache is not leaving: the page can come back and finish its own save.
+      if (event.persisted) return;
       if (!savedSnapshot || (pushing === 0 && !retryTimer)) return;
       const delta = diffSnapshot(savedSnapshot, pick(get()), knownRevs);
       if (!delta) return;

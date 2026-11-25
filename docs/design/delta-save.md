@@ -80,6 +80,14 @@ It also has its own rate-limit bucket (`delta`, 120 an hour per mailbox) and a 6
   tab, accepting the prompt. In the next tab, the conversation is in Trash.
 - **authz:sweep:** the new route refuses a caller with no session (401) and a cross-site caller (403).
 
+## Known limit
+The bump protects the messages the delta *changed*. If the older full save lands after the delta, it can
+still bring back a message the delta *removed*, or put back settings, contacts, rules or aliases the delta
+changed. Those carry no per-item rev. It needs that ordering (the earlier request reaching the server after
+the later one), and it is no worse than the loss without a delta. Fixing it needs a per-tab save sequence
+checked on the server. Every message the tab knew carries the rev it saw (0 when the server listed none),
+so a copy the server changed since is never overwritten or deleted by a delta.
+
 ## Not in scope
 - Per-message server writes (`writeSnapshot` still rewrites the mailbox).
 - Making normal saves smaller. That would follow from the same `applyDelta`, and is the next step once
