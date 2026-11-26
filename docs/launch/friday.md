@@ -121,7 +121,7 @@ The API worker's secrets are put by the deploy workflow from the `production-us`
 
 ## 2. Database migrations (10 min)
 
-US (Supabase; the connection string from the Supabase dashboard, port 5432, `sslmode=require`):
+US (dedicated Mail Supabase `percackrrhhreusasspr`, us-east-1; session pooler `aws-1-us-east-1.pooler.supabase.com`, port 5432, `sslmode=require`). Do not use the shared project `ivqiskeziohbbtkcvlun` (eu-west-1): that project stays Cloud, Fabric, Nexus, and Cumulus://ID.
 
 ```sh
 export DATABASE_URL="postgresql://…:5432/postgres?sslmode=require"
@@ -132,10 +132,10 @@ npm run db:status        # expect: nothing pending, exit 0
 
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
-**Expected:** the first `db:status` lists the pending files and exits 3: `0001_auth.sql`, then `0011` up to
-the newest file in `migrations/` (on 25 Nov, 14 files to 0023; a
-new RU database: every file). `db:migrate` prints `applied …` for each, in that order, and `done — N migration(s) applied` (under
-a second on the rehearsal's copy of production). The second `db:status` says `up to date` and exits 0.
+**Expected:** checked 2026-11-26, the dedicated database already has `0001`–`0021`. The first `db:status` lists
+`0022_factor_sessions.sql` and `0023_outbound_queue_created.sql` and exits 3. A new RU database lists every file.
+`db:migrate` prints `applied …` for each, in that order, and `done — N migration(s) applied`. The second
+`db:status` says `up to date` and exits 0.
 Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail
 already stored stays readable (the rehearsal read back every message after migrating).
 Run them from a checkout of the commit you will deploy (the go/no-go line), so the files match the code,

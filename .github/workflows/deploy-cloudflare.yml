@@ -4,7 +4,8 @@
 # configures with required reviewers and these secrets (Settings > Environments):
 #   CLOUDFLARE_API_TOKEN   Workers Scripts edit (+ Hyperdrive read) on the account that owns cumulus-mail
 #   CLOUDFLARE_ACCOUNT_ID
-#   HYPERDRIVE_ID          32-hex id of the production Hyperdrive config
+#   HYPERDRIVE_ID          32-hex id; replaces REPLACE_WITH_HYPERDRIVE_ID only.
+#                          The committed id is d07a82ac7fcc42ac84dc6469140ef551 (cumulus-mail).
 # Optional, synced to the worker as Cloudflare secrets when set:
 #   MAIL_BLOB_KEY, MAIL_BLOB_KEYS and MAIL_BLIND_KEY (key rotation: docs/ops/key-rotation.md),
 #   SUPABASE_S3_ACCESS_KEY_ID, SUPABASE_S3_SECRET_ACCESS_KEY,

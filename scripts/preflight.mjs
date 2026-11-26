@@ -94,8 +94,9 @@ export function checkEnv(env, { region }) {
 }
 
 /**
- * The Hyperdrive id: the deploy workflow passes HYPERDRIVE_ID to scripts/deploy-guard.mjs, which fills
- * the REPLACE_WITH_HYPERDRIVE_ID placeholder in the wrangler configs. Either is enough.
+ * The Hyperdrive id: a 32-hex id already in the wrangler file, or HYPERDRIVE_ID in the environment.
+ * The deploy workflow passes HYPERDRIVE_ID to scripts/deploy-guard.mjs, which fills
+ * REPLACE_WITH_HYPERDRIVE_ID only when a file still has that placeholder. Either is enough.
  */
 export function checkRepo(readText = (path) => readFileSync(join(ROOT, path), "utf8"), { region }, env = {}) {
   const out = [];

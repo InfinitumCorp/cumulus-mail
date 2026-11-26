@@ -5,14 +5,27 @@ import { readWorkerConfig } from "./nitro-preset.mjs";
 
 const HD = "0123456789abcdef0123456789abcdef";
 
-test("the committed inbound config passes once a real Hyperdrive id is supplied", () => {
+test("the committed inbound config names the dedicated Mail Hyperdrive", () => {
   const config = readWorkerConfig("workers/email/wrangler.jsonc");
+  const out = guardConfig("inbound", config);
+  assert.equal(out.name, "cumulus-mail-inbound");
+  assert.equal(out.hyperdrive[0].id, "d07a82ac7fcc42ac84dc6469140ef551");
+  // A passed id does not replace the committed dedicated-database id.
+  const ignored = guardConfig("inbound", config, { hyperdriveId: HD });
+  assert.equal(ignored.hyperdrive[0].id, "d07a82ac7fcc42ac84dc6469140ef551");
+  assert.equal(config.hyperdrive[0].id, "d07a82ac7fcc42ac84dc6469140ef551");
+});
+
+test("a placeholder Hyperdrive id is replaced only by a 32-character hex id", () => {
+  const config = {
+    name: "cumulus-mail-inbound",
+    workers_dev: false,
+    hyperdrive: [{ binding: "HYPERDRIVE", id: "REPLACE_WITH_HYPERDRIVE_ID" }],
+  };
   assert.throws(() => guardConfig("inbound", config), /placeholder/);
   assert.throws(() => guardConfig("inbound", config, { hyperdriveId: "not-an-id" }), /32-character/);
   const out = guardConfig("inbound", config, { hyperdriveId: HD });
-  assert.equal(out.name, "cumulus-mail-inbound");
   assert.equal(out.hyperdrive[0].id, HD);
-  // The committed file is not changed.
   assert.equal(config.hyperdrive[0].id, "REPLACE_WITH_HYPERDRIVE_ID");
 });
 
