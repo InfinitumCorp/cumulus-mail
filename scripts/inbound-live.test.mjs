@@ -9,7 +9,7 @@ import {
 import { DEFAULT_CUMULUS_ISSUER } from "../src/lib/auth/issuer-defaults.mjs";
 
 const POOLER =
-  "postgresql://postgres.ivqiskeziohbbtkcvlun:secret@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require";
+  "postgresql://postgres.percackrrhhreusasspr:secret@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require";
 
 test("the live inbound path stays off unless MAIL_INBOUND_LIVE=1", () => {
   assert.equal(inboundLiveEnabled({}), false);

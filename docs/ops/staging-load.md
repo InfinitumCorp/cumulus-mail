@@ -30,9 +30,9 @@ On each of 2 VMs (200/s each), or on 1 VM with `--processes 2`:
 
 ```sh
 export DATABASE_URL="postgresql://…staging…:5432/postgres?sslmode=require"   # direct, not the pooler
-export S3_ENDPOINT="https://<staging-ref>.supabase.co/storage/v1/s3"
+export S3_ENDPOINT="https://<staging-ref>.storage.supabase.co/storage/v1/s3"
 export S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=… S3_BUCKET=… S3_REGION=us-east-1
-export LOAD_PRODUCTION_DB_HOST="db.<production-ref>.supabase.co"   # refused even with --target staging
+export LOAD_PRODUCTION_DB_HOST="db.percackrrhhreusasspr.supabase.co"   # dedicated Mail database; refused even with --target staging
 npm run load:inbound -- --target staging --rate 400 --seconds 300 --processes 2 --mailboxes 200 --pool 20
 ```
 

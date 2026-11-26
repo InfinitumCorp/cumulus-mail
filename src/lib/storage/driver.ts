@@ -159,7 +159,7 @@ function missingObject(error: unknown): boolean {
  * any endpoint that is not local. A `*.supabase.co` host is refused unless
  * `CUMULUS_ALLOW_SUPABASE=1`.
  *
- * Supabase Storage's S3 endpoint is `https://<project>.supabase.co/storage/v1/s3`.
+ * Supabase Storage's S3 endpoint is `https://<project-ref>.storage.supabase.co/storage/v1/s3`.
  * That host needs `forcePathStyle` so the bucket stays in the path, and
  * `requestChecksumCalculation` / `responseChecksumValidation` of `WHEN_REQUIRED`.
  * AWS SDK v3's default flexible checksums are not accepted there. Both are set
