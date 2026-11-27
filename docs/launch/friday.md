@@ -52,6 +52,11 @@ Tick every line, or move the launch.
 - [ ] Someone in Russia, without a VPN, can test `ru.mail` in step 9.
 - [ ] The Cumulus://ID cut-over is planned before step 5 (see step 5), or you accept doing the first end-to-end
       sign-in after step 6.
+- [ ] infinitum-nexus's Auto deploy no longer deploys the old Mail Worker `cumulus-mail`. Since nexus #281 it does,
+      and that Worker's config lists `mail.cumuluscloud.app`, so the first nexus commit after step 6 would take the
+      domain back (and the step 6 rollback relies on that Worker staying as it is). The Cumulus://ID cut-over's nexus
+      PR (`cumulus-id-cutover-route`) removes that deploy step; it is merged in the morning, before this launch. If
+      the cut-over is postponed: disable nexus Auto deploy before step 6 and leave it off.
 - [ ] **The rehearsal passes for both regions** (read-only; nothing is written or deployed). Run it once
       the secrets exist: step 1 can be done the day before, since nothing reads them until step 4.
       In the deploy shell, with that region's secrets and `DATABASE_URL` exported:
@@ -218,7 +223,8 @@ npm run smoke -- --url https://mail.cumuluscloud.app --domain cumuluscloud.app
 **Expected:** every line ok, including `mx` (Cloudflare Email Routing). Sign in, open the inbox, see the
 message from 6.1.
 **Rollback:** move the custom domain back to `cumulus-mail`, the catch-all back to `cumulus-mail`, and
-`BETTER_AUTH_URL` back to the workers.dev origin. The old worker was never modified. Mail that arrived in
+`BETTER_AUTH_URL` back to the workers.dev origin. The old worker was never modified (nexus Auto deploy no
+longer deploys it; see the go/no-go list). Mail that arrived in
 between stays in the new database.
 
 4. Add the four rate-limiting rules in `docs/deploy/edge-rate-limits.md` (zone `cumuluscloud.app`), in
