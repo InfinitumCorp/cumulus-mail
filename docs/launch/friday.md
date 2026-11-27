@@ -81,6 +81,10 @@ Tick every line, or move the launch.
       that would mean a signed-out session still accepted, a new second factor or alias not seen yet, rate
       limits counting late, and a reload showing the mailbox from before a save.
       `docs/deploy/cloudflare-handoff.md` §3 has the details.
+- [ ] **The Cloudflare account is on Workers Paid**, not Free (Workers & Pages → Plans). Free allows 10 ms of CPU
+      per request. A mailbox save measured about 44 ms of CPU on the production build (Node, warm, a 2-message
+      mailbox; more mail costs more), so on Free saves would fail with error 1102. Paid allows 30 s by default.
+      Page loads and `get-session` measured 2–5 ms.
 
 ---
 
