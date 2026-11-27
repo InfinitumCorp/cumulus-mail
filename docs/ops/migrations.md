@@ -28,6 +28,8 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 
 | File | Adds | What is lost on undo | Undo |
 |---|---|---|---|
+| `0024_save_sequences.sql` | `save_sequences` | Nothing that matters: the newest save number per open tab. Without it, a full save still on the wire when a tab closed can undo that tab's last change again (the code falls back) | below |
+| `0023_outbound_queue_created.sql` | index `outbound_queue_created` | Nothing: the sign-up wave cap's count reads the whole queue again | below |
 | `0022_factor_sessions.sql` | `second_factors.satisfied_sessions`, `totp_last_step`, `failures`, `failures_since` | Each session's second-factor pass (people enter a code again), code-replay and attempt-limit records. The code falls back to one window per mailbox without them | below |
 | `0021_wkd_and_factors.sql` (#189) | `wkd_keys`, `second_factors` | Published OpenPGP keys (re-publish from settings) and **every enrolled authenticator, security key and recovery code**: people must enrol again. Undo 0022 first | below |
 | `0020_auth_lockdown.sql` (#177) | RLS on, and no rights for `anon` / `authenticated`, on the sign-in tables and `_migrations` | **Do not undo it on Supabase**: it is what keeps session tokens away from the public anon key. Undo only on a database with no Data API | below |
@@ -42,6 +44,18 @@ version; the new tables just sit unused. Undo a migration itself only if the mig
 | `0011_message_words.sql` | `message_words` | The server-side search index; search falls back until `scripts/reindex-words.mjs` runs again | below |
 
 ```sql
+begin;
+-- 0024
+drop table if exists cumulus_mail.save_sequences;
+delete from public._migrations where name = '0024_save_sequences.sql';
+commit;
+
+begin;
+-- 0023
+drop index if exists cumulus_mail.outbound_queue_created;
+delete from public._migrations where name = '0023_outbound_queue_created.sql';
+commit;
+
 begin;
 -- 0022
 alter table cumulus_mail.second_factors drop column if exists satisfied_sessions;

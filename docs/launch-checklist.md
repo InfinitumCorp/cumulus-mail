@@ -25,7 +25,7 @@ this repository.
       with the public anon key (session tokens); `0020` closes that.
 - [ ] Vercel auto-deploy off: merge #75 (`git.deploymentEnabled: false`).
 - [ ] Dedicated Mail database: apply the migrations on `main` that it does not have yet, **before** deploying
-      code that uses them: `0022_factor_sessions.sql` and `0023_outbound_queue_created.sql`. `npm run db:status`
+      code that uses them: `0022_factor_sessions.sql`, `0023_outbound_queue_created.sql` and `0024_save_sequences.sql`. `npm run db:status`
       lists what is pending and exits 3 if anything is. Point `DATABASE_URL` at `percackrrhhreusasspr` only
       (session pooler `aws-1-us-east-1.pooler.supabase.com`, port 5432, `sslmode=require`). Files apply by name,
       so applying them out of number order is fine; each is recorded in `public._migrations`.
