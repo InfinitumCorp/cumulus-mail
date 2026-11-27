@@ -22,6 +22,7 @@ import {
 } from "./records.ts";
 import { fileName, type MailboxSnapshot } from "./snapshot.ts";
 import { applyDelta, type MailboxDelta } from "./delta.ts";
+import { asSaveTag, claimSave } from "./save-seq.ts";
 import { assertId } from "./snapshot.ts";
 import { provisionMailbox } from "./seed.ts";
 import type { MailProfile } from "./snapshot.ts";
@@ -121,6 +122,8 @@ export async function writeDelta(
   delta: MailboxDelta,
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
+  const tag = asSaveTag(delta.tab, delta.seq);
+  if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
   await writeSnapshot(db, storageFor, tenantId, applyDelta(await readSnapshot(db, tenantId), delta));
   // The full save this delta stands in for may still be on the wire, carrying an older copy of these
   // messages. Counting the delta as a server-side change makes that save lose for them, by the same rule
@@ -139,6 +142,9 @@ export async function writeSnapshot(
   snapshot: MailboxSnapshot,
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
+  // A save this tab has already been overtaken by (save-seq.ts) is not written: the newer one stands.
+  const tag = asSaveTag(snapshot.saveTab, snapshot.saveSeq);
+  if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
   const current = await readSnapshot(db, tenantId);
   const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
   if (snapshot.messages.length > limits.messages) throw new Error("Mailbox is too large");
@@ -249,7 +255,7 @@ export async function writeSnapshot(
 
   const aliases = await checkedAliases(db, tenantId, current, snapshot.aliases);
 
-  const { knownIds: _known, knownRevs: _knownRevs, revs: _revs, ...rest } = snapshot;
+  const { knownIds: _known, knownRevs: _knownRevs, revs: _revs, saveTab: _saveTab, saveSeq: _saveSeq, ...rest } = snapshot;
   const next: MailboxSnapshot = {
     ...rest,
     // Only the display name comes from the client (first-run setup); address, plan and quota never do.

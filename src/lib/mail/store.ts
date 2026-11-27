@@ -86,6 +86,11 @@ function pick(state: MailStore): MailboxSnapshot {
 
 let dirty = false;
 let revision = 0;
+/** This page load's id for save ordering (save-seq.ts): saves carry it with `revision` as their number. */
+const TAB_ID =
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 let hydratePromise: Promise<void> | null = null;
 let pushChain: Promise<void> = Promise.resolve();
 let pushing = 0;
@@ -168,7 +173,7 @@ function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) =
     .catch(() => undefined)
     .then(async () => {
       const saved = await putMailbox({
-        data: { ...snapshot, knownIds, knownRevs },
+        data: { ...snapshot, knownIds, knownRevs, saveTab: TAB_ID, saveSeq: mine },
         signal: AbortSignal.timeout(saveTimeoutMs()),
       });
       failedSaves = 0;
@@ -264,7 +269,7 @@ export const useMail = create<MailStore>((set, get) => ({
       } catch {
         // No storage: the cookie carries the session.
       }
-      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify(delta), headers, keepalive: true, credentials: "same-origin" }).catch(
+      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify({ ...delta, tab: TAB_ID, seq: revision }), headers, keepalive: true, credentials: "same-origin" }).catch(
         () => undefined,
       );
     });

@@ -1,6 +1,6 @@
 # Delta save: flush the last change on the way out
 
-Status: built (25 Nov). Post-launch item from #86. Code: `src/lib/mail/delta.ts`, `writeDelta` in `src/lib/mail/mailbox.ts`, `src/routes/api/mailbox/delta.ts`, and the `pagehide` flush in `src/lib/mail/store.ts`.
+Status: built (25 Nov); save order per tab added 27 Nov. Post-launch item from #86. Code: `src/lib/mail/delta.ts`, `writeDelta` in `src/lib/mail/mailbox.ts`, `src/routes/api/mailbox/delta.ts`, and the `pagehide` flush in `src/lib/mail/store.ts`.
 
 ## The problem
 Every change saves the **whole mailbox** (`putMailbox`, `src/lib/mail/store.ts` → `writeSnapshot`,
@@ -80,13 +80,21 @@ It also has its own rate-limit bucket (`delta`, 120 an hour per mailbox) and a 6
   tab, accepting the prompt. In the next tab, the conversation is in Trash.
 - **authz:sweep:** the new route refuses a caller with no session (401) and a cross-site caller (403).
 
-## Known limit
-The bump protects the messages the delta *changed*. If the older full save lands after the delta, it can
-still bring back a message the delta *removed*, or put back settings, contacts, rules or aliases the delta
-changed. Those carry no per-item rev. It needs that ordering (the earlier request reaching the server after
-the later one), and it is no worse than the loss without a delta. Fixing it needs a per-tab save sequence
-checked on the server. Every message the tab knew carries the rev it saw (0 when the server listed none),
-so a copy the server changed since is never overwritten or deleted by a delta.
+## Save order per tab (closed the known limit)
+The rev bump protects the messages the delta changed. On its own it didn't stop the older full save,
+landing after the delta, from bringing back a message the delta removed, or the settings, contacts, rules
+or aliases it changed, since those carry no per-item rev.
+
+Since migration `0024_save_sequences.sql` (`src/lib/mail/save-seq.ts`), saves are ordered per tab:
+- every page load picks a random tab id, and every save, full or delta, carries it with its number (`revision`);
+- the server records the highest number it has applied per tab, and skips a save from that tab with an
+  equal or lower one;
+- the late full save is not written at all, so the delta's removals and field changes stand.
+
+Saves without a tag (an older client) are written as before, and so is every save while 0024 isn't applied
+yet. Saves from different tabs are not ordered against each other; that is the per-message rev's job, as
+before. Every message the tab knew also carries the rev it saw (0 when the server listed none), so a copy
+the server changed since is never overwritten or deleted by a delta.
 
 ## Not in scope
 - Per-message server writes (`writeSnapshot` still rewrites the mailbox).
