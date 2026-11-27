@@ -12,6 +12,8 @@ Still open, merge in this order, waiting for CI after each:
 
 **Before go:** Hyperdrive query caching off: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled` (see `friday.md`, go/no-go).
 
+**Before go:** the Cloudflare account is on **Workers Paid**. Free's 10 ms of CPU per request is less than a mailbox save uses (about 44 ms measured); see `friday.md`, go/no-go.
+
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
 ## 2. What to set where (names only)
