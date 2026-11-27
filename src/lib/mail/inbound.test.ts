@@ -91,3 +91,39 @@ test("inbound mail is stored for the envelope recipient only", async () => {
   });
   assert.deepEqual(missing.stored, []);
 });
+
+test("inbound attachment names and types are cleaned like the app's own: no path, no line breaks, capped", async () => {
+  const { db, storageFor } = harness;
+  const tenant = "in-names";
+  await openMailbox(db, tenant, profile(tenant, "in.names@cumuluscloud.app", "Names"));
+  const long = "x".repeat(5000);
+  const raw = [
+    "From: a@example.com",
+    "To: in.names@cumuluscloud.app",
+    "Subject: files",
+    'Content-Type: multipart/mixed; boundary="n"',
+    "",
+    "--n",
+    "Content-Type: text/plain",
+    "",
+    "see files",
+    "--n",
+    `Content-Type: application/octet-stream`,
+    'Content-Disposition: attachment; filename="../../etc/passwd.txt"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    "YWJj",
+    "--n",
+    `Content-Type: text/plain; name="${long}.txt"`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    "YWJj",
+    "--n--",
+    "",
+  ].join("\r\n");
+  await ingestInboundEmail(db, storageFor, { from: "a@example.com", to: "in.names@cumuluscloud.app", raw: new TextEncoder().encode(raw) });
+  const message = (await readSnapshot(db, tenant)).messages.find((m) => m.subject === "files");
+  const names = message?.attachments?.map((a) => a.name) ?? [];
+  assert.equal(names[0], "passwd.txt");
+  assert.ok(names[1]!.length <= 180, `capped at 180 (${names[1]!.length})`);
+});

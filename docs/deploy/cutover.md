@@ -4,7 +4,10 @@ This is the plan for moving `mail.cumuluscloud.app` (US) and `ru.mail.cumulusclo
 static page to this app, step by step, with a way back at every step. Each switch is an owner action in a
 dashboard (Cloudflare, Yandex Cloud, DNS). The repository and its workflows never make these changes.
 
-## Where things stand (checked 2026-11-12)
+## Where things stand (page worker checked 2026-11-12; Mail database target corrected 2026-11-26)
+
+Writing these targets into the repo does not move DNS, Email Routing, the catch-all, custom domains, or
+`mail.cumuluscloud.app`. That host stays on the page worker `cumulus-mail` until the phases below.
 
 | | Today | Target |
 |---|---|---|
@@ -12,7 +15,7 @@ dashboard (Cloudflare, Yandex Cloud, DNS). The repository and its workflows neve
 | `ru.mail.cumuluscloud.app` | The same static page, reached **through Cloudflare and then AWS API Gateway** (`cf-ray`, `apigw-requestid`) | This app as a **Yandex Cloud** Serverless Container in `ru-central1`, not behind Cloudflare or AWS |
 | Inbound mail (`@cumuluscloud.app`) | Email Routing catch-all → worker `cumulus-mail` | Catch-all → **`cumulus-mail-inbound`** |
 | `/api/health` | 404 on both hosts | 200 with the region and commit (#78); `schema.pending` 0, else apply the migrations first |
-| Production database (Supabase) | Migrations `0006`–`0010` applied; the mail tables are **empty** | Same database for the US copy; `DATABASE_URL=… npm run db:status` lists pending migrations (exit 3) without applying them, `npm run db:migrate` applies them; the RU database depends on decision D1 (`docs/deploy/yandex-ru.md`) |
+| Production database (US Mail) | Dedicated Supabase `percackrrhhreusasspr` (us-east-1). Migrations `0001`–`0021` applied; mail tables **empty**. Hyperdrive `cumulus-mail` `d07a82ac7fcc42ac84dc6469140ef551`. Storage `https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3`. Shared project `ivqiskeziohbbtkcvlun` (eu-west-1) stays Cloud, Fabric, Nexus, and Cumulus://ID | Same dedicated database. `0022` and `0023` still pending: `DATABASE_URL=… npm run db:status` lists them (exit 3) without applying them, `npm run db:migrate` applies them. The RU database depends on decision D1 (`docs/deploy/yandex-ru.md`) |
 
 `node scripts/smoke.mjs --host https://<host>` (#82) reports all of this for a host and is the go/no-go check
 at every step below.

@@ -3,7 +3,10 @@
  * read-only, IMAP UID semantics over the app's message ids, and an incremental sync read.
  *
  * **Off unless `MAIL_BRIDGE=on`.** While it is off the API route answers 404, no token can be created
- * or used, and no UID row is written. There is no bridge program yet; this is what one would talk to.
+ * or used, and no UID row is written. The local program is `bridge/cumulus-bridge.mjs` and only binds
+ * 127.0.0.1. Writes need `MAIL_BRIDGE_WRITE=on` as well. (#189 turned it on by default; nothing in the
+ * app creates a token yet, so that only wrote UID rows for every inbound message. Turn it on per region
+ * once the bridge program and token UI are ready.)
  */
 export type BridgeLimits = {
   /** Tokens one mailbox may hold at once (revoked ones do not count). */

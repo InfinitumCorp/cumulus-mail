@@ -12,8 +12,8 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 
 | # | Decision | Options | Notes |
 |---|---|---|---|
-| D1 | **Where Russian users' mail and account data live** | (a) Yandex Managed PostgreSQL in `ru-central1`, separate from the US database; (b) the shared Supabase database (`eu-west-1`) | Russian law (152-FZ) requires personal data of Russian citizens to be first recorded and stored in databases located in Russia. (a) keeps it in Russia; (b) does not. Get legal sign-off. |
-| D2 | **Where blobs (message bodies, attachments) live** | (a) Yandex Object Storage bucket in `ru-central1`; (b) the shared Supabase Storage bucket | Same consideration as D1. Blobs are sealed with `MAIL_BLOB_KEY` before upload either way. |
+| D1 | **Where Russian users' mail and account data live** | (a) Yandex Managed PostgreSQL in `ru-central1`, separate from the US Mail database; (b) the shared Supabase project `ivqiskeziohbbtkcvlun` (`eu-west-1`) | Russian law (152-FZ) requires personal data of Russian citizens to be first recorded and stored in databases located in Russia. (a) keeps it in Russia; (b) does not. Get legal sign-off. The US Mail database is the dedicated project `percackrrhhreusasspr` (us-east-1). `ivqiskeziohbbtkcvlun` stays the backend for Cloud, Fabric, Nexus, and Cumulus://ID. |
+| D2 | **Where blobs (message bodies, attachments) live** | (a) Yandex Object Storage bucket in `ru-central1`; (b) Storage on the shared project `ivqiskeziohbbtkcvlun` | Same consideration as D1. Blobs are sealed with `MAIL_BLOB_KEY` before upload either way. US Mail blobs use the dedicated bucket at `https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3`, not the shared project. |
 | D3 | **Inbound mail for Russian mailboxes** | Inbound for `@cumuluscloud.app` arrives through Cloudflare Email Routing (US worker `cumulus-mail-inbound`), which writes to the database it is bound to | With D1 (a), the US worker cannot deliver into the Russian database. Options: a separate mail domain or subdomain for Russian mailboxes with its own MX in Russia; or have the US worker hand Russian recipients to the RU copy. Needs a design decision before Russian mailboxes receive mail. |
 | D4 | **Scheduled jobs** (scheduled send, outbound queue, purging deleted mailboxes after their 7-day grace period) | A Yandex Cloud timer trigger, or a cron on a VM, calling `POST /api/cron/tick` every minute with `Authorization: Bearer <CRON_SECRET>` (#88) | In the US these run from the inbound worker's cron. The endpoint is off (404) until `CRON_SECRET` is set; put it in Lockbox. |
 | D5 | **Serverless Container vs VM** | Serverless Container + API Gateway (default here); or one Compute VM with `deploy/yandex/docker-compose.yml` behind an ALB | Serverless scales to zero; a VM keeps PGLite-free warm state and simpler networking. |
@@ -35,7 +35,7 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 
 ## Steps
 
-1. **Database (D1).** Create the database (Managed PostgreSQL 16+ in `ru-central1`, or use the shared one).
+1. **Database (D1).** Create the database (Managed PostgreSQL 16+ in `ru-central1`, or use the shared project `ivqiskeziohbbtkcvlun`). Do not use the US Mail database `percackrrhhreusasspr` for the Russia copy.
    Apply the migrations in `migrations/` in file-name order, recording each file name in
    `public._migrations (name text primary key, applied_at timestamptz default now())`, the same table the app
    and the US database use. From a checkout of the commit being deployed:

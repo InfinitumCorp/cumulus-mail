@@ -1,12 +1,15 @@
 /**
- * Cumulus://ID is its own OpenID Connect issuer at the realm path. This
- * plain-JS copy of the default is for scripts (smoke, live checks); the app
- * reads src/lib/auth/cumulus-issuer.ts. Override with CUMULUS_OIDC_ISSUER.
+ * Cumulus://ID is the realm at https://id.cumuluscloud.app/realms/cumulus. This plain-JS copy of the
+ * default is for scripts (smoke, live checks); the app reads src/lib/auth/cumulus-issuer.ts. Override
+ * with CUMULUS_OIDC_ISSUER.
  */
 export const DEFAULT_CUMULUS_ISSUER = "https://id.cumuluscloud.app/realms/cumulus";
 
-/** Cumulus://ID publishes its ES256 signing keys here (also `jwks_uri` in discovery). */
+/** The realm publishes its signing keys here. */
 export const DEFAULT_CUMULUS_JWKS_URI = "https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs";
+
+/** The Cognito pool once planned for Cumulus://ID; its discovery answers 404. Kept for reference. */
+export const LEGACY_COGNITO_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
 
 /**
  * JWKS for an issuer: a `/realms/<name>` issuer (Cumulus://ID) uses the realm

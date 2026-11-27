@@ -85,3 +85,11 @@ test("rules archive a match and the signature stays above a quote", () => {
   const signed = withSignature("Hello\n\n—\nOn Monday, Leah wrote:\n> Hi", "Alex Reid");
   assert.equal(signed.startsWith("Hello\n\nAlex Reid\n\n—\n"), true);
 });
+
+test("a sealed subject is recognised, so the interface never saves its display copy back", async () => {
+  const { isSealedMessage } = await import("./logic.ts");
+  assert.equal(isSealedMessage({ subject: "cmh1.AAAA.BBBB" }), true);
+  assert.equal(isSealedMessage({ subject: "-----BEGIN PGP MESSAGE-----\n...\n-----END PGP MESSAGE-----" }), true);
+  assert.equal(isSealedMessage({ subject: "Encrypted message" }), false);
+  assert.equal(isSealedMessage({ subject: "Lunch on Friday?" }), false);
+});

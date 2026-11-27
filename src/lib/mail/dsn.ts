@@ -1,5 +1,6 @@
 import { newId } from "./bytes.ts";
-import { sealText } from "./field-crypto.ts";
+import { openText, sealText } from "./field-crypto.ts";
+import { metric } from "../observability/metrics.ts";
 import type { BounceHandler, BounceReceipt } from "./hooks.ts";
 import type { MailQuery } from "./query.ts";
 import { createSuppressionList } from "./suppression.ts";
@@ -42,7 +43,7 @@ export function parseDsn(raw: string): DsnRecipient[] {
     const action = fields.action?.trim().toLowerCase();
     const status = fields.status?.trim();
     if (!recipient || !action || !status) continue;
-    const address = recipient.split(";").pop()?.trim().toLowerCase() ?? "";
+    const address = (recipient.split(";").pop() ?? "").trim().replace(/^<|>$/g, "").trim().toLowerCase();
     if (!address.includes("@")) continue;
     found.push({
       recipient: address,
@@ -51,7 +52,55 @@ export function parseDsn(raw: string): DsnRecipient[] {
       diagnostic: fields["diagnostic-code"] ?? "",
     });
   }
+  if (found.length) return found;
+  // Exim and some others send a plain-text bounce without an RFC 3464 part, naming the addresses that
+  // failed permanently in X-Failed-Recipients.
+  const failed = /^x-failed-recipients:\s*(.+(?:\n[ \t].+)*)/im.exec(text)?.[1] ?? "";
+  for (const part of unfold(failed).split(",")) {
+    const address = part.trim().replace(/^<|>$/g, "").toLowerCase();
+    if (address.includes("@")) found.push({ recipient: address, action: "failed", status: "5.0.0", diagnostic: "X-Failed-Recipients" });
+  }
   return found;
+}
+
+/**
+ * The Message-IDs a bounce quotes from the original message: real MTAs return its headers (RFC 3462
+ * text/rfc822-headers or message/rfc822), with the Message-ID we sent it with (`<id@domain>`,
+ * outbound/message.ts). Local parts only, lower-cased.
+ */
+export function quotedMessageIds(raw: string): string[] {
+  const ids = new Set<string>();
+  for (const match of raw.matchAll(/^(?:message-id|original-message-id|in-reply-to|references)\s*:\s*(.+)$/gim)) {
+    for (const id of match[1]!.matchAll(/<([^>@\s]+)@[^>\s]+>/g)) ids.add(id[1]!);
+  }
+  return [...ids].slice(0, 20);
+}
+
+/**
+ * The recipients of the messages this mailbox SENT whose ids the bounce quotes. A bounce is only acted on
+ * for one of these: anyone can send a "multipart/report" to a mailbox, and acting on an unverified one
+ * would let a stranger suppress any address the person writes to (suppression poisoning).
+ */
+async function quotedRecipients(db: MailQuery, tenantId: string, raw: string): Promise<Set<string>> {
+  const recipients = new Set<string>();
+  for (const id of quotedMessageIds(raw)) {
+    const rows = await db.query<{ to_json: string; cc_json: string }>(
+      `select to_json, cc_json from cumulus_mail.messages where tenant_id = $1 and id = $2 and folder = 'sent'`,
+      [tenantId, id],
+    );
+    for (const row of rows) {
+      for (const sealed of [row.to_json, row.cc_json]) {
+        try {
+          for (const person of JSON.parse(openText(tenantId, sealed)) as Array<{ email?: string }>) {
+            if (person?.email) recipients.add(person.email.trim().toLowerCase());
+          }
+        } catch {
+          // an unreadable row proves nothing
+        }
+      }
+    }
+  }
+  return recipients;
 }
 
 export function isPermanentFailure(report: DsnRecipient): boolean {
@@ -88,8 +137,15 @@ export function createBounceHandler(db: MailQuery, tenantId: string): BounceHand
   return {
     async accept(rawDsn) {
       const reports = parseDsn(rawDsn);
+      if (!reports.length) return [];
+      const sentTo = await quotedRecipients(db, tenantId, rawDsn);
       const receipts: BounceReceipt[] = [];
       for (const report of reports) {
+        if (!sentTo.has(report.recipient)) {
+          // Not about mail this mailbox sent to that address: ignore (counted, never acted on).
+          metric("mail.dsn.unverified", {});
+          continue;
+        }
         const suppressed = await recordBounce(db, tenantId, report, null, suppressions);
         receipts.push({ ...report, suppressed });
       }

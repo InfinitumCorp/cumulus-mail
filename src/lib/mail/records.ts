@@ -8,6 +8,9 @@ import { messageSnippet } from "./logic.ts";
 import { indexMessageWords } from "./search.ts";
 import { catchAllAddress } from "./routing.ts";
 import { sanitizeExtra } from "./schedule.ts";
+import { cleanGroups } from "./groups.ts";
+import { acceptMailboxKey } from "./pgp-keys.ts";
+import { mailboxAddresses, publishMailboxKey } from "./wkd.ts";
 import { defaultSettings, keepServerNotes, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
@@ -183,7 +186,9 @@ export async function readSnapshot(db: MailQuery, tenantId: string): Promise<Mai
   );
   const briefMap: Record<string, string> = {};
   for (const brief of briefs) briefMap[brief.brief_key] = brief.body;
+  const revs = await readServerRevs(db, tenantId);
   return {
+    revs,
     me: {
       name: openText(tenantId, box.display_name),
       email: openText(tenantId, box.address),
@@ -238,11 +243,26 @@ export async function previousRawKeys(db: MailQuery, tenantId: string): Promise<
   return new Map(rows.map((row) => [row.id, row.raw_key]));
 }
 
+/**
+ * Each message's count of server-side changes (migrations/0019_message_rev.sql), only those above 0.
+ * Sent to the client with the snapshot and back with each save (`knownRevs`).
+ */
+export async function readServerRevs(db: MailQuery, tenantId: string): Promise<Record<string, number>> {
+  const rows = await db.query<{ id: string; server_rev: number | string }>(
+    `select id, server_rev from cumulus_mail.messages where tenant_id = $1 and server_rev > 0`,
+    [tenantId],
+  );
+  const revs: Record<string, number> = {};
+  for (const row of rows) revs[row.id] = Number(row.server_rev);
+  return revs;
+}
+
 export async function insertMessage(
   db: MailQuery,
   tenantId: string,
   message: MailMessage,
   rawKey: string | null,
+  serverRev = 0,
 ): Promise<void> {
   assertTenantId(tenantId);
   assertId(message.id, "message id");
@@ -256,9 +276,9 @@ export async function insertMessage(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
        sent_at, unread, starred, labels_json, snooze_until, delivery_json, raw_key, auth_json,
-       snippet_enc, headers_enc, extras_enc, due_at
+       snippet_enc, headers_enc, extras_enc, due_at, server_rev
      ) values (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
      )
      on conflict (tenant_id, id) do update set
        thread_id = excluded.thread_id,
@@ -280,7 +300,8 @@ export async function insertMessage(
        snippet_enc = excluded.snippet_enc,
        headers_enc = excluded.headers_enc,
        extras_enc = excluded.extras_enc,
-       due_at = excluded.due_at`,
+       due_at = excluded.due_at,
+       server_rev = greatest(cumulus_mail.messages.server_rev, excluded.server_rev)`,
     [
       tenantId,
       message.id,
@@ -304,6 +325,7 @@ export async function insertMessage(
       headerJson ? sealText(tenantId, headerJson) : null,
       sealExtra(tenantId, message.extra),
       dueHour(message),
+      Math.max(0, Math.trunc(serverRev)),
     ],
   );
   await db.query(`delete from cumulus_mail.message_blind where tenant_id = $1 and message_id = $2`, [
@@ -365,7 +387,7 @@ export async function writeDelivery(
   hops: MailMessage["delivery"],
 ): Promise<void> {
   await db.query(
-    `update cumulus_mail.messages set delivery_json = $3 where tenant_id = $1 and id = $2`,
+    `update cumulus_mail.messages set delivery_json = $3, server_rev = server_rev + 1 where tenant_id = $1 and id = $2`,
     [tenantId, messageId, hops ? sealText(tenantId, JSON.stringify(hops)) : null],
   );
 }
@@ -398,11 +420,13 @@ export async function replaceMailboxContents(
   snapshot: MailboxSnapshot,
   files: Array<{ messageId: string; file: StoredAttachment }>,
   rawKeys: Map<string, string | null>,
+  revs: Record<string, number> = {},
 ): Promise<void> {
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
     const previous = await readSettings(db, tenantId);
-    const settings = keepServerNotes(previous, keepVerified(previous, withOwnershipTxt(tenantId, sanitizeSettings(snapshot.settings, mailDomain()))));
+    const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, withOwnershipTxt(tenantId, sanitizeSettings(snapshot.settings, mailDomain())))));
+    await publishMailboxKey(db, tenantId, [snapshot.me?.email ?? "", ...snapshot.aliases], settings.mailboxKey?.publicKey ?? null);
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.messages where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
@@ -424,7 +448,7 @@ export async function replaceMailboxContents(
       ],
     );
     for (const message of snapshot.messages) {
-      await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null);
+      await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null, revs[message.id] ?? 0);
     }
     for (const entry of files) {
       await insertAttachment(db, tenantId, entry.messageId, entry.file);
@@ -538,18 +562,21 @@ function sealPrivate(tenantId: string, contact: Contact): string | null {
   const phone = contact.phone?.trim().slice(0, 40) ?? "";
   const address = contact.address?.trim().slice(0, 300) ?? "";
   const publicKey = contact.publicKey?.trim().slice(0, 20_000) ?? "";
-  if (!phone && !address && !publicKey) return null;
-  return sealText(tenantId, JSON.stringify({ phone, address, publicKey }));
+  const groups = cleanGroups(contact.groups);
+  if (!phone && !address && !publicKey && groups.length === 0) return null;
+  return sealText(tenantId, JSON.stringify({ phone, address, publicKey, groups }));
 }
 
-function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "phone" | "address" | "publicKey"> {
+function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "phone" | "address" | "publicKey" | "groups"> {
   if (!stored) return {};
   try {
-    const parsed = JSON.parse(openText(tenantId, stored)) as { phone?: string; address?: string; publicKey?: string };
+    const parsed = JSON.parse(openText(tenantId, stored)) as { phone?: string; address?: string; publicKey?: string; groups?: unknown };
+    const groups = cleanGroups(parsed.groups);
     return {
       phone: parsed.phone || undefined,
       address: parsed.address || undefined,
       publicKey: parsed.publicKey || undefined,
+      ...(groups.length ? { groups } : {}),
     };
   } catch {
     return {};
@@ -576,9 +603,13 @@ export async function readSettings(db: MailQuery, tenantId: string): Promise<Mai
 
 export async function writeSettings(db: MailQuery, tenantId: string, settings: MailSettings): Promise<void> {
   assertTenantId(tenantId);
-  const clean = withOwnershipTxt(tenantId, sanitizeSettings(settings, mailDomain()));
+  const clean = await acceptMailboxKey(withOwnershipTxt(tenantId, sanitizeSettings(settings, mailDomain())));
   await db.query(`update cumulus_mail.mailboxes set settings_enc = $2 where tenant_id = $1`, [
     tenantId,
     sealText(tenantId, JSON.stringify(clean)),
   ]);
+  const profile = await readProfile(db, tenantId);
+  if (profile) {
+    await publishMailboxKey(db, tenantId, await mailboxAddresses(db, tenantId, profile.email), clean.mailboxKey?.publicKey ?? null);
+  }
 }

@@ -10,6 +10,8 @@
  * - APPEND only files into Sent, and only a message whose From is one of this mailbox's own addresses. It is
  *   for the copy a client keeps after sending through SMTP; it cannot be used to plant "received" mail.
  */
+import { fileName } from "../snapshot.ts";
+import { sanitizeContentType } from "../../storage/adapter.ts";
 import { createHash } from "node:crypto";
 import { assertTenantId } from "../../storage/adapter.ts";
 import type { TenantStorage } from "../delivery.ts";
@@ -83,7 +85,8 @@ export async function moveMessages(
     // Compare-and-swap on the folder: if the app moved it meanwhile, this message is skipped.
     const updated = await db.query<{ id: string }>(
       `update cumulus_mail.messages
-          set folder = $4, due_at = case when $3 = 'drafts' then null else due_at end
+          set folder = $4, due_at = case when $3 = 'drafts' then null else due_at end,
+              server_rev = server_rev + 1
         where tenant_id = $1 and id = $2 and folder = $3
         returning id`,
       [tenantId, row.message_id, from, to],
@@ -144,9 +147,9 @@ export async function appendSentCopy(
     const saved = await storage.put(file.bytes);
     attachments.push({
       id: `a-${id}-${index}`,
-      name: file.name,
+      name: fileName(file.name),
       size: file.bytes.byteLength,
-      contentType: file.contentType || "application/octet-stream",
+      contentType: sanitizeContentType(file.contentType),
       sha256: saved.sha256,
       objectKey: saved.blobId,
     });

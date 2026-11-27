@@ -14,16 +14,21 @@ this repository.
 ## 0. Already done
 
 - [x] Sign-in decision: **keep Cumulus ID** (#70 merged). Google-only sign-in (#63, #67) is not shipped.
-- [x] Production database (Supabase `ivqiskeziohbbtkcvlun`): migrations `0006`–`0010` applied and recorded in
-      `public._migrations` (2026-11-12). The mail tables were empty.
+- [x] US Mail database is the dedicated Supabase project `percackrrhhreusasspr` (us-east-1). The shared
+      project `ivqiskeziohbbtkcvlun` (eu-west-1) stays the backend for Cloud, Fabric, Nexus, and Cumulus://ID.
+      Do not apply Mail migrations there, and do not point Mail workers at it.
+- [x] Dedicated Mail database, checked 2026-11-26: migrations `0001`–`0021` are recorded in `public._migrations`
+      (`0001`–`0011` and `0016` on 2026-11-14; `0012`–`0015` and `0017`–`0021` on 2026-11-19). Mail tables were
+      empty. Storage bucket `cumulus-mail` is private and empty. S3 endpoint
+      `https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3`. `0001_auth.sql` and
+      `0020_auth_lockdown.sql` are both applied. On Supabase, `0001` alone leaves the sign-in tables readable
+      with the public anon key (session tokens); `0020` closes that.
 - [ ] Vercel auto-deploy off: merge #75 (`git.deploymentEnabled: false`).
-- [ ] Production database: apply the migrations on `main` that it does not have yet, **before** deploying code that
-      uses them: `0011_message_words.sql` (server-side search, #84), `0012_bridge.sql` (IMAP bridge, #115),
-      `0013_data_exports.sql` and `0014_account_deletion.sql` (Download my data and Delete mailbox, via #109),
-      `0016_calendar_feeds.sql` (#108), `0017_outbound_safety.sql` (#126), `0015_spam_controls.sql` (#106) and `0018_spam_votes.sql` (one shared spam
-      vote per mailbox per domain).
-      `npm run db:status` lists what is pending and exits 3 if anything is. Files apply by name, so applying them out
-      of number order is fine; each is recorded in `public._migrations`.
+- [ ] Dedicated Mail database: apply the migrations on `main` that it does not have yet, **before** deploying
+      code that uses them: `0022_factor_sessions.sql` and `0023_outbound_queue_created.sql`. `npm run db:status`
+      lists what is pending and exits 3 if anything is. Point `DATABASE_URL` at `percackrrhhreusasspr` only
+      (session pooler `aws-1-us-east-1.pooler.supabase.com`, port 5432, `sslmode=require`). Files apply by name,
+      so applying them out of number order is fine; each is recorded in `public._migrations`.
 
 ## 1. Both regions
 
@@ -54,8 +59,9 @@ Routing catch-all** from `cumulus-mail` until the handoff's section 6 test has p
 `send_email` binding; no MX or DNS change as part of the deploy.
 
 - [ ] Cloudflare API token (Workers Scripts edit, Hyperdrive read) and account id - for whoever runs the deploy.
-- [ ] Hyperdrive config for the production database; paste its id over `REPLACE_WITH_HYPERDRIVE_ID` in
-      `workers/email/wrangler.jsonc` (and `workers/api/wrangler.jsonc` if the API worker is deployed).
+- [x] Hyperdrive `cumulus-mail` (`d07a82ac7fcc42ac84dc6469140ef551`) is the id in
+      `workers/email/wrangler.jsonc` and `workers/api/wrangler.jsonc`. It already targets the dedicated Mail
+      session pooler. Do not create a second config for `ivqiskeziohbbtkcvlun`.
 - [ ] Inbound worker secrets: `MAIL_BLOB_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`;
       API worker also `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (its workers.dev origin).
 - [ ] Deploy with **Actions → Deploy US (Cloudflare)** (#80): manual only, `production-us` environment (add
@@ -74,7 +80,8 @@ Routing catch-all** from `cumulus-mail` until the handoff's section 6 test has p
 ## 3. RU: Yandex Cloud (`docs/deploy/yandex-ru.md`, PR #76)
 
 - [ ] **Decisions first** (in the runbook): where Russian users' data and blobs live (152-FZ: Managed
-      PostgreSQL + Object Storage in `ru-central1`, or the shared Supabase project in `eu-west-1`); how inbound
+      PostgreSQL + Object Storage in `ru-central1`, or the shared Supabase project `ivqiskeziohbbtkcvlun` in
+      `eu-west-1`, which stays Cloud, Fabric, Nexus, and Cumulus://ID and is not the US Mail database); how inbound
       mail reaches Russian mailboxes; a scheduler for scheduled send / outbound queue; Serverless Container or VM.
 - [ ] Yandex Cloud folder, Container Registry, a service account (image pull, Lockbox read, bucket access).
 - [ ] Lockbox secret with `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`, `MAIL_BLIND_KEY`,
@@ -129,7 +136,7 @@ Setup details: `docs/deploy/outbound-smtp.md`.
       set `MAIL_DKIM_SELECTOR` and `MAIL_DKIM_PRIVATE_KEY` (secret) or `MAIL_DKIM_KEY_PATH`.
 - [ ] SPF and DMARC records that include the relay. The exact records, and how to check them once published, are in
       `docs/deploy/dns-records.md` (#122); `npm run dkim:record` prints the DKIM TXT record from the key.
-- [ ] Optional rate limits: `MAIL_OUTBOUND_HOURLY_LIMIT` (default 100), `MAIL_OUTBOUND_DAILY_LIMIT` (default 500).
+- [ ] Optional rate limits: `MAIL_OUTBOUND_HOURLY_LIMIT` (default 100), `MAIL_OUTBOUND_DAILY_LIMIT` (default 500), `MAIL_OUTBOUND_MAX_RECIPIENTS` (default 50 per message). The kill switch for one mailbox: `npm run outbound:pause` (`docs/ops/incident.md`).
 - [ ] Know what the abuse controls do (#126), so support can answer: only mailboxes whose Cumulus ID email is
       verified send outside Cumulus; a new mailbox starts at 10/hour and 20/day and reaches the limits above after
       7 days; a burst of spam-shaped mail pauses outside sending for 24 hours, with the reason shown in the

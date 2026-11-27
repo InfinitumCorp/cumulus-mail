@@ -14,7 +14,9 @@
   //
   // DATABASE_URL is not a secret here. The Hyperdrive binding supplies it.
   // Set BETTER_AUTH_URL to this worker's workers.dev origin, not mail.cumuluscloud.app.
-  // Replace REPLACE_WITH_HYPERDRIVE_ID with the same Hyperdrive id as the inbound worker.
+  // Hyperdrive `cumulus-mail` (d07a82ac7fcc42ac84dc6469140ef551) is the dedicated
+  // Mail database percackrrhhreusasspr (us-east-1), same id as the inbound worker.
+  // Do not point this worker at the shared project ivqiskeziohbbtkcvlun.
   "name": "cumulus-mail-api",
   "main": "../../.output/server/index.mjs",
   "compatibility_date": "2026-11-10",
@@ -31,9 +33,12 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+      "id": "d07a82ac7fcc42ac84dc6469140ef551"
     }
   ],
+  // Keep variables set in the dashboard (MAIL_AUTH_DNS, MAIL_SMTP_*, MAIL_MAINTENANCE, MAIL_CSP, ...)
+  // across deploys: without this, every workflow deploy deletes them. Values below still win.
+  "keep_vars": true,
   "vars": {
     "CUMULUS_RUNTIME": "cloudflare",
     "MAIL_STORAGE": "s3",
@@ -41,7 +46,7 @@
     "MAIL_APP_HOST": "mail.cumuluscloud.app",
     "CUMULUS_ALLOW_SUPABASE": "1",
     "CUMULUS_OIDC_ISSUER": "https://id.cumuluscloud.app/realms/cumulus",
-    "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "SUPABASE_S3_ENDPOINT": "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
     "SUPABASE_S3_REGION": "us-east-1",
     "SUPABASE_S3_BUCKET": "cumulus-mail",
     "VITE_AUTH_ENABLED": "true"

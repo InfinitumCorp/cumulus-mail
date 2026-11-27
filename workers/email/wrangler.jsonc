@@ -9,9 +9,11 @@
   //   SUPABASE_S3_ACCESS_KEY_ID
   //   SUPABASE_S3_SECRET_ACCESS_KEY
   //
-  // Hyperdrive id: replace REPLACE_WITH_HYPERDRIVE_ID after
-  //   wrangler hyperdrive create cumulus-mail --connection-string="postgresql://postgres.ivqiskeziohbbtkcvlun:<password>@<pooler-host>:5432/postgres?sslmode=require"
-  // Use the session pooler (port 5432). Do not use 6543. The password stays in Hyperdrive.
+  // Hyperdrive `cumulus-mail` already exists: id d07a82ac7fcc42ac84dc6469140ef551.
+  // Origin is the dedicated Mail database percackrrhhreusasspr (us-east-1), session
+  // pooler aws-1-us-east-1.pooler.supabase.com port 5432. Do not use 6543.
+  // Do not point this worker at the shared project ivqiskeziohbbtkcvlun.
+  // The password stays in Hyperdrive. Do not commit it.
   "name": "cumulus-mail-inbound",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-10",
@@ -28,14 +30,17 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+      "id": "d07a82ac7fcc42ac84dc6469140ef551"
     }
   ],
+  // Keep variables set in the dashboard (MAIL_AUTH_DNS, MAIL_SMTP_*, MAIL_MAINTENANCE, MAIL_CSP, ...)
+  // across deploys: without this, every workflow deploy deletes them. Values below still win.
+  "keep_vars": true,
   "vars": {
     "MAIL_DOMAIN": "cumuluscloud.app",
     "MAIL_APP_HOST": "mail.cumuluscloud.app",
     "CUMULUS_ALLOW_SUPABASE": "1",
-    "SUPABASE_S3_ENDPOINT": "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "SUPABASE_S3_ENDPOINT": "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
     "SUPABASE_S3_REGION": "us-east-1",
     "SUPABASE_S3_BUCKET": "cumulus-mail"
   }

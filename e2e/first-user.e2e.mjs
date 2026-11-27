@@ -65,6 +65,8 @@ test("first session: setup, send to self, receive, reply, search, delete", async
     subject,
     { timeout: 40_000 },
   );
+  // Every change is saved before the reload (the app also asks before leaving mid-save, store.ts).
+  await page.waitForFunction(() => document.documentElement.dataset.saving !== "1");
   await page.reload({ waitUntil: "networkidle" });
   await row(page, subject).first().waitFor({ timeout: 30_000 });
 
@@ -99,6 +101,8 @@ test("first session: setup, send to self, receive, reply, search, delete", async
   await page.locator('button[aria-label="Trash"]').first().click();
   await page.getByText("Moved to Trash.").first().waitFor();
   await row(page, subject).first().waitFor({ state: "detached", timeout: 15_000 });
+  // Every change is saved before the reload (the app also asks before leaving mid-save, store.ts).
+  await page.waitForFunction(() => document.documentElement.dataset.saving !== "1");
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
   assert.equal(await row(page, subject).count(), 0, "still gone from the Inbox after a reload");

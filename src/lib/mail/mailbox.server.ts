@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getSql } from "@/lib/db";
 import { takeAction } from "@/lib/rate-limit";
 import { markSendVerified } from "./outbound/safety.ts";
@@ -15,7 +16,8 @@ import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
 import { createAbuseIntake } from "./abuse.ts";
 import { createBounceHandler } from "./dsn.ts";
-import { openMailbox, readAttachment, writeSnapshot } from "./mailbox.ts";
+import { openMailbox, readAttachment, writeDelta, writeSnapshot } from "./mailbox.ts";
+import type { MailboxDelta } from "./delta.ts";
 import type { MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailAppHost, mailboxAddress, mailDomain } from "./domain.ts";
@@ -43,6 +45,9 @@ import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
 const globalDriver = globalThis as typeof globalThis & { __cumulusMailDriver?: StorageDriver };
+
+/** Set while the second-factor endpoints run, so a locked mailbox can still unlock. */
+const skipFactorCheck = new AsyncLocalStorage<true>();
 
 function driver(): StorageDriver {
   globalDriver.__cumulusMailDriver ??= createStorageDriver();
@@ -78,7 +83,10 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
 async function sessionMailbox(
   contextUserId: string,
   bearerToken?: string,
-): Promise<{ tenantId: string; profile: MailProfile; verified: boolean }> {
+): Promise<{ tenantId: string; profile: MailProfile; verified: boolean; factorSession: string }> {
+  let resolved: { tenantId: string; profile: MailProfile; verified: boolean };
+  // Which sign-in the second factor is passed for: the session (cookie sign-in) or the bearer token.
+  let sessionRef = "";
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
     const tenantId = await tenantFromCumulusToken(bearerToken);
     assertTenantId(tenantId);
@@ -89,7 +97,8 @@ async function sessionMailbox(
     const person = await cidProfileFromTokens(cidConfig(), { accessToken: bearerToken });
     const email = (person?.email ?? "").trim().toLowerCase();
     if (!person || person.cid !== tenantId || !email.includes("@")) throw new UnauthorizedError();
-    return {
+    sessionRef = `bearer:${bearerToken}`;
+    resolved = {
       verified: true, // a Cumulus ID token: the identity provider verified the email
       tenantId,
       profile: {
@@ -100,30 +109,41 @@ async function sessionMailbox(
         quotaGb: 15,
       },
     };
-  }
-  const session = await getSessionUser();
-  if (session) {
-    if (session.id !== contextUserId) {
-      const { metric } = await import("@/lib/observability/metrics");
-      metric("auth.failure", { reason: "tenant_mismatch" });
-      throw new TenantAccessError("Session does not match");
+  } else {
+    const session = await getSessionUser();
+    if (session) {
+      if (session.id !== contextUserId) {
+        const { metric } = await import("@/lib/observability/metrics");
+        metric("auth.failure", { reason: "tenant_mismatch" });
+        throw new TenantAccessError("Session does not match");
+      }
+      assertTenantId(session.id);
+      sessionRef = `session:${session.sessionId ?? session.id}`;
+      const email = (session.email ?? "").trim().toLowerCase();
+      const address = email.includes("@") ? email : mailboxAddress(session.id);
+      const name = address.split("@")[0] || "Cumulus";
+      resolved = {
+        verified: session.emailVerified === true,
+        tenantId: session.id,
+        profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
+      };
+    } else if (contextUserId !== DEV_USER_ID) {
+      throw new TenantAccessError("Tenant is not verified");
+    } else {
+      resolved = {
+        verified: true, // the local development user (sign-in off), never a deployed copy
+        tenantId: DEV_USER_ID,
+        profile: { name: "Alex Reid", email: mailboxAddress("alex"), cid: "cid:alex", plan: "Free", quotaGb: 15 },
+      };
     }
-    assertTenantId(session.id);
-    const email = (session.email ?? "").trim().toLowerCase();
-    const address = email.includes("@") ? email : mailboxAddress(session.id);
-    const name = address.split("@")[0] || "Cumulus";
-    return {
-      verified: session.emailVerified === true,
-      tenantId: session.id,
-      profile: { name, email: address, cid: `cid:${session.id}`, plan: "Free", quotaGb: 15 },
-    };
   }
-  if (contextUserId !== DEV_USER_ID) throw new TenantAccessError("Tenant is not verified");
-  return {
-    verified: true, // the local development user (sign-in off), never a deployed copy
-    tenantId: DEV_USER_ID,
-    profile: { name: "Alex Reid", email: mailboxAddress("alex"), cid: "cid:alex", plan: "Free", quotaGb: 15 },
-  };
+  const { factorBlocks, factorSessionKey } = await import("./factors.ts");
+  const factorSession = await factorSessionKey(sessionRef || `dev:${resolved.tenantId}`);
+  if (!skipFactorCheck.getStore()) {
+    const { FACTOR_REQUIRED } = await import("../auth/factor-gate.ts");
+    if (await factorBlocks(await database(), resolved.tenantId, factorSession)) throw new Error(FACTOR_REQUIRED);
+  }
+  return { ...resolved, factorSession };
 }
 
 export async function readMailboxForSession(contextUserId: string, bearerToken?: string): Promise<MailboxSnapshot> {
@@ -141,6 +161,22 @@ export async function writeMailboxForSession(
   await openMailbox(db, tenantId, profile);
   if (verified) await markSendVerified(db, tenantId);
   return writeSnapshot(db, storageFor, tenantId, snapshot);
+}
+
+/** The change a closing tab could not finish saving (delta.ts), sent with keepalive. */
+export async function writeMailboxDeltaForSession(
+  contextUserId: string,
+  delta: MailboxDelta,
+  bearerToken?: string,
+): Promise<{ ok: true }> {
+  const { tenantId, profile, verified } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "delta");
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  if (verified) await markSendVerified(db, tenantId);
+  await writeDelta(db, storageFor, tenantId, delta);
+  // The page is gone: nobody reads a snapshot back.
+  return { ok: true };
 }
 
 export async function readAttachmentForSession(
@@ -161,10 +197,10 @@ export async function readAttachmentForSession(
 export async function reportSpamForSession(
   contextUserId: string,
   messageId: string,
-  verdict: "spam" | "ham",
+  verdict: "spam" | "ham" | "block",
   bearerToken?: string,
 ): Promise<{ ok: true }> {
-  const { reportedMessage, reportNotSpam, reportSpam } = await import("./spam.ts");
+  const { blockSender, reportedMessage, reportNotSpam, reportSpam } = await import("./spam.ts");
   const { tenantId, profile } = await sessionMailbox(contextUserId, bearerToken);
   takeAction(tenantId, "spamReport");
   const db = await database();
@@ -172,6 +208,7 @@ export async function reportSpamForSession(
   const message = await reportedMessage(db, tenantId, messageId);
   if (!message) throw new Error("That message is not in this mailbox.");
   if (verdict === "spam") await reportSpam(db, tenantId, message.from, message.auth);
+  else if (verdict === "block") await blockSender(db, tenantId, message.from);
   else await reportNotSpam(db, tenantId, message.from, message.auth);
   return { ok: true };
 }
@@ -509,4 +546,149 @@ export async function receiveStripeWebhook(payload: string, signature: string | 
     // 500 makes Stripe retry; the event id was released.
     return new Response("Webhook processing failed", { status: 500 });
   }
+}
+
+export type FactorRequest =
+  | { action: "status" }
+  | { action: "totp-begin" }
+  | { action: "totp-confirm"; code: string }
+  | { action: "totp-verify"; code: string }
+  | { action: "totp-disable"; code: string }
+  | { action: "webauthn-register-options" }
+  | { action: "webauthn-register"; name: string; id: string; clientDataJSON: string; attestationObject: string }
+  | { action: "webauthn-assert-options" }
+  | { action: "webauthn-assert"; id: string; clientDataJSON: string; authenticatorData: string; signature: string }
+  | { action: "webauthn-remove"; id: string };
+
+async function factorOrigin(): Promise<string> {
+  const { getRequest } = await import("@tanstack/react-start/server");
+  const request = getRequest();
+  if (!request) return `https://${mailAppHost()}`;
+  const url = new URL(request.url);
+  const proto = (request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "")).split(",")[0]!.trim();
+  const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host).split(",")[0]!.trim();
+  return `${proto}://${host}`;
+}
+
+export type FactorResult =
+  | { totp: boolean; pending: boolean; credentials: Array<{ id: string; name: string }>; satisfied: boolean }
+  | { secret: string; otpauth: string }
+  | { recoveryCodes: string[] }
+  | { ok: true }
+  | { challenge: string; rpId: string; userId: string; userName: string }
+  | { id: string }
+  | { challenge: string; rpId: string; credentialIds: string[] };
+
+/** Authenticator and security keys for this mailbox. Not gated by the factor, so a locked mailbox can still unlock. */
+export async function secondFactorForSession(
+  contextUserId: string,
+  request: FactorRequest,
+  bearerToken?: string,
+): Promise<FactorResult> {
+  return skipFactorCheck.run(true, () => secondFactorUnlocked(contextUserId, request, bearerToken));
+}
+
+async function secondFactorUnlocked(
+  contextUserId: string,
+  request: FactorRequest,
+  bearerToken?: string,
+): Promise<FactorResult> {
+  const { tenantId, profile, factorSession } = await sessionMailbox(contextUserId, bearerToken);
+  if (request.action !== "status") takeAction(tenantId, "factor");
+  const db = await database();
+  await openMailbox(db, tenantId, profile);
+  const factors = await import("./factors.ts");
+  // A locked session may only check in. Enrolling a factor or removing one needs an unlocked session:
+  // otherwise a stolen session could add its own key (which unlocked it) or remove the owner's.
+  if (!factors.UNLOCK_ACTIONS.has(request.action) && (await factors.factorBlocks(db, tenantId, factorSession))) {
+    const { FACTOR_REQUIRED } = await import("../auth/factor-gate.ts");
+    throw new Error(FACTOR_REQUIRED);
+  }
+  const origin = await factorOrigin();
+  const host = mailAppHost();
+  switch (request.action) {
+    case "status":
+      return factors.factorStatus(db, tenantId, factorSession);
+    case "totp-begin":
+      return factors.beginTotp(db, tenantId, profile.email);
+    case "totp-confirm":
+      return factors.confirmTotp(db, tenantId, request.code, factorSession);
+    case "totp-verify":
+      await factors.verifyTotp(db, tenantId, request.code, factorSession);
+      return { ok: true as const };
+    case "totp-disable":
+      await factors.disableTotp(db, tenantId, request.code);
+      return { ok: true as const };
+    case "webauthn-register-options":
+      return factors.beginRegistration(db, tenantId, origin, host, profile.email);
+    case "webauthn-register":
+      return factors.finishRegistration(db, tenantId, origin, host, request.name, {
+        id: request.id,
+        clientDataJSON: request.clientDataJSON,
+        attestationObject: request.attestationObject,
+      }, factorSession);
+    case "webauthn-assert-options":
+      return factors.beginAssertion(db, tenantId, origin, host);
+    case "webauthn-assert":
+      await factors.finishAssertion(db, tenantId, origin, host, request, factorSession);
+      return { ok: true as const };
+    case "webauthn-remove":
+      await factors.removeCredential(db, tenantId, request.id);
+      return { ok: true as const };
+    default:
+      throw new Error("Unknown factor action");
+  }
+}
+
+/** Public keys for these recipients: this server's WKD first, then theirs. Misses are omitted. */
+export async function lookupPgpKeysForSession(
+  contextUserId: string,
+  emails: string[],
+  bearerToken?: string,
+): Promise<{ keys: Record<string, string> }> {
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  takeAction(tenantId, "pgpLookup");
+  const db = await database();
+  const { fetchWkdKey, splitAddress, wkdLocalHash } = await import("./pgp-keys.ts");
+  const { validEmail } = await import("./logic.ts");
+  const keys: Record<string, string> = {};
+  await Promise.all(
+    emails.slice(0, 10).map(async (email) => {
+      const normalized = email.trim().toLowerCase();
+      if (!validEmail(normalized)) return;
+      const parts = splitAddress(normalized);
+      if (parts) {
+        const rows = await db.query<{ public_key: string }>(
+          `select public_key from cumulus_mail.wkd_keys where domain = $1 and local_hash = $2 limit 1`,
+          [parts.domain, await wkdLocalHash(parts.local)],
+        );
+        if (rows[0]?.public_key) {
+          keys[normalized] = rows[0].public_key;
+          return;
+        }
+      }
+      const { lookupDirectoryKey } = await import("./id-directory.ts");
+      const fromId = await lookupDirectoryKey(normalized);
+      if (fromId) {
+        keys[normalized] = fromId;
+        return;
+      }
+      const remote = await fetchWkdKey(normalized);
+      if (remote) keys[normalized] = remote;
+    }),
+  );
+  return { keys };
+}
+
+export async function easySwitchForSession(
+  contextUserId: string,
+  provider: "google" | "microsoft",
+  bearerToken?: string,
+): Promise<{ configured: false } | { configured: true; url: string }> {
+  const { tenantId } = await sessionMailbox(contextUserId, bearerToken);
+  const { authorizeUrl, importConfigured, importState } = await import("./easy-switch.ts");
+  if (!importConfigured(provider)) return { configured: false };
+  const secret = process.env.MAIL_BLOB_KEY?.trim();
+  if (!secret) throw new Error("MAIL_BLOB_KEY is not set");
+  return { configured: true, url: authorizeUrl(provider, mailAppHost(), importState(provider, tenantId, secret)) };
 }

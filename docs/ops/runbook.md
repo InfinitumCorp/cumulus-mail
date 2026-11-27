@@ -6,7 +6,7 @@ For whoever is on call. Two copies of the app run independently:
 |---|---|---|
 | Host | `mail.cumuluscloud.app` | `ru.mail.cumuluscloud.app` |
 | Runs on | Cloudflare Workers `cumulus-mail-api` (app) and `cumulus-mail-inbound` (mail + per-minute cron), US placement | Yandex Cloud Serverless Container, `ru-central1`, **not** behind Cloudflare |
-| Database | Supabase Postgres via Hyperdrive | Managed PostgreSQL in `ru-central1` (or the shared DB, decision D1) |
+| Database | Dedicated Supabase `percackrrhhreusasspr` (us-east-1) via Hyperdrive `cumulus-mail` (`d07a82ac7fcc42ac84dc6469140ef551`) | Managed PostgreSQL in `ru-central1`, or the shared project `ivqiskeziohbbtkcvlun` (eu-west-1; Cloud, Fabric, Nexus, and Cumulus://ID), decision D1. Not the US Mail database. |
 | Blobs | S3-compatible bucket | Yandex Object Storage `cumulus-mail-ru` |
 | Secrets live in | GitHub environment `production-us` + Cloudflare worker secrets | Yandex Lockbox (`YC_LOCKBOX_ID`), attached at deploy |
 | Deploy | `.github/workflows/deploy-cloudflare.yml`: manual, from `main` only, confirm `deploy us` | `.github/workflows/deploy-yandex.yml` → `deploy/yandex/deploy.sh`: manual, from `main` only, confirm `deploy ru` |
@@ -20,6 +20,8 @@ Items marked *(after #NN)* depend on a pull request that was open when this was 
 ---
 
 ## 1. Incident checklist
+
+Per-symptom first moves (mail not arriving or not sending, sign-in, database down, spam waves, rollback): `incident.md`.
 
 Work down it; write the time next to each step in the incident note.
 
@@ -121,12 +123,14 @@ DATABASE_URL=<that copy's database> npm run db:status    # exit 0: up to date
 Then deploy from `main`. `/api/health` shows `schema.pending: 0` *(after #91)*.
 
 - Run from a checkout of **the commit being deployed**, so the files match the code.
-- US: the Supabase connection string (session pooler) from the Supabase dashboard; never commit it.
+- US: the dedicated Mail project `percackrrhhreusasspr`, session pooler `aws-1-us-east-1.pooler.supabase.com` port 5432, `sslmode=require`. Never commit the password. Do not use `ivqiskeziohbbtkcvlun`.
 - RU: the Managed PostgreSQL string from Lockbox, from a machine that can reach `ru-central1`.
 - A migration that fails rolls itself back (one transaction per file) and stops; nothing after it runs.
   Fix forward with a new migration file; never edit one that has been applied anywhere.
 - Some migrations need a follow-up job, named in their PR: e.g. after `0011` (search, #84) run
   `scripts/reindex-words.mjs`.
+- Undoing a migration (rarely needed: roll back the code instead) is per file in `docs/ops/migrations.md`,
+  with the SQL, what each loses, and the checks it was verified with.
 
 ---
 
@@ -252,7 +256,7 @@ The keys are **not** in either backup. Keep them in the recovery password manage
 | | US (Cloudflare) | Russia (Yandex) |
 |---|---|---|
 | Database | Supabase Postgres: daily backups, plus PITR if the plan has it | Managed PostgreSQL in `ru-central1`: automatic daily backups (set the retention), plus PITR |
-| Blobs | Supabase Storage bucket `cumulus-mail`: a scheduled copy to a second bucket (`rclone sync` or the provider's replication) | Object Storage bucket `cumulus-mail-ru`: versioning on, plus a scheduled copy to a second bucket in `ru-central1` |
+| Blobs | Dedicated Mail Storage bucket `cumulus-mail` at `https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3`: a scheduled copy to a second bucket (`rclone sync` or the provider's replication) | Object Storage bucket `cumulus-mail-ru`: versioning on, plus a scheduled copy to a second bucket in `ru-central1` |
 | Keys | password manager (US keys) | password manager (RU keys, never the US ones) |
 
 Back up the blobs **after** the database dump is taken, never before. A blob newer than the dump is harmless (unreferenced). A row that points at a blob the copy missed is a lost attachment.

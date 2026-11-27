@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getMailbox, putMailbox } from "@/lib/mail/api";
+import { diffSnapshot } from "@/lib/mail/delta";
 import {
   ME,
   MAX_ALIASES,
@@ -14,11 +15,14 @@ import {
 } from "./model";
 import type { MailProfile, MailboxSnapshot } from "./snapshot";
 import { mailDomain } from "./domain";
+import { FACTOR_REQUIRED } from "../auth/factor-gate";
 import { defaultSettings, sanitizeSettings, type MailSettings } from "./settings";
 
 type MailStore = MailboxSnapshot & {
   syncError: string;
   hydrate: () => void;
+  /** Fetch the mailbox now (after a second-factor unlock): `hydrate` runs once per page. */
+  reload: () => Promise<void>;
   flush: () => Promise<void>;
   markThreadRead: (threadId: string) => void;
   toggleStar: (id: string) => void;
@@ -91,28 +95,110 @@ let pushing = 0;
  * mailbox.ts writeSnapshot). Empty before the first load: then nothing on the server is deleted.
  */
 let knownIds: string[] = [];
+/** The per-message server revs from that snapshot; sent back so the server can spot a stale copy. */
+let knownRevs: Record<string, number> = {};
+/** The last snapshot the server sent (a load or an acknowledged save): what a closing tab diffs against. */
+let savedSnapshot: MailboxSnapshot | null = null;
 const remember = (snapshot: MailboxSnapshot) => {
+  savedSnapshot = snapshot;
   knownIds = snapshot.messages.map((message) => message.id);
+  knownRevs = snapshot.revs ?? {};
 };
+
+/**
+ * While a save is in flight, leaving the page (reload, close, typing another address) asks first, as
+ * Gmail does: the save is a normal request and dies with the page, so a change made a moment before a
+ * reload was lost. A full snapshot is far over the 64 KB keepalive limit, so it cannot simply be sent on
+ * the way out. The listener exists only while saving: an idle page keeps the back/forward cache.
+ * `<html data-saving="1|0">` says the same thing to tests.
+ */
+function warnWhileSaving(event: BeforeUnloadEvent) {
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function setPushing(next: number) {
+  const was = pushing;
+  pushing = next;
+  if (typeof window === "undefined") return;
+  document.documentElement.dataset.saving = pushing > 0 ? "1" : "0";
+  if (was === 0 && pushing > 0) window.addEventListener("beforeunload", warnWhileSaving);
+  if (was > 0 && pushing === 0) window.removeEventListener("beforeunload", warnWhileSaving);
+}
+
+/**
+ * A save that has not answered in this long is abandoned, so a request that hangs (a stalled mobile
+ * network, a proxy that never answers) cannot hold the "leave page?" prompt and every later save
+ * forever. The change stays in this tab and is retried (below). Tests may shorten it through
+ * `globalThis.__mailSaveTimeoutMs`.
+ */
+export const SAVE_TIMEOUT_MS = 60_000;
+/** Shown while a change waits for a retry (a `message` key, so the i18n extractor picks it up). */
+export const SAVE_RETRY = { message: "Could not save your last change yet. It is kept here and will be saved again shortly." };
+/** Waits before retrying a save that timed out or never reached the server: 5 s, 15 s, 60 s, then every 2 min. */
+export const SAVE_RETRY_MS = [5_000, 15_000, 60_000, 120_000];
+let failedSaves = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+const saveTimeoutMs = () => {
+  const override = (globalThis as { __mailSaveTimeoutMs?: unknown }).__mailSaveTimeoutMs;
+  return typeof override === "number" && override > 0 ? override : SAVE_TIMEOUT_MS;
+};
+
+/**
+ * Only failures of the transport are retried: a timeout, or a request that never got an answer
+ * (offline). A refusal from the server (a conflict, a missing second factor, a limit) comes back as
+ * an error message and needs the person, not another try.
+ */
+export function retryableSaveError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.name === "TimeoutError" || error.name === "TypeError";
+}
 
 function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) => void) {
   if (typeof window === "undefined") return;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
   const mine = ++revision;
   const snapshot = pick(get());
-  pushing += 1;
+  setPushing(pushing + 1);
   pushChain = pushChain
     .catch(() => undefined)
     .then(async () => {
-      const saved = await putMailbox({ data: { ...snapshot, knownIds } });
+      const saved = await putMailbox({
+        data: { ...snapshot, knownIds, knownRevs },
+        signal: AbortSignal.timeout(saveTimeoutMs()),
+      });
+      failedSaves = 0;
       remember(saved);
       if (mine !== revision) return;
       set({ ...saved, syncError: "" });
     })
     .finally(() => {
-      pushing -= 1;
+      setPushing(pushing - 1);
     })
     .catch((error: unknown) => {
-      set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+      // A newer save is already queued behind this one and carries the same state: nothing to say.
+      if (retryableSaveError(error) && mine !== revision) throw error;
+      const retry = retryableSaveError(error) && mine === revision;
+      set({
+        syncError: retry
+          ? SAVE_RETRY.message
+          : error instanceof Error
+            ? error.message
+            : "Mailbox sync failed",
+      });
+      if (retry) {
+        // Nothing newer is queued (a newer change would carry this one): try the same state again.
+        const wait = SAVE_RETRY_MS[Math.min(failedSaves, SAVE_RETRY_MS.length - 1)]!;
+        failedSaves += 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (mine === revision) schedulePush(get, set);
+        }, wait);
+      }
       throw error;
     });
 }
@@ -151,12 +237,47 @@ export const useMail = create<MailStore>((set, get) => ({
         if (pushing > 0 || revision !== before) return;
         remember(saved);
         set({ ...saved, syncError: "" });
-      } catch {
-        // offline or signed out: the next save or refresh reports it
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message === FACTOR_REQUIRED) set({ syncError: message });
       }
     };
     window.setInterval(() => void refresh(), 60_000);
     window.addEventListener("focus", () => void refresh());
+    // The tab is going away (closed, reloaded, or left after the "leave page?" prompt) with a change the
+    // server has not acknowledged: a save still on the wire, or one waiting for a retry. A full snapshot is
+    // too big for a keepalive request, so send only what changed since the last acknowledged snapshot
+    // (delta.ts). Nothing is sent when nothing is pending, so an idle tab keeps the back/forward cache.
+    // The request must start synchronously here: a page that is unloading runs no later await, which is why
+    // this is a plain route (src/routes/api/mailbox/delta.ts) and not a server function.
+    window.addEventListener("pagehide", (event) => {
+      // Going into the back/forward cache is not leaving: the page can come back and finish its own save.
+      if (event.persisted) return;
+      if (!savedSnapshot || (pushing === 0 && !retryTimer)) return;
+      const delta = diffSnapshot(savedSnapshot, pick(get()), knownRevs);
+      if (!delta) return;
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      try {
+        // The live preview's session rides a bearer token (src/lib/auth/client.ts BEARER_KEY), not a cookie.
+        const bearer = window.sessionStorage.getItem("grok-auth.bearer-token");
+        if (bearer) headers.authorization = `Bearer ${bearer}`;
+      } catch {
+        // No storage: the cookie carries the session.
+      }
+      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify(delta), headers, keepalive: true, credentials: "same-origin" }).catch(
+        () => undefined,
+      );
+    });
+  },
+  reload: async () => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = await getMailbox();
+      remember(saved);
+      if (!dirty || pushing === 0) set({ ...saved, syncError: "" });
+    } catch (error) {
+      set({ syncError: error instanceof Error ? error.message : "Mailbox sync failed" });
+    }
   },
   flush: () => (hydratePromise ? hydratePromise.then(() => pushChain) : pushChain),
   markThreadRead: (threadId) => {

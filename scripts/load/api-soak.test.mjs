@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { drift, percentile } from "./api-soak.mjs";
+import { drift, percentile, soakTarget } from "./api-soak.mjs";
 
 test("percentile picks from sorted values", () => {
   assert.equal(percentile([], 95), 0);
@@ -24,4 +24,20 @@ test("drift: a partial last minute with a few slow requests does not count", () 
   const d = drift(rows);
   assert.equal(d.ok, true);
   assert.ok(Math.abs(d.p95Growth) < 0.01, `p95 growth ${d.p95Growth}`);
+});
+
+test("--url: https staging only; production hosts are refused", () => {
+  assert.deepEqual(soakTarget("https://mail-staging.example.workers.dev/some/path"), { base: "https://mail-staging.example.workers.dev" });
+  assert.match(soakTarget("http://staging.example").error, /https/);
+  assert.match(soakTarget("not a url").error, /not a URL/);
+  for (const host of ["mail.cumuluscloud.app", "RU.MAIL.cumuluscloud.app", "cumuluscloud.app"]) {
+    assert.match(soakTarget(`https://${host}/`).error, /production/, host);
+  }
+});
+
+test("drift: a remote target has no RSS, so only latency is judged", () => {
+  const flat = Array.from({ length: 10 }, () => ({ rssMb: 0, p95: 40 }));
+  assert.deepEqual(drift(flat), { rssGrowth: 0, p95Growth: 0, ok: true });
+  const slower = Array.from({ length: 10 }, (_, i) => ({ rssMb: 0, p95: 40 + i * 20 }));
+  assert.equal(drift(slower).ok, false);
 });

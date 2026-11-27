@@ -21,13 +21,14 @@ async function harnessWithMailbox() {
   return harness;
 }
 
-test("the bridge is off unless MAIL_BRIDGE=on, and off means no token can be made", async () => {
-  assert.equal(bridgeEnabled({}), false);
-  assert.equal(bridgeEnabled({ MAIL_BRIDGE: "true" }), false);
+test("the bridge is on unless MAIL_BRIDGE=off, and off means no token can be made", async () => {
+  assert.equal(bridgeEnabled({}), false, "off unless turned on");
+  assert.equal(bridgeEnabled({ MAIL_BRIDGE: "off" }), false);
+  assert.equal(bridgeEnabled({ MAIL_BRIDGE: "yes" }), false);
   assert.equal(bridgeEnabled({ MAIL_BRIDGE: " ON " }), true);
   const harness = await harnessWithMailbox();
   try {
-    await assert.rejects(() => createToken(harness.db, TENANT, "Thunderbird", { env: {} }), BridgeOffError);
+    await assert.rejects(() => createToken(harness.db, TENANT, "Thunderbird", { env: { MAIL_BRIDGE: "off" } }), BridgeOffError);
     assert.deepEqual(await harness.db.query(`select 1 from cumulus_mail.bridge_tokens`), []);
   } finally {
     await harness.close();
@@ -65,7 +66,7 @@ test("a wrong, malformed or revoked token is refused, and so is every token whil
   const harness = await harnessWithMailbox();
   try {
     const { token, record } = await createToken(harness.db, TENANT, "Mail.app", { env: ON });
-    assert.deepEqual(await checkToken(harness.db, `Bearer ${token}`, { env: {} }), { ok: false, reason: "off" });
+    assert.deepEqual(await checkToken(harness.db, `Bearer ${token}`, { env: { MAIL_BRIDGE: "off" } }), { ok: false, reason: "off" });
     assert.deepEqual(await checkToken(harness.db, null, { env: ON }), { ok: false, reason: "malformed" });
     assert.deepEqual(await checkToken(harness.db, "Bearer not-a-token", { env: ON }), { ok: false, reason: "malformed" });
     assert.deepEqual(await checkToken(harness.db, `Bearer ${newTokenValue()}`, { env: ON }), { ok: false, reason: "unknown" });
@@ -175,7 +176,7 @@ test("syncUidsForMailbox writes nothing while the bridge is off, and reconciles 
       { id: "a", folder: "inbox" },
       { id: "b", folder: "inbox" },
     ];
-    await syncUidsForMailbox(harness.db, TENANT, snapshot, { env: {} });
+    await syncUidsForMailbox(harness.db, TENANT, snapshot, { env: { MAIL_BRIDGE: "off" } });
     assert.deepEqual(await harness.db.query(`select 1 from cumulus_mail.message_uids`), []);
 
     await syncUidsForMailbox(harness.db, TENANT, snapshot, { env: ON });

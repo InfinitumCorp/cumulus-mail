@@ -243,3 +243,107 @@ test("a stale tab's save keeps the auto-reply history and unsubscribes the serve
   );
   assert.deepEqual(merged.unsubscribed, [{ key: "a", at: "2026-02-01T00:00:00Z", method: "mailto" }]);
 });
+
+test("a stale tab's save cannot undo a server-side change: released sends and delivery reports keep the server's version", async () => {
+  const { db, storageFor } = harness;
+  const { releaseScheduledMail } = await import("./release.ts");
+  const { writeDelivery } = await import("./records.ts");
+  const tenant = "save-server-wins";
+  await openMailbox(db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Ada"));
+  const scheduleAt = "2099-01-01T09:00:00.000Z";
+  await writeSnapshot(db, storageFor, tenant, {
+    ...(await readSnapshot(db, tenant)),
+    messages: [
+      letter({ id: "plan", folder: "drafts", subject: "Scheduled", extra: { scheduleAt } }),
+      letter({ id: "sent-1", folder: "sent", subject: "Out" }),
+      letter({ id: "note", folder: "inbox" }),
+    ],
+  });
+
+  // The tab loads...
+  const loaded = await readSnapshot(db, tenant);
+  const knownIds = loaded.messages.map((m) => m.id);
+  const knownRevs = loaded.revs ?? {};
+
+  // ...then the server releases the scheduled send and records a delivery report for the other one.
+  await releaseScheduledMail(db, storageFor, Date.parse(scheduleAt) + 60_000);
+  await writeDelivery(db, tenant, "sent-1", [{ email: "x@example.com", status: "outbound", detail: "Bounced: 550 no such user" }]);
+  const server = await readSnapshot(db, tenant);
+  assert.equal(server.messages.find((m) => m.id === "plan")?.folder, "sent");
+  assert.ok((server.revs?.plan ?? 0) > (knownRevs.plan ?? 0), "the release bumped the rev");
+
+  // The stale tab stars an unrelated message and saves its old copies of the other two.
+  const stale = loaded.messages.map((m) => (m.id === "note" ? { ...m, starred: true } : m));
+  const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, messages: stale, knownIds, knownRevs });
+  const byId = new Map(saved.messages.map((m) => [m.id, m]));
+  assert.equal(byId.get("plan")?.folder, "sent", "the released send stays sent");
+  assert.equal(byId.get("sent-1")?.delivery?.[0]?.detail, "Bounced: 550 no such user", "the delivery report stays");
+  assert.equal(byId.get("note")?.starred, true, "the tab's own change is saved");
+  assert.equal(saved.revs?.plan, server.revs?.plan, "revs survive the save");
+
+  // Leaving out a message the server changed meanwhile does not delete it either.
+  const dropped = await writeSnapshot(db, storageFor, tenant, {
+    ...loaded,
+    messages: stale.filter((m) => m.id !== "sent-1"),
+    knownIds,
+    knownRevs,
+  });
+  assert.ok(dropped.messages.some((m) => m.id === "sent-1"));
+
+  // With the current revs (the tab reloaded), the person's edits to those messages apply again.
+  const fresh = await readSnapshot(db, tenant);
+  const edited = await writeSnapshot(db, storageFor, tenant, {
+    ...fresh,
+    messages: fresh.messages.map((m) => (m.id === "plan" ? { ...m, starred: true } : m)),
+    knownIds: fresh.messages.map((m) => m.id),
+    knownRevs: fresh.revs ?? {},
+  });
+  assert.equal(edited.messages.find((m) => m.id === "plan")?.starred, true);
+  assert.equal(edited.messages.find((m) => m.id === "plan")?.folder, "sent");
+});
+
+test("an older client without knownRevs still overwrites (unchanged behaviour); knownRevs must be a map of counts", async () => {
+  const { db, storageFor } = harness;
+  const { writeDelivery } = await import("./records.ts");
+  const { isRevMap } = await import("./mailbox.ts");
+  const tenant = "save-legacy-revs";
+  await openMailbox(db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Ada"));
+  await writeSnapshot(db, storageFor, tenant, { ...(await readSnapshot(db, tenant)), messages: [letter({ id: "out", folder: "sent" })] });
+  const loaded = await readSnapshot(db, tenant);
+  await writeDelivery(db, tenant, "out", [{ email: "x@example.com", status: "outbound", detail: "Bounced: 550" }]);
+  const saved = await writeSnapshot(db, storageFor, tenant, { ...loaded, knownIds: loaded.messages.map((m) => m.id) });
+  assert.deepEqual(saved.messages[0]?.delivery, loaded.messages[0]?.delivery, "the stale copy is written, as before");
+  assert.notEqual(saved.messages[0]?.delivery?.[0]?.detail, "Bounced: 550");
+
+  assert.equal(isRevMap({ a: 1, b: 0 }), true);
+  for (const bad of [null, [], { a: -1 }, { a: 1.5 }, { a: "2" }]) assert.equal(isRevMap(bad), false, JSON.stringify(bad));
+});
+
+test("an alias must be on the platform domain (not a reserved name) or on one of the mailbox's verified domains", async () => {
+  const { readSettings, writeSettings } = await import("./records.ts");
+  const { db, storageFor } = harness;
+  const base = await openMailbox(db, "alias-own", profile("alias-own", "alias.own@cumuluscloud.app", "Own"));
+  const saved = await writeSnapshot(db, storageFor, "alias-own", { ...base, aliases: ["own.two@cumuluscloud.app"] });
+  assert.deepEqual(saved.aliases, ["own.two@cumuluscloud.app"]);
+  for (const claim of ["postmaster@cumuluscloud.app", "abuse+x@cumuluscloud.app", "ceo@acme.example", "x@gmail.com"]) {
+    await assert.rejects(
+      () => writeSnapshot(db, storageFor, "alias-own", { ...saved, aliases: [...saved.aliases, claim] }),
+      /verified domains/,
+      claim,
+    );
+  }
+  // Their own domain once verified (the server's flag, not the client's): allowed.
+  const settings = await readSettings(db, "alias-own");
+  await writeSettings(db, "alias-own", {
+    ...settings,
+    domains: [{ domain: "own.example", catchAll: false, verified: false, txtName: "_cumulus.own.example", txtValue: "x" }],
+  });
+  const unverified = await readSnapshot(db, "alias-own");
+  await assert.rejects(() => writeSnapshot(db, storageFor, "alias-own", { ...unverified, aliases: ["me@own.example"] }), /verified domains/);
+  await writeSettings(db, "alias-own", {
+    ...settings,
+    domains: [{ domain: "own.example", catchAll: false, verified: true, txtName: "_cumulus.own.example", txtValue: "x" }],
+  });
+  const verified = await readSnapshot(db, "alias-own");
+  assert.deepEqual((await writeSnapshot(db, storageFor, "alias-own", { ...verified, aliases: ["me@own.example"] })).aliases, ["me@own.example"]);
+});

@@ -38,7 +38,16 @@ import { SIGN_IN_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
 import { PREVIEW_ALLOWED_HOSTS } from "./preview";
 import { applyWorkerBindings } from "../cloudflare-env.ts";
-import { authIpOptions, authRateLimit, authSettingsKey, deployedTrustedOrigins, resolveAuthSecret } from "./auth-settings.ts";
+import {
+  AUTH_COOKIES,
+  AUTH_SESSION,
+  SESSION_TOKEN_COOKIE,
+  authIpOptions,
+  authRateLimit,
+  authSettingsKey,
+  deployedTrustedOrigins,
+  resolveAuthSecret,
+} from "./auth-settings.ts";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -64,7 +73,7 @@ const env = (key: string): string | undefined => {
 };
 
 /** Session token cookie name — also read by the live-preview popup completion page. */
-export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
+export { SESSION_TOKEN_COOKIE };
 
 /**
  * Build the Better Auth instance from the current settings. Called lazily (see `getAuth`), never at
@@ -199,29 +208,16 @@ function buildAuth(region: Region) {
     // (incl. the client's `/get-session`) skip the DB — this shrinks the "loading"
     // window and reduces auth flicker. See the `auth` skill for the full
     // flicker-prevention guidance (gate on `isPending`; SSR the session).
-    session: { cookieCache: { enabled: true, maxAge: 300 } },
+    session: AUTH_SESSION,
 
     // No local email/password: Cumulus ID is the only way people sign in.
     emailAndPassword: { enabled: false },
 
-    // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
-    // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a
-    // `Domain=.grok.me` session cookie onto this app. `__Host-` requires Secure +
-    // Path=/ + no Domain; Better Auth otherwise uses `__Secure-` (which permits
-    // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
-    // Secure + the names ourselves. (Browsers allow Secure cookies on
-    // `http://localhost`, so local dev still works.)
+    // Cookie names and attributes: AUTH_COOKIES in auth-settings.ts (`__Host-`, so never a Domain).
     advanced: {
       // Per-client rate limiting: see authIpOptions (cf-connecting-ip on Workers).
       ipAddress: authIpOptions(process.env),
-      useSecureCookies: false,
-      defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
-      cookies: {
-        session_token: { name: SESSION_TOKEN_COOKIE },
-        session_data: { name: "__Host-grok-auth.session_data" },
-        account_data: { name: "__Host-grok-auth.account_data" },
-        dont_remember: { name: "__Host-grok-auth.dont_remember" },
-      },
+      ...AUTH_COOKIES,
     },
 
     plugins: [
