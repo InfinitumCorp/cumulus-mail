@@ -83,3 +83,86 @@ export function poolSql(pool: PoolLike): Sql {
   return sql;
 }
 
+
+/**
+ * A pg Pool that is closed when its request ends. `pg.Pool` satisfies it.
+ */
+export type ClosablePool = PoolLike & { end(): Promise<void> };
+
+type DbScope = { pool?: ClosablePool; sql?: Sql; ended: boolean };
+const scopes = new AsyncLocalStorage<DbScope>();
+
+/**
+ * Runs `run` with its own database connections. On Workers a socket belongs to the request that opened
+ * it: a pool kept in module scope hands request B an idle connection from request A, and workerd then
+ * never answers B (it cancels it as hung). So on Workers every request gets its own pool, made on its
+ * first query and closed when `run` settles. `server/middleware/db-scope.ts` wraps every request in one.
+ */
+export async function withDbScope<T>(run: () => Promise<T>): Promise<T> {
+  const scope: DbScope = { ended: false };
+  try {
+    return await scopes.run(scope, run);
+  } finally {
+    scope.ended = true;
+    const pool = scope.pool;
+    scope.pool = undefined;
+    scope.sql = undefined;
+    // end() waits for checked-out connections to be released, then closes every socket.
+    if (pool) void pool.end().catch(() => undefined);
+  }
+}
+
+/** The live scope's pool, made on first use; undefined outside a scope or after it ended. */
+function scopePool(makePool: () => ClosablePool): DbScope | undefined {
+  const scope = scopes.getStore();
+  if (!scope || scope.ended) return undefined;
+  scope.pool ??= makePool();
+  return scope;
+}
+
+/**
+ * The `Sql` surface for Workers: each request uses its own pool (see `withDbScope`). A query made outside
+ * any request scope (or after its request ended) gets a pool of its own, closed when that query settles.
+ * Transactions work as in `poolSql`.
+ */
+export function requestScopedSql(makePool: () => ClosablePool): Sql {
+  const use = <T>(work: (sql: Sql) => Promise<T>): Promise<T> => {
+    const scope = scopePool(makePool);
+    if (!scope) return withDbScope(() => use(work));
+    scope.sql ??= poolSql(scope.pool!);
+    return work(scope.sql);
+  };
+  const sql = toSql(<T>(text: string, params: unknown[]) => use((inner) => inner.query<T>(text, params)));
+  sql.transaction = <T>(run: () => Promise<T>) => use((inner) => inner.transaction!(run));
+  return sql;
+}
+
+/**
+ * A pool-shaped object for libraries that hold on to a pool (Better Auth through Kysely): every
+ * `connect()` and `query()` goes to the current request's pool, shared with `requestScopedSql` when both
+ * use the same database. Outside a request scope, a connection gets a pool of its own that closes when
+ * the connection is released. `end()` does nothing: the scope closes the real pools.
+ */
+export function requestScopedPool(makePool: () => ClosablePool): ClosablePool {
+  return {
+    query: async (text, params) => {
+      const scope = scopePool(makePool);
+      if (scope) return scope.pool!.query(text, params);
+      return withDbScope(async () => scopePool(makePool)!.pool!.query(text, params));
+    },
+    connect: async () => {
+      const scope = scopePool(makePool);
+      if (scope) return scope.pool!.connect();
+      const own = makePool();
+      const client = await own.connect();
+      return {
+        query: (text, params) => client.query(text, params),
+        release: (error) => {
+          client.release(error);
+          void own.end().catch(() => undefined);
+        },
+      };
+    },
+    end: async () => undefined,
+  };
+}

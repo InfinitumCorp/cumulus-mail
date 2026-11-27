@@ -1,7 +1,7 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 import { applyWorkerBindings } from "./cloudflare-env.ts";
 import { assertPgConnectionString } from "./pg-connection.ts";
-import { poolSql, toSql, type PoolLike, type Sql } from "./sql-surface.ts";
+import { poolSql, requestScopedSql, toSql, type ClosablePool, type PoolLike, type Sql } from "./sql-surface.ts";
 
 export type { Sql } from "./sql-surface.ts";
 
@@ -78,6 +78,12 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
+    // Workers: a socket belongs to the request that opened it, so each request gets its own pool
+    // (sql-surface.ts withDbScope). At most 4 connections: a Worker request may hold 6 open at once,
+    // and storage fetches need the rest. Hyperdrive keeps the pooled connections to the database.
+    if (cloudflareRuntime()) {
+      return requestScopedSql(() => new Pool({ connectionString, max: 4 }) as unknown as ClosablePool);
+    }
     const pool = new Pool({ connectionString });
     return poolSql(pool as unknown as PoolLike);
   })().catch((err) => {

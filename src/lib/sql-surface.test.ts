@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { poolSql, type PoolLike } from "./sql-surface.ts";
+import { poolSql, requestScopedPool, requestScopedSql, withDbScope, type ClosablePool, type PoolLike } from "./sql-surface.ts";
 import { withTransaction } from "./mail/query.ts";
 
 /** A pool that hands every pool.query() to a different connection, as a busy pg Pool can. */
@@ -112,4 +112,130 @@ test("on a real pg Pool, a failed transaction leaves nothing behind under concur
   } finally {
     await pool.end();
   }
+});
+
+/** Pools made by a factory, each recording its queries and whether it was closed. */
+function poolFactory() {
+  const made: Array<{ id: number; log: string[]; ended: boolean; out: number }> = [];
+  const make = (): ClosablePool => {
+    const entry = { id: made.length, log: [] as string[], ended: false, out: 0 };
+    made.push(entry);
+    return {
+      query: async (text) => {
+        assert.equal(entry.ended, false, "no query on a closed pool");
+        entry.log.push(text);
+        return { rows: [] };
+      },
+      connect: async () => {
+        assert.equal(entry.ended, false, "no connect on a closed pool");
+        entry.out += 1;
+        return {
+          query: async (text) => {
+            entry.log.push(`tx: ${text}`);
+            return { rows: [] };
+          },
+          release: () => {
+            entry.out -= 1;
+          },
+        };
+      },
+      end: async () => {
+        entry.ended = true;
+      },
+    };
+  };
+  return { make, made };
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("Workers: each request scope gets its own pool, closed when the request ends", async () => {
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  const auth = requestScopedPool(make);
+  await withDbScope(async () => {
+    await sql.query("a1");
+    await sql`select ${1}`;
+    // Better Auth's connections come from the same request's pool.
+    const client = await auth.connect();
+    await client.query("auth");
+    client.release();
+  });
+  await withDbScope(async () => {
+    await sql.query("b1");
+  });
+  await settle();
+  assert.equal(made.length, 2, "one pool per request, never shared");
+  assert.deepEqual(made[0].log, ["a1", "select $1", "tx: auth"]);
+  assert.deepEqual(made[1].log, ["b1"]);
+  assert.ok(made.every((pool) => pool.ended), "both pools closed");
+});
+
+test("Workers: two requests running at once never share a pool", async () => {
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  const request = (name: string) =>
+    withDbScope(async () => {
+      for (let i = 0; i < 3; i += 1) {
+        await sql.query(`${name}${i}`);
+        await settle();
+      }
+    });
+  await Promise.all([request("a"), request("b")]);
+  assert.equal(made.length, 2);
+  const logs = made.map((pool) => pool.log.join(",")).sort();
+  assert.deepEqual(logs, ["a0,a1,a2", "b0,b1,b2"]);
+});
+
+test("Workers: a transaction inside a request runs on one connection of that request's pool", async () => {
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  await withDbScope(async () => {
+    await sql.transaction!(async () => {
+      await sql.query("delete");
+      await sql.query("insert");
+    });
+    await sql.query("after");
+  });
+  await settle();
+  assert.equal(made.length, 1);
+  assert.deepEqual(made[0].log, [
+    "tx: BEGIN",
+    "tx: SET LOCAL idle_in_transaction_session_timeout = '30s'",
+    "tx: delete",
+    "tx: insert",
+    "tx: COMMIT",
+    "after",
+  ]);
+  assert.equal(made[0].out, 0, "the connection went back");
+});
+
+test("Workers: outside a request, or after it ended, each call gets a pool of its own that closes", async () => {
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  const auth = requestScopedPool(make);
+  await sql.query("loose");
+  await sql.transaction!(async () => {
+    await sql.query("in tx");
+  });
+  const client = await auth.connect();
+  await client.query("auth loose");
+  client.release();
+  await settle();
+  assert.equal(made.length, 3);
+  assert.deepEqual(made[1].log, ["tx: BEGIN", "tx: SET LOCAL idle_in_transaction_session_timeout = '30s'", "tx: in tx", "tx: COMMIT"]);
+  assert.ok(made.every((pool) => pool.ended));
+
+  // A query started by a request but run after the request ended does not reuse its closed pool.
+  let late: Promise<unknown> | undefined;
+  await withDbScope(async () => {
+    await sql.query("in request");
+    late = settle().then(() => sql.query("late"));
+  });
+  await late;
+  await settle();
+  assert.equal(made.length, 5);
+  assert.deepEqual(made[3].log, ["in request"]);
+  assert.deepEqual(made[4].log, ["late"]);
+  assert.ok(made.every((pool) => pool.ended));
 });
