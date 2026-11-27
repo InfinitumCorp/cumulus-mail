@@ -39,7 +39,7 @@ The default `npm run build` still uses Nitro preset `vercel`. `NITRO_PRESET=clou
 
 Hyperdrive config **cumulus-mail** already exists. Id: `d07a82ac7fcc42ac84dc6469140ef551`. Both wrangler files use that id. Do not create a second config. Do not point Hyperdrive at `ivqiskeziohbbtkcvlun`.
 
-Hyperdrive is on the Workers Free plan (100,000 queries per day). Do not put the database password in git. It stays in the existing Hyperdrive config.
+Hyperdrive is available on the Workers Free plan (100,000 queries per day), but **the API worker needs Workers Paid**: Free allows 10 ms of CPU per request, and a mailbox save measured about 44 ms (see `friday.md`, go/no-go). Do not put the database password in git. It stays in the existing Hyperdrive config.
 
 **Turn query caching off on this config before the cutover:**
 
