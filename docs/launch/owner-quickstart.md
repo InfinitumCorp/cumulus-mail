@@ -4,7 +4,7 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #207 except #202 (migrations to 0023). Production still serves the old
+Already on `main`: everything up to #207 except #202 (migrations to 0024 once the save-ordering PR is in). Production still serves the old
 page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
 
 1. **#209**: hybrid key wraps keep the format every build reads; localhost WebAuthn check covers Workers.

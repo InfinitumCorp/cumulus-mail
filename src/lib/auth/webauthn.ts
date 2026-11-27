@@ -3,6 +3,29 @@ import { isDeployedRuntime } from "./auth-settings.ts";
 
 export type RelyingParty = { origin: string; rpId: string };
 
+/** A deployed copy: Workers, a real database, a configured auth URL, or NODE_ENV=production. */
+export function isDeployedCopy(env: Record<string, string | undefined> = process.env): boolean {
+  return isDeployedRuntime(env) || Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
+}
+
+/**
+ * The origin a security key's ceremony is checked against. On a deployed copy it is fixed,
+ * `https://<MAIL_APP_HOST>`: request headers (Host, X-Forwarded-*) are the caller's to set and say nothing
+ * the server should trust here. Only a local copy derives it from the request, so development on
+ * http://localhost keeps working.
+ */
+export function factorOriginFor(
+  appHost: string,
+  request: { url: string; headers: { get(name: string): string | null } } | undefined,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (isDeployedCopy(env) || !request) return `https://${appHost}`;
+  const url = new URL(request.url);
+  const proto = (request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "")).split(",")[0]!.trim();
+  const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host).split(",")[0]!.trim();
+  return `${proto}://${host}`;
+}
+
 /**
  * https on the mail host. localhost over http only on a copy that is not deployed: not on Workers
  * (CUMULUS_RUNTIME=cloudflare, committed in wrangler.jsonc), no DATABASE_URL (isDeployedRuntime, the test
@@ -14,7 +37,7 @@ export function relyingParty(
   appHost: string,
   env: Record<string, string | undefined> = process.env,
 ): RelyingParty | null {
-  const deployed = isDeployedRuntime(env) || Boolean(env.BETTER_AUTH_URL?.trim()) || env.NODE_ENV === "production";
+  const deployed = isDeployedCopy(env);
   let url: URL;
   try {
     url = new URL(origin);

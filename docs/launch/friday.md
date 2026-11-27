@@ -19,7 +19,8 @@ the old page (no `/api/health`). Still open, merge before the deploy commit, wai
 2. #208, review follow-ups to the delta save (#206): a stale copy is never written over a newer server copy;
 3. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets.
 
-Migrations to apply at cutover: `0001_auth`, then 0011 up to the newest file (0023 on 25 Nov: 14 files).
+Migrations to apply at cutover (US): the dedicated database already has `0001`–`0021` (checked 26 Nov), so
+`0022`, `0023` and `0024` are pending: 3 files. A new RU database applies every file.
 
 **Decide before go:** `MAIL_SPAM_FEEDS`. Unset, inbound mail checks the sender's domain against the URLhaus host
 lists (#189). Those list *websites* that served malware, often compromised small-business sites, so a legitimate
@@ -62,10 +63,11 @@ Tick every line, or move the launch.
       It runs preflight (secrets, repo settings, DNS), then lists pending migrations in apply order (and
       fails if one was skipped in the middle), checks that `anon` is refused on `public.session`, and checks
       the token issuer answers and names itself. **The day before, expect exactly this and nothing else:**
-      - `WARN N migration(s) to apply, in this order: 0001_auth.sql, 0011_message_words.sql, …` up to the newest
-        file in `migrations/` (on 25 Nov: 0023, so N = 14).
-        `0001_auth.sql` first is right: it was added after production reached 0010, and goes in with 0020;
-      - `WARN public.session does not exist yet` (0001 creates it);
+      - US (the dedicated database, `0001`–`0021` applied): `WARN 3 migration(s) to apply, in this order:
+        0022_factor_sessions.sql, 0023_outbound_queue_created.sql, 0024_save_sequences.sql`, and `anon is refused
+        on public.session` as ok;
+      - a new RU database: every file in `migrations/` listed, `0001_auth.sql` first, and
+        `WARN public.session does not exist yet` (0001 creates it);
       - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
       - US only: SPF, DKIM and DMARC as MISSING until step 7 publishes them, and the MTA-STS and TLS-RPT
         lines as WARN;
@@ -133,7 +135,8 @@ npm run db:status        # expect: nothing pending, exit 0
 RU: the same three commands with the RU database's `DATABASE_URL` (if D1 gave Russia its own database).
 
 **Expected:** checked 2026-11-26, the dedicated database already has `0001`–`0021`. The first `db:status` lists
-`0022_factor_sessions.sql` and `0023_outbound_queue_created.sql` and exits 3. A new RU database lists every file.
+`0022_factor_sessions.sql`, `0023_outbound_queue_created.sql` and `0024_save_sequences.sql` and exits 3. A new
+RU database lists every file.
 `db:migrate` prints `applied …` for each, in that order, and `done — N migration(s) applied`. The second
 `db:status` says `up to date` and exits 0.
 Every migration is additive (new tables, columns and indexes); none drops or rewrites data, and the mail
