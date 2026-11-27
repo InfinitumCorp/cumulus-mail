@@ -86,6 +86,19 @@ function pick(state: MailStore): MailboxSnapshot {
 
 let dirty = false;
 let revision = 0;
+/**
+ * This page load's id for save ordering (save-seq.ts): saves carry it with `revision` as their number.
+ * Made on first use, never at module load: this module is also evaluated during server rendering, and
+ * Workers refuse to generate random values in global scope (the render would fail).
+ */
+let tabIdValue: string | undefined;
+function tabId(): string {
+  tabIdValue ??=
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  return tabIdValue;
+}
 let hydratePromise: Promise<void> | null = null;
 let pushChain: Promise<void> = Promise.resolve();
 let pushing = 0;
@@ -168,7 +181,7 @@ function schedulePush(get: () => MailStore, set: (partial: Partial<MailStore>) =
     .catch(() => undefined)
     .then(async () => {
       const saved = await putMailbox({
-        data: { ...snapshot, knownIds, knownRevs },
+        data: { ...snapshot, knownIds, knownRevs, saveTab: tabId(), saveSeq: mine },
         signal: AbortSignal.timeout(saveTimeoutMs()),
       });
       failedSaves = 0;
@@ -248,6 +261,8 @@ export const useMail = create<MailStore>((set, get) => ({
     // server has not acknowledged: a save still on the wire, or one waiting for a retry. A full snapshot is
     // too big for a keepalive request, so send only what changed since the last acknowledged snapshot
     // (delta.ts). Nothing is sent when nothing is pending, so an idle tab keeps the back/forward cache.
+    // Numbered one past the newest full save: no full save can carry that number, so a save that claimed
+    // its number but never finished (a killed worker) cannot block this one (save-seq.ts).
     // The request must start synchronously here: a page that is unloading runs no later await, which is why
     // this is a plain route (src/routes/api/mailbox/delta.ts) and not a server function.
     window.addEventListener("pagehide", (event) => {
@@ -264,7 +279,7 @@ export const useMail = create<MailStore>((set, get) => ({
       } catch {
         // No storage: the cookie carries the session.
       }
-      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify(delta), headers, keepalive: true, credentials: "same-origin" }).catch(
+      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify({ ...delta, tab: tabId(), seq: revision + 1 }), headers, keepalive: true, credentials: "same-origin" }).catch(
         () => undefined,
       );
     });

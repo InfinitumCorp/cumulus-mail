@@ -108,6 +108,38 @@ jobs:
         if: always()
         run: docker rm -f "${CUMULUS_S3_CONTAINER:-cumulus-s3-${GITHUB_RUN_ID}}" >/dev/null 2>&1 || true
 
+  # The API worker's own build in workerd (wrangler dev) against Postgres 16: what only Workers refuse,
+  # such as a socket shared between requests or random values made at module load (scripts/worker-smoke.mjs).
+  worker-smoke:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: worker_smoke
+        # A random host port: the check job holds 5432 on a shared runner.
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d worker_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:workers
+      - run: npm run smoke:worker
+        env:
+          WORKER_SMOKE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/worker_smoke
+
   # Browser smoke tests against the local dev mode (no Cumulus ID, in-memory PGLite). Separate job so
   # a browser problem never hides the result of the main checks.
   e2e:

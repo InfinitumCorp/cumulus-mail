@@ -1,5 +1,6 @@
 import type { MailMessage } from "./model.ts";
 import { rejectCallerTenant } from "./snapshot.ts";
+import { asSaveTag } from "./save-seq.ts";
 import { DELTA_FIELDS, MAX_REMOVE, MAX_UPSERT, type MailboxDelta } from "./delta.ts";
 
 /* Server side only (src/routes/api/mailbox/delta.ts), kept out of delta.ts so the page does not load snapshot.ts. */
@@ -36,10 +37,12 @@ export function asDelta(input: unknown): MailboxDelta {
       fields[key] = value;
     }
   }
+  const tag = asSaveTag(row.tab, row.seq);
   return {
     base: row.base,
     upsert: upsert as MailMessage[],
     remove: remove as string[],
     ...(Object.keys(fields).length ? { fields: fields as MailboxDelta["fields"] } : {}),
+    ...(tag ? { tab: tag.tab, seq: tag.seq } : {}),
   };
 }
