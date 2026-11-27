@@ -609,9 +609,6 @@
  "Your data": "Your data",
  "Your message was read.": "Your message was read.",
  "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute.",
-<<<<<<< HEAD
  "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.": "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.",
-=======
->>>>>>> 75c1ce4
  "Your record appears in a moment.": "Your record appears in a moment."
 }
