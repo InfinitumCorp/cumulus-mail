@@ -162,8 +162,10 @@ test("closing the tab mid-save still saves the change, as a small keepalive delt
     await page.waitForFunction(() => document.documentElement.dataset.saving !== "1");
 
     // Full saves (server-function POSTs) hang and never reach the server. The delta is its own route.
+    // A flag, not unroute: unrouting right after the tab closes can fail while Playwright tears the page down.
+    let hold = true;
     await context.route("**/_serverFn/**", async (route) => {
-      if (route.request().method() === "POST") {
+      if (route.request().method() === "POST" && hold) {
         await new Promise(() => undefined);
         return;
       }
@@ -181,7 +183,7 @@ test("closing the tab mid-save still saves the change, as a small keepalive delt
     await page.close({ runBeforeUnload: true });
     // Playwright does not report a closed page's requests; the next tab is the proof. The keepalive request
     // can land a few seconds after the tab closes on a loaded machine, so look again until it shows (15 s).
-    await context.unroute("**/_serverFn/**");
+    hold = false;
     const next = await context.newPage();
     let gone = false;
     for (let attempt = 0; attempt < 15 && !gone; attempt += 1) {
