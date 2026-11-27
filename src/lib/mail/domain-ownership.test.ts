@@ -35,3 +35,39 @@ test("stored settings: client-sent TXT values are replaced; a domain verified un
     await harness.close();
   }
 });
+
+test("an alias on a custom domain routes only while the mailbox has that domain verified", async () => {
+  const { createHarness, profile } = await import("./test-support.ts");
+  const { openMailbox, writeSnapshot } = await import("./mailbox.ts");
+  const { readSettings, writeSettings, readSnapshot, routedAddresses } = await import("./records.ts");
+  const { findTenantByAddress, replaceRoutedAddresses } = await import("./directory.ts");
+  const harness = await createHarness();
+  try {
+    const { db, storageFor } = harness;
+    await openMailbox(db, "rt-a", profile("rt-a", "rt.a@cumuluscloud.app", "A"));
+    const settings = await readSettings(db, "rt-a");
+    const domain = { domain: "acme.example", catchAll: true, verified: true, txtName: "_cumulus-mail.acme.example", txtValue: "" };
+    await writeSettings(db, "rt-a", { ...settings, domains: [domain] });
+    const snap = await readSnapshot(db, "rt-a");
+    await writeSnapshot(db, storageFor, "rt-a", { ...snap, aliases: ["sales@acme.example", "rt.a+shop@cumuluscloud.app"] });
+    assert.equal(await findTenantByAddress(db, "sales@acme.example"), "rt-a");
+    assert.equal(await findTenantByAddress(db, "anyone@acme.example"), "rt-a", "catch-all");
+
+    // The domain stops verifying (a re-check, as checkDomainForSession does): the alias stays saved but stops routing.
+    await writeSettings(db, "rt-a", { ...(await readSettings(db, "rt-a")), domains: [{ ...domain, verified: false }] });
+    const lapsed = await readSnapshot(db, "rt-a");
+    assert.deepEqual(lapsed.aliases.sort(), ["rt.a+shop@cumuluscloud.app", "sales@acme.example"]);
+    assert.deepEqual(routedAddresses(lapsed).sort(), ["rt.a+shop@cumuluscloud.app", "rt.a@cumuluscloud.app"]);
+    await replaceRoutedAddresses(db, "rt-a", routedAddresses(lapsed));
+    assert.equal(await findTenantByAddress(db, "sales@acme.example"), null);
+    assert.equal(await findTenantByAddress(db, "anyone@acme.example"), null);
+    assert.equal(await findTenantByAddress(db, "rt.a+shop@cumuluscloud.app"), "rt-a");
+
+    // Verified again: it routes again, nothing re-added by hand.
+    await writeSettings(db, "rt-a", { ...(await readSettings(db, "rt-a")), domains: [domain] });
+    await replaceRoutedAddresses(db, "rt-a", routedAddresses(await readSnapshot(db, "rt-a")));
+    assert.equal(await findTenantByAddress(db, "sales@acme.example"), "rt-a");
+  } finally {
+    await harness.close();
+  }
+});

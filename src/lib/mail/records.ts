@@ -583,8 +583,20 @@ function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "ph
   }
 }
 
-function routedAddresses(snapshot: MailboxSnapshot): string[] {
-  const addresses = [snapshot.me.email, ...snapshot.aliases];
+/**
+ * The addresses mail is delivered to this mailbox for. An alias on a custom domain is routed only while this mailbox
+ * has that domain verified: it stays saved (a brief DNS failure loses nothing, and it routes again once the domain
+ * verifies), but a domain removed or no longer pointing here doesn't keep receiving mail, or block the domain's next
+ * owner from that address.
+ */
+export function routedAddresses(snapshot: MailboxSnapshot): string[] {
+  const verified = new Set((snapshot.settings?.domains ?? []).filter((d) => d.verified).map((d) => d.domain.toLowerCase()));
+  const platform = mailDomain().toLowerCase();
+  const routable = (alias: string) => {
+    const domain = alias.slice(alias.lastIndexOf("@") + 1).toLowerCase();
+    return domain === platform || verified.has(domain);
+  };
+  const addresses = [snapshot.me.email, ...snapshot.aliases.filter(routable)];
   const catchAllAllowed = snapshot.me.limits?.catchAll ?? true;
   for (const domain of snapshot.settings?.domains ?? []) {
     if (catchAllAllowed && domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
