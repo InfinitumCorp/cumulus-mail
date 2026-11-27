@@ -21,6 +21,7 @@
     "cutover:check": "node scripts/cutover-check.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:local": "node scripts/smoke-local.mjs",
+    "smoke:worker": "node scripts/worker-smoke.mjs",
     "bundle:check": "node scripts/client-bundle-guard.mjs",
     "csp:check": "node scripts/csp-check.mjs",
     "blobs:sweep": "node --experimental-strip-types --no-warnings scripts/sweep-orphan-blobs.mjs",

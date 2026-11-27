@@ -3,6 +3,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import type { MailboxBackup } from "./backup.ts";
 import type { FactorRequest } from "./mailbox.server.ts";
 import { rejectCallerTenant, type MailboxSnapshot } from "./snapshot.ts";
+import { asSaveTag } from "./save-seq.ts";
 
 function asSnapshot(input: unknown): MailboxSnapshot {
   rejectCallerTenant(input);
@@ -21,7 +22,9 @@ function asSnapshot(input: unknown): MailboxSnapshot {
   ) {
     throw new Error("Invalid knownRevs");
   }
-  return input as MailboxSnapshot;
+  const snapshot = input as MailboxSnapshot;
+  asSaveTag(snapshot.saveTab, snapshot.saveSeq);
+  return snapshot;
 }
 
 function asBackup(input: unknown): MailboxBackup {

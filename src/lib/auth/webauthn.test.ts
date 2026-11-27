@@ -3,6 +3,7 @@ import { createHash, generateKeyPairSync, sign, type KeyObject } from "node:cryp
 import { test } from "node:test";
 import {
   newChallenge,
+  factorOriginFor,
   relyingParty,
   verifyAssertion,
   verifyRegistration,
@@ -114,4 +115,18 @@ test("a security key registers and then signs in, and a bad origin or a replayed
   assert.throws(() => verifyAssertion(replay.response, replay.nextChallenge, party, { ...credential, counter: 1 }), /counter/);
   const wrong = signIn(2, "https://evil.example");
   assert.throws(() => verifyAssertion(wrong.response, wrong.nextChallenge, party, { ...credential, counter: 1 }), /origin/);
+});
+
+test("a deployed copy checks security keys against its own host, whatever the request headers say", () => {
+  const forged = {
+    url: "http://internal:3000/_serverFn/x",
+    headers: new Headers({ host: "evil.example", "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" }),
+  };
+  for (const env of [{ NODE_ENV: "production" }, { CUMULUS_RUNTIME: "cloudflare" }, { DATABASE_URL: "postgres://db/mail" }, { BETTER_AUTH_URL: "https://mail.cumuluscloud.app" }]) {
+    assert.equal(factorOriginFor("mail.cumuluscloud.app", forged, env), "https://mail.cumuluscloud.app");
+  }
+  assert.equal(factorOriginFor("mail.cumuluscloud.app", undefined, {}), "https://mail.cumuluscloud.app");
+  // A local copy follows the request, so http://localhost development works.
+  const local = { url: "http://localhost:8080/_serverFn/x", headers: new Headers({ host: "localhost:8080" }) };
+  assert.equal(factorOriginFor("mail.cumuluscloud.app", local, {}), "http://localhost:8080");
 });

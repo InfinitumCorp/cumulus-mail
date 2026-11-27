@@ -1,3 +1,4 @@
+import { assertStillNewest, type SaveTag } from "./save-seq.ts";
 import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, MessageExtra, Person } from "./model.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { syncUidsForMailbox } from "./bridge/uids.ts";
@@ -421,9 +422,11 @@ export async function replaceMailboxContents(
   files: Array<{ messageId: string; file: StoredAttachment }>,
   rawKeys: Map<string, string | null>,
   revs: Record<string, number> = {},
+  guard?: SaveTag,
 ): Promise<void> {
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
+    if (guard) await assertStillNewest(db, tenantId, guard);
     const previous = await readSettings(db, tenantId);
     const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, withOwnershipTxt(tenantId, sanitizeSettings(snapshot.settings, mailDomain())))));
     await publishMailboxKey(db, tenantId, [snapshot.me?.email ?? "", ...snapshot.aliases], settings.mailboxKey?.publicKey ?? null);

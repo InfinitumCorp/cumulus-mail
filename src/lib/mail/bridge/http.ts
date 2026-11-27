@@ -35,5 +35,5 @@ export async function authorize(
 export async function bridgeDb(): Promise<MailQuery> {
   const { getSql } = await import("../../db.ts");
   const sql = await getSql();
-  return { query: (text, params) => sql.query(text, params ?? []) };
+  return { query: (text, params) => sql.query(text, params ?? []), transaction: sql.transaction?.bind(sql) };
 }

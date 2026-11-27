@@ -51,6 +51,9 @@ export type MailboxSnapshot = {
    * cannot undo it. Omitted by older clients, which then overwrite as before.
    */
   knownRevs?: Record<string, number>;
+  /** Save only: this tab's id and the save's number (save-seq.ts). An older save from the same tab is dropped. */
+  saveTab?: string;
+  saveSeq?: number;
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);

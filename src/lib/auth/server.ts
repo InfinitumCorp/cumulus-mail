@@ -30,6 +30,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
+import { requestScopedPool, type ClosablePool } from "../sql-surface.ts";
 import { ensureDbReady, getPglite } from "../db";
 import { cidConfig, cidConfigForRegion, cidProfileFromTokens, cidUserInfo, exchangeCidCode, cidAuthorizeUrl, cidTokenUrl } from "./cumulus-id.ts";
 import { regionFor, type Region } from "../region.ts";
@@ -142,7 +143,10 @@ function buildAuth(region: Region) {
   // schema from `migrations/auth/0001_auth.sql`, copied into `migrations/` when
   // the app turns sign-in on.
   const database = databaseUrl
-    ? new Pool({ connectionString: databaseUrl })
+    ? process.env.CUMULUS_RUNTIME === "cloudflare"
+      ? // Workers: per-request connections, shared with getSql() (sql-surface.ts withDbScope).
+        requestScopedPool(() => new Pool({ connectionString: databaseUrl, max: 4, connectionTimeoutMillis: 10_000 }) as unknown as ClosablePool)
+      : new Pool({ connectionString: databaseUrl })
     : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 
   // Built separately so the `betterAuth({...})` call stays easy to edit.
