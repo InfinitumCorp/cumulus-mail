@@ -323,3 +323,12 @@ test("two runs at the same time send a queued row once; a row stuck mid-send is 
   assert.equal((await processOutboundQueue(db, config, { tenantId: "ob-race", now: new Date(claimedAt.getTime() + STALE_SENDING_MS + 1000) })).sent, 1);
   assert.deepEqual(sent, ["bea@example.org", "cy@example.org"]);
 });
+
+test("Workers dial SMTP with cloudflare:sockets; Node hosts with node:net/node:tls", async () => {
+  const { defaultDial } = await import("./config.ts");
+  const { dialCloudflare } = await import("./cf-socket.ts");
+  const { dialNode } = await import("./node-socket.ts");
+  assert.equal(defaultDial({ CUMULUS_RUNTIME: "cloudflare" }), dialCloudflare);
+  assert.equal(defaultDial({}), dialNode);
+  assert.equal(defaultDial({ CUMULUS_RUNTIME: "node" }), dialNode);
+});
