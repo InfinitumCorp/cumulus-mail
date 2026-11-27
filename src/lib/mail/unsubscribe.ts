@@ -19,7 +19,7 @@ export async function unsubscribeMessage(
   db: MailQuery,
   tenantId: string,
   messageId: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch | null = null,
   resolve: Resolver | null = null,
 ): Promise<UnsubscribeResult> {
   assertTenantId(tenantId);

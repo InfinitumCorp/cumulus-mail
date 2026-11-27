@@ -75,6 +75,13 @@ export async function findTenantByAddress(db: MailQuery, address: string): Promi
   return matchRoute(db, catchAllAddress(domain));
 }
 
+/** The mailbox that owns this exact address (or its +tag base), never a domain's catch-all. */
+export async function findOwnerOfAddress(db: MailQuery, address: string): Promise<string | null> {
+  const email = address.trim().toLowerCase();
+  if (!email) return null;
+  return (await matchRoute(db, email)) ?? (stripPlus(email) !== email ? matchRoute(db, stripPlus(email)) : null);
+}
+
 export async function addressOwnedByOther(db: MailQuery, address: string, tenantId: string): Promise<boolean> {
   const owner = await findTenantByAddress(db, address);
   return owner !== null && owner !== tenantId;

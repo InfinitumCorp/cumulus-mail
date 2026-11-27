@@ -12,7 +12,7 @@ import { bridgeEnabled, bridgeLimits, bridgeWriteEnabled, READ_SCOPE, WRITE_SCOP
 
 export class BridgeOffError extends Error {
   constructor() {
-    super("The IMAP bridge is off. Set MAIL_BRIDGE=on to enable it.");
+    super("The IMAP bridge is off (set MAIL_BRIDGE=on to turn it on).");
     this.name = "BridgeOffError";
   }
 }

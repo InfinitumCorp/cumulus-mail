@@ -1,6 +1,8 @@
 # Cloudflare handoff for Cumulus://Mail
 
-This file is for the operator who deploys. It does not deploy anything, and it does not change DNS, MX, or Email Routing.
+This file is for the operator who deploys. It does not deploy anything, and it does not change DNS, MX, Email Routing, custom domains, or the live page at `mail.cumuluscloud.app`.
+
+US Mail uses the dedicated Supabase project `percackrrhhreusasspr` (us-east-1) and the existing Hyperdrive config `cumulus-mail` (`d07a82ac7fcc42ac84dc6469140ef551`). The shared project `ivqiskeziohbbtkcvlun` (eu-west-1) stays the backend for Cloud, Fabric, Nexus, and Cumulus://ID. Do not point Mail workers, migrations, or Storage at it.
 
 Outbound mail stays held. Neither worker has a `send_email` binding. Do not add one. Do not add R2.
 
@@ -35,47 +37,50 @@ The default `npm run build` still uses Nitro preset `vercel`. `NITRO_PRESET=clou
 
 ## 3. Hyperdrive
 
-Hyperdrive is on the Workers Free plan (100,000 queries per day). Create one config and use its id in both wrangler files. Replace `REPLACE_WITH_HYPERDRIVE_ID`. Do not put the database password in git.
+Hyperdrive config **cumulus-mail** already exists. Id: `d07a82ac7fcc42ac84dc6469140ef551`. Both wrangler files use that id. Do not create a second config. Do not point Hyperdrive at `ivqiskeziohbbtkcvlun`.
 
-Origin is the Supabase session pooler, port **5432**, `sslmode=require`. Do not use port **6543** (transaction mode). The app's `pg` client uses the extended query protocol, which session mode accepts.
+Hyperdrive is on the Workers Free plan (100,000 queries per day). Do not put the database password in git. It stays in the existing Hyperdrive config.
 
-```sh
-npx wrangler hyperdrive create cumulus-mail \
-  --connection-string="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require"
+Origin is the dedicated Mail session pooler, port **5432**, `sslmode=require`, database `postgres`. Do not use port **6543** (transaction mode). The app's `pg` client uses the extended query protocol, which session mode accepts.
+
+```text
+postgresql://postgres.percackrrhhreusasspr:<database-password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
-
-`<pooler-host>` is the host Supabase shows for the session pooler, such as `aws-0-<region>.pooler.supabase.com` or `aws-1-<region>.pooler.supabase.com`.
 
 The Worker reads `env.HYPERDRIVE.connectionString` and passes it to `pg` with no `ssl` override and no `rejectUnauthorized: false`. The `sslmode=require` flag belongs on the origin string above. Hyperdrive's runtime string often omits it because the Worker talks to Hyperdrive, and Hyperdrive talks to Postgres.
 
-Project ref: `ivqiskeziohbbtkcvlun`. Schema: `cumulus_mail`.
+Project ref: `percackrrhhreusasspr` (us-east-1). Schema: `cumulus_mail`. The shared project `ivqiskeziohbbtkcvlun` (eu-west-1) is Cloud, Fabric, Nexus, and Cumulus://ID, not Mail.
+
+`scripts/deploy-guard.mjs` keeps this id. `HYPERDRIVE_ID` in the deploy workflow replaces a file only when that file still says `REPLACE_WITH_HYPERDRIVE_ID`.
 
 ## 4. Supabase Storage
 
-Bucket `cumulus-mail` already exists and is private. Endpoint:
+Bucket `cumulus-mail` on the dedicated project already exists and is private. Endpoint:
 
 ```text
-https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3
+https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3
 ```
 
 The driver uses `forcePathStyle: true` and checksum mode `WHEN_REQUIRED`. Object keys are `tenants/<tenantId>/<blobId>`. Bytes are AES-256-GCM under `MAIL_BLOB_KEY` before they are written. `CUMULUS_ALLOW_SUPABASE=1` is set in the wrangler vars. Without it the driver refuses `*.supabase.co`.
 
-`SUPABASE_S3_REGION` is `us-east-1` in the wrangler file so the AWS SDK has a region. If SigV4 rejects the request, replace it with the region shown on the Supabase project. The endpoint stays the URL above.
+`SUPABASE_S3_REGION` is `us-east-1`, the dedicated project's region. The endpoint stays the URL above.
 
-Do not call `ensureBucket()` against this project. The bucket is already there.
+Do not call `ensureBucket()` against this project. The bucket is already there. Do not use the shared project's Storage endpoint.
 
-## 5. Migrations 0006 and 0007
+## 5. Migrations
 
-Migrations `0002` through `0005` are already applied. `migrations/0006_parity_settings.sql` (sealed mailbox settings, message extras, contact private fields, and password-protected links) and `migrations/0007_mail_rls.sql` are not; apply them in that order, so the RLS pass also covers `protected_links`. `0007_mail_rls.sql` It enables row level security on every table in `cumulus_mail`, creates no policies, and revokes `anon` and `authenticated` on that schema when those roles exist. The table owner (the pooler login) keeps access. `FORCE ROW LEVEL SECURITY` is not set.
+Checked 2026-11-26: the dedicated Mail database already has `0001` through `0021` recorded in `public._migrations`. Pending against this repo: `0022_factor_sessions.sql` and `0023_outbound_queue_created.sql`. Apply only those, and only against `percackrrhhreusasspr`.
 
-Nothing in this handoff applies it. After you approve it:
+`0007_mail_rls.sql` is already applied. It enables row level security on every table in `cumulus_mail`, creates no policies, and revokes `anon` and `authenticated` on that schema when those roles exist. The table owner (the pooler login) keeps access. `FORCE ROW LEVEL SECURITY` is not set. `0001_auth.sql` and `0020_auth_lockdown.sql` are both applied. On Supabase, applying `0001` alone would leave the sign-in tables readable with the public anon key; `0020` closes that.
+
+Nothing in this handoff applies migrations. After you approve the pending files:
 
 ```sh
-DATABASE_URL="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require" \
+DATABASE_URL="postgresql://postgres.percackrrhhreusasspr:<database-password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require" \
   npm run db:migrate
 ```
 
-Do not point that URL at a different project. Do not set `sslmode=disable`.
+Do not point that URL at `ivqiskeziohbbtkcvlun` or any other project. Do not set `sslmode=disable`.
 
 ## 6. Secrets an operator must supply
 
@@ -85,12 +90,12 @@ No secret values belong in git. From each worker directory, `npx wrangler secret
 
 | Name                            | Kind                   | Value                                                          |
 | ------------------------------- | ---------------------- | -------------------------------------------------------------- |
-| Hyperdrive binding `HYPERDRIVE` | id in `wrangler.jsonc` | Id printed by `wrangler hyperdrive create`                     |
+| Hyperdrive binding `HYPERDRIVE` | id in `wrangler.jsonc` | `d07a82ac7fcc42ac84dc6469140ef551` (`cumulus-mail`)            |
 | `MAIL_BLOB_KEY`                 | secret                 | 32 bytes, hex (64 chars) or base64. Same key the API will use. |
 | `SUPABASE_S3_ACCESS_KEY_ID`     | secret                 | Storage S3 access key for bucket `cumulus-mail`                |
 | `SUPABASE_S3_SECRET_ACCESS_KEY` | secret                 | Storage S3 secret                                              |
-| `SUPABASE_S3_ENDPOINT`          | var, already set       | `https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3`       |
-| `SUPABASE_S3_REGION`            | var, already set       | `us-east-1` unless the project region differs                  |
+| `SUPABASE_S3_ENDPOINT`          | var, already set       | `https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3` |
+| `SUPABASE_S3_REGION`            | var, already set       | `us-east-1` (dedicated project region)                         |
 | `SUPABASE_S3_BUCKET`            | var, already set       | `cumulus-mail`                                                 |
 | `CUMULUS_ALLOW_SUPABASE`        | var, already set       | `1`                                                            |
 | `MAIL_DOMAIN`                   | var, already set       | `cumuluscloud.app`                                             |
@@ -110,21 +115,21 @@ Same Hyperdrive id, same `MAIL_BLOB_KEY`, same two S3 secrets. Also:
 
 `DATABASE_URL` is not a Worker secret. The API copies `env.HYPERDRIVE.connectionString` onto `DATABASE_URL` per request. `CUMULUS_RUNTIME=cloudflare` is already a var so the Worker does not boot the local PGLite database.
 
-OIDC defaults to the Cumulus://ID Amazon Cognito user pool:
+OIDC defaults to the Cumulus://ID realm (the same issuer sign-in uses; discovery checked 2026-11-18):
 
 ```text
-issuer:   https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna
-jwks_uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna/.well-known/jwks.json
+issuer:   https://id.cumuluscloud.app/realms/cumulus
+jwks_uri: https://id.cumuluscloud.app/realms/cumulus/protocol/openid-connect/certs
 ```
 
-Discovery is `/.well-known/openid-configuration` under the issuer, and Mail reads `jwks_uri` from it. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`; override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. The tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). The retired Keycloak realm `https://id.cumuluscloud.app/realms/cumulus` no longer answers and is not the default.
+Discovery is `/.well-known/openid-configuration` under the issuer, and Mail reads `jwks_uri` from it. Name another pool with `CUMULUS_COGNITO_USER_POOL_ID` (and `CUMULUS_COGNITO_REGION` when it is not the prefix of the pool id), or any other OIDC issuer with `CUMULUS_OIDC_ISSUER`; override the JWKS URL with `CUMULUS_OIDC_JWKS_URL`. The tenant is the verified `tenant_id` claim (`custom:tenant_id`, or the verified `sub` for a user pool that mints neither). The Cognito pool `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna` once planned for Cumulus://ID answers 404 for discovery and is no longer the default.
 
 ## 7. Deploy steps
 
 Confirm the account before any command that talks to Cloudflare. `npx wrangler whoami` must be the account that already owns `cumulus-mail`. If it is not, stop.
 
-1. Apply migrations 0006 and 0007 (section 5) after they are approved.
-2. Create the Hyperdrive config (section 3). Paste the id over `REPLACE_WITH_HYPERDRIVE_ID` in `workers/email/wrangler.jsonc`. Do the same in `workers/api/wrangler.jsonc` only if you are deploying the API.
+1. Apply pending migrations `0022` and `0023` (section 5) after they are approved. Do not apply them to `ivqiskeziohbbtkcvlun`.
+2. Confirm Hyperdrive id `d07a82ac7fcc42ac84dc6469140ef551` in `workers/email/wrangler.jsonc` and, if you are deploying the API, in `workers/api/wrangler.jsonc`. That config already exists. Do not create another one.
 3. Put the three inbound secrets (section 6). Do not put them in `[vars]` or in git.
 
 If `npm run build:workers` has run in this checkout (for the API worker in step 7, or an earlier attempt), delete `.wrangler/deploy/config.json` at the repo root before `npx wrangler deploy`. That build writes this gitignored redirect to `.output/server/wrangler.json`, and while it exists Wrangler refuses to deploy from `workers/email` with "Found both a user configuration file at "wrangler.jsonc" and a deploy configuration file ... these do not share the same base path". The `rm -f` below is a no-op on a fresh checkout.
@@ -147,13 +152,13 @@ The same worker can be uploaded with the Cloudflare API from `npm run build:inbo
 | `dist/inbound/index.js`      | One bundled ESM module. This is the main module.                                                                                                       |
 | `dist/inbound/metadata.json` | Script-upload metadata: `main_module` `index.js`, `compatibility_date` `2026-11-10`, `compatibility_flags` `["nodejs_compat"]`, and the bindings list. |
 
-The bindings list is Hyperdrive `HYPERDRIVE` (id still `REPLACE_WITH_HYPERDRIVE_ID` until you edit a copy), the plain-text vars from `workers/email/wrangler.jsonc`, and three `secret_text` names with no `text` field: `MAIL_BLOB_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`. Copy `metadata.json` aside, replace the Hyperdrive id, and add `text` on each secret binding. Do not commit that copy.
+The bindings list is Hyperdrive `HYPERDRIVE` (id `d07a82ac7fcc42ac84dc6469140ef551`), the plain-text vars from `workers/email/wrangler.jsonc`, and three `secret_text` names with no `text` field: `MAIL_BLOB_KEY`, `SUPABASE_S3_ACCESS_KEY_ID`, `SUPABASE_S3_SECRET_ACCESS_KEY`. Copy `metadata.json` aside and add `text` on each secret binding. Leave the Hyperdrive id as it is. Do not commit that copy.
 
 There is no `send_email` binding, no R2 binding, and no route. The upload does not attach `mail.cumuluscloud.app` and does not change the Email Routing catch-all.
 
 ```sh
 npm run build:inbound
-# edit a copy of dist/inbound/metadata.json with the Hyperdrive id and secret text
+# edit a copy of dist/inbound/metadata.json: add secret text; keep the Hyperdrive id
 curl -X PUT \
   "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/cumulus-mail-inbound" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -179,13 +184,13 @@ The generated worker name is `cumulus-mail-api`. `main` is `index.mjs` next to t
 
 `node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or the identity host.
 
-After 0006 and 0007 are applied and the bucket credentials are available:
+After `0022` and `0023` are applied and the bucket credentials are available:
 
 ```sh
-export DATABASE_URL="postgresql://postgres.ivqiskeziohbbtkcvlun:<database-password>@<pooler-host>:5432/postgres?sslmode=require"
+export DATABASE_URL="postgresql://postgres.percackrrhhreusasspr:<database-password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
 export CUMULUS_ALLOW_SUPABASE=1
-export CUMULUS_OIDC_ISSUER="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna"
-export MAIL_S3_ENDPOINT="https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3"
+export CUMULUS_OIDC_ISSUER="https://id.cumuluscloud.app/realms/cumulus"
+export MAIL_S3_ENDPOINT="https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3"
 export MAIL_S3_BUCKET="cumulus-mail"
 export MAIL_S3_REGION="us-east-1"
 export MAIL_S3_ACCESS_KEY_ID="<access key id>"

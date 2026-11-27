@@ -11,6 +11,7 @@
  *
  * Quarantine, not rejection: a false positive costs the person a click in Quarantine, not lost mail.
  */
+import { mailDomain } from "./domain.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { blindIndex } from "./field-crypto.ts";
 import type { MailAuth } from "./model.ts";
@@ -18,7 +19,7 @@ import type { MailQuery } from "./query.ts";
 
 export type SpamVerdict =
   | { folder: "inbox"; reason: "allowlisted" | "clean" }
-  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" };
+  | { folder: "quarantine"; reason: "blocklisted" | "reputation" | "rbl" | "authentication" | "own-domain" | "feed" };
 
 /**
  * A domain needs this many votes before its reputation counts. A vote is one mailbox's verdict on one
@@ -68,12 +69,37 @@ async function setList(db: MailQuery, tenantId: string, address: string, kind: "
 
 /* ---------------- shared reputation ---------------- */
 
-async function bump(db: MailQuery, domain: string, column: "received" | "spam_reports" | "ham_reports"): Promise<void> {
+async function bump(
+  db: MailQuery,
+  domain: string,
+  column: "received" | "spam_reports" | "ham_reports",
+  by = 1,
+): Promise<void> {
   await db.query(
-    `insert into cumulus_mail.sender_reputation (domain, ${column}) values ($1, 1)
-     on conflict (domain) do update set ${column} = cumulus_mail.sender_reputation.${column} + 1, updated_at = now()`,
-    [domain],
+    `insert into cumulus_mail.sender_reputation (domain, ${column}) values ($1, $2)
+     on conflict (domain) do update set ${column} = cumulus_mail.sender_reputation.${column} + $2, updated_at = now()`,
+    [domain, by],
   );
+}
+
+/**
+ * `received` for a big sending domain is one row that every authenticated message from it would update,
+ * so under load every inbound message from that domain queues on the same row lock. Past
+ * RECEIVED_SAMPLE_FROM it is counted by sampling: one message in RECEIVED_SAMPLE (at random) adds
+ * RECEIVED_SAMPLE. The expected count is unchanged and the row takes about 1/16 of the writes; the count
+ * is only compared against spam votes at 0.1% (RECEIVED_SHARE), far coarser than the sampling noise.
+ */
+export const RECEIVED_SAMPLE_FROM = 1000;
+export const RECEIVED_SAMPLE = 16;
+
+export async function countReceived(
+  db: MailQuery,
+  domain: string,
+  current: number,
+  random: () => number = Math.random,
+): Promise<void> {
+  if (current < RECEIVED_SAMPLE_FROM) return bump(db, domain, "received");
+  if (random() < 1 / RECEIVED_SAMPLE) await bump(db, domain, "received", RECEIVED_SAMPLE);
 }
 
 export async function reputation(db: MailQuery, domain: string): Promise<{ received: number; spam: number; ham: number }> {
@@ -187,18 +213,36 @@ export async function inboundVerdict(
   tenantId: string,
   from: string,
   auth: MailAuth | undefined,
-  options: { env?: Record<string, string | undefined>; resolve?: ResolveA } = {},
+  options: { env?: Record<string, string | undefined>; resolve?: ResolveA; random?: () => number; feedDomains?: Set<string> } = {},
 ): Promise<SpamVerdict> {
   assertTenantId(tenantId);
   const domain = senderDomain(from);
+  // One read of the domain's counters, used for counting and for the verdict.
+  let rep: Awaited<ReturnType<typeof reputation>> | null = null;
+  const repOf = async (name: string) => (rep ??= await reputation(db, name));
   // Only mail that authenticated as the domain counts toward its volume, like votes: forged mail must not
   // be able to pad a domain's `received` count and so dilute its spam votes (RECEIVED_SHARE).
-  if (domain && authenticatedForDomain(auth)) await bump(db, domain, "received");
+  if (domain && authenticatedForDomain(auth)) {
+    await countReceived(db, domain, (await repOf(domain)).received, options.random);
+  }
   if (auth?.disposition === "quarantine") return { folder: "quarantine", reason: "authentication" };
+  // Mail between Cumulus mailboxes is delivered inside the app and never arrives here, so mail from the
+  // OUTSIDE claiming the platform's own domain is forged ("support@", a colleague) unless it passes DMARC
+  // for that domain (our own signed mail relayed by a list does, once MAIL_AUTH_DNS=live). No list or
+  // allowlist overrides this. A person's custom domains are theirs to send from anywhere, so not these.
+  if (domain && domain === mailDomain().toLowerCase() && auth?.dmarc !== "pass") {
+    return { folder: "quarantine", reason: "own-domain" };
+  }
   const kind = await listKind(db, tenantId, from);
   if (kind === "block") return { folder: "quarantine", reason: "blocklisted" };
   if (kind === "allow" && passed(auth)) return { folder: "inbox", reason: "allowlisted" };
-  if (domain && badReputation(await reputation(db, domain))) return { folder: "quarantine", reason: "reputation" };
+  // After the person's own lists: a feed like URLhaus lists compromised but legitimate hosts (and their
+  // parent domains), and someone who allowlisted a correspondent there must still get their mail when
+  // it authenticates.
+  if (options.feedDomains && domain && (await import("./spam-feed.ts")).listedDomain(options.feedDomains, from)) {
+    return { folder: "quarantine", reason: "feed" };
+  }
+  if (domain && badReputation(await repOf(domain))) return { folder: "quarantine", reason: "reputation" };
   const zones = rblZones(options.env ?? process.env);
   if (domain && zones.length && (await rblListed(domain, zones, options.resolve ?? dohResolver(options.env)))) {
     return { folder: "quarantine", reason: "rbl" };
@@ -218,6 +262,15 @@ export async function inboundVerdict(
  *     authentication result of a message it found here, never an address the client typed.
  * The mailbox's own block / allow list is set either way: that only affects this mailbox.
  */
+
+/**
+ * Block this sender for this mailbox only. Unlike report spam, this does not vote on the
+ * domain's shared reputation, so one person cannot sink a domain by blocking a correspondent.
+ */
+export async function blockSender(db: MailQuery, tenantId: string, from: string): Promise<void> {
+  assertTenantId(tenantId);
+  await setList(db, tenantId, from, "block");
+}
 
 /** "Report spam": block this sender for this mailbox, and vote "spam" for its domain if the mail authenticated. */
 export async function reportSpam(db: MailQuery, tenantId: string, from: string, auth?: MailAuth): Promise<void> {

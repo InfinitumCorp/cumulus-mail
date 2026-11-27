@@ -9,7 +9,7 @@ import {
 import { DEFAULT_CUMULUS_ISSUER } from "../src/lib/auth/issuer-defaults.mjs";
 
 const POOLER =
-  "postgresql://postgres.ivqiskeziohbbtkcvlun:secret@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require";
+  "postgresql://postgres.percackrrhhreusasspr:secret@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require";
 
 test("the live inbound path stays off unless MAIL_INBOUND_LIVE=1", () => {
   assert.equal(inboundLiveEnabled({}), false);
@@ -48,5 +48,5 @@ test("the live database URL must be the session pooler with sslmode=require", ()
 });
 
 test("docs and smoke default the OIDC issuer to the Cumulus://ID Cognito pool", () => {
-  assert.equal(DEFAULT_CUMULUS_ISSUER, "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna");
+  assert.equal(DEFAULT_CUMULUS_ISSUER, "https://id.cumuluscloud.app/realms/cumulus");
 });

@@ -83,7 +83,9 @@ test("subjects, addresses, snippets and headers are ciphertext with blind indexe
     ["meta-ada"],
   );
   assert.equal(box[0]?.address.includes("ada.meta"), false);
-  assert.equal(box[0]?.display_name.includes("Ada"), false);
+  // The whole name, not "Ada": three letters turn up by chance in random base64 ciphertext now and then
+  // (it failed CI once on 2026-11-18), while an 8-character match is effectively impossible.
+  assert.equal(box[0]?.display_name.includes("Ada Meta"), false);
   assert.equal(box[0]?.signature.includes("ada.meta"), false);
   assert.equal(openText("meta-ada", box[0]?.display_name ?? ""), "Ada Meta");
   assert.equal(openText("meta-ada", box[0]?.signature ?? ""), "Ada Meta\nada.meta@cumuluscloud.app");
@@ -101,7 +103,7 @@ test("subjects, addresses, snippets and headers are ciphertext with blind indexe
     `select auth_json from cumulus_mail.messages where tenant_id = $1 and id = $2`,
     ["meta-ada", "m-meta-1"],
   );
-  assert.equal(auth[0]?.auth_json.includes("pass"), false);
+  assert.equal(auth[0]?.auth_json.includes('"dmarc":"pass"'), false);
   assert.equal(JSON.parse(openText("meta-ada", auth[0]?.auth_json ?? "")).dmarc, "pass");
   assert.throws(() => openText("meta-bea", auth[0]?.auth_json ?? ""));
 

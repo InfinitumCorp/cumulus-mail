@@ -147,7 +147,8 @@ export async function signIn(
     errorCallbackURL,
     disableRedirect: true,
   });
-  if (error) throw new Error(error.message ?? "Sign-in failed");
+  // Keep the status: a 429 (the sign-in rate limit) gets its own explanation on the screen.
+  if (error) throw Object.assign(new Error(error.message ?? "Sign-in failed"), { status: error.status });
   if (data?.url) window.location.href = data.url;
 }
 
@@ -218,6 +219,8 @@ function waitForPopupToken(popup: Window): Promise<string | null> {
  * preview the local clear is sufficient, so it always resolves.
  */
 export async function signOut(redirectTo = "/"): Promise<void> {
+  // Nothing of the mailbox stays on this device after sign-out (offline-store.ts).
+  await import("../mail/offline-store").then(({ clearOfflineBlob }) => clearOfflineBlob()).catch(() => undefined);
   await runSignOut({
     livePreview: inLivePreview(),
     hasBearer: Boolean(getBearerToken()),
