@@ -18,7 +18,7 @@ import { createAbuseIntake } from "./abuse.ts";
 import { createBounceHandler } from "./dsn.ts";
 import { openMailbox, readAttachment, writeDelta, writeSnapshot } from "./mailbox.ts";
 import type { MailboxDelta } from "./delta.ts";
-import type { MailQuery } from "./query.ts";
+import { withTransaction, type MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
 import { mailAppHost, mailboxAddress, mailDomain } from "./domain.ts";
 import { handleCidEvent, parseCidEvent, verifyCidEventSignature } from "./cid-events.ts";
@@ -35,12 +35,11 @@ import {
   stripeConfig,
   verifyStripeSignature,
 } from "./billing.ts";
-import { publishAddress } from "./directory.ts";
+import { replaceRoutedAddresses } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
-import { catchAllAddress } from "./routing.ts";
-import { readProfile, readSettings, writeSettings } from "./records.ts";
+import { readProfile, readSettings, readSnapshot, routedAddresses, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -449,7 +448,9 @@ export async function checkDomainForSession(
     ...settings,
     domains: settings.domains.map((item) => (item.domain === domain ? { ...item, verified } : item)),
   });
-  if (verified && current.catchAll) await publishAddress(db, tenantId, catchAllAddress(domain));
+  // Re-publish this mailbox's routes from what is now verified: a domain that stopped verifying stops routing its
+  // aliases and catch-all; one that verifies again routes them again.
+  await withTransaction(db, async () => replaceRoutedAddresses(db, tenantId, routedAddresses(await readSnapshot(db, tenantId))));
   return { verified, txtName: current.txtName, txtValue: current.txtValue };
 }
 
