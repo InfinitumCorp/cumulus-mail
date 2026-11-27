@@ -611,7 +611,10 @@ export default {
   "Your data": "Your data",
   "Your message was read.": "Your message was read.",
   "Your name, a signature and your contacts. It takes a minute.": "Your name, a signature and your contacts. It takes a minute.",
+<<<<<<< HEAD
   "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.": "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.",
+=======
+>>>>>>> 75c1ce4
   "Your record appears in a moment.": "Your record appears in a moment."
  },
  "ru": {
@@ -1205,6 +1208,7 @@ export default {
   "Your data": "Ваши данные",
   "Your message was read.": "Ваше письмо прочитано.",
   "Your name, a signature and your contacts. It takes a minute.": "Имя, подпись и контакты. Это займёт минуту.",
+<<<<<<< HEAD
   "Could not load sessions.": "Не удалось загрузить сеансы.",
   "Could not withdraw the key.": "Не удалось отозвать ключ.",
   "Cumulus://ID account": "Аккаунт Cumulus://ID",
@@ -1238,5 +1242,8 @@ export default {
   "unknown": "неизвестно",
   "Your record appears in a moment.": "Ваша запись появится через мгновение.",
   "Your password, 4-digit PIN and optional authenticator app are managed on Cumulus://ID. This mailbox can also require its own authenticator or security key. That secret is encrypted with the mailbox.": "Пароль, 4-значный PIN-код и приложение-аутентификатор (по желанию) управляются в Cumulus://ID. Этот ящик может также требовать собственный аутентификатор или ключ безопасности. Этот секрет зашифрован вместе с ящиком."
+=======
+  "Your record appears in a moment.": "Ваша запись появится через мгновение."
+>>>>>>> 75c1ce4
  }
 };
