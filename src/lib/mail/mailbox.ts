@@ -99,7 +99,10 @@ export async function checkedAliases(
       throw new TenantAccessError(`An address can be on ${mailDomain()} or on one of your verified domains.`);
     }
     if (await addressOwnedByOther(db, email, tenantId)) {
-      if (ownedByOther === "skip") continue;
+      // One this mailbox held but no longer routes (its domain lapsed) and another mailbox now has: it is that
+      // mailbox's now, so it's dropped here rather than failing every save from now on.
+      const held = current.aliases.some((a) => a.toLowerCase() === email);
+      if (ownedByOther === "skip" || held) continue;
       throw new TenantAccessError("That address belongs to another mailbox");
     }
     aliases.push(email);
