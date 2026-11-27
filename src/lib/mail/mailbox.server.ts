@@ -533,12 +533,8 @@ export type FactorRequest =
 
 async function factorOrigin(): Promise<string> {
   const { getRequest } = await import("@tanstack/react-start/server");
-  const request = getRequest();
-  if (!request) return `https://${mailAppHost()}`;
-  const url = new URL(request.url);
-  const proto = (request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "")).split(",")[0]!.trim();
-  const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host).split(",")[0]!.trim();
-  return `${proto}://${host}`;
+  const { factorOriginFor } = await import("../auth/webauthn.ts");
+  return factorOriginFor(mailAppHost(), getRequest() ?? undefined);
 }
 
 export type FactorResult =
