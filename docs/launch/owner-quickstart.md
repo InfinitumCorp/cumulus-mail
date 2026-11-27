@@ -10,10 +10,11 @@ Still open, merge in this order, waiting for CI after each:
 1. **#214**: real transactions on the pooled database. Blocker.
 2. **#216**: on Workers, one Postgres pool per request. Blocker.
 3. **#217**: CI `smoke:worker` (the Workers build in workerd).
-4. **#213**: per-tab save ordering (migration 0024).
-5. **#212**: WebAuthn checked against `https://<MAIL_APP_HOST>`.
-6. **#215**: e2e test fix.
-7. The PR that updates these pages.
+4. **#219**: outbound SMTP from the API worker over `cloudflare:sockets`.
+5. **#213**: per-tab save ordering (migration 0024).
+6. **#212**: WebAuthn checked against `https://<MAIL_APP_HOST>`.
+7. **#215**: e2e test fix.
+8. The PR that updates these pages.
 
 **Before go:** Hyperdrive query caching off: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled` (see `friday.md`, go/no-go).
 

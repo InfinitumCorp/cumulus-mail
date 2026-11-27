@@ -16,10 +16,11 @@ commit, in this order, waiting for CI after each:
 1. #214: real transactions on the pooled database (one connection from BEGIN to COMMIT). **Blocker**;
 2. #216: on Workers, one Postgres pool per request (a shared pool hangs every second request). **Blocker**;
 3. #217: CI `smoke:worker`, the Workers build in workerd against Postgres;
-4. #213: each tab's saves are ordered on the server (migration 0024);
-5. #212: a deployed copy checks WebAuthn against `https://<MAIL_APP_HOST>`, not request headers;
-6. #215: a test-only e2e fix;
-7. the PR that updates these pages (Hyperdrive query cache, below).
+4. #219: on Workers, the API worker dials SMTP with `cloudflare:sockets` (its `node:tls` STARTTLS fails there);
+5. #213: each tab's saves are ordered on the server (migration 0024);
+6. #212: a deployed copy checks WebAuthn against `https://<MAIL_APP_HOST>`, not request headers;
+7. #215: a test-only e2e fix;
+8. the PR that updates these pages (Hyperdrive query cache, below).
 
 Migrations to apply at cutover (US): the dedicated database already has `0001`–`0021` (checked 26 Nov), so
 `0022`, `0023` and `0024` are pending: 3 files. A new RU database applies every file.
