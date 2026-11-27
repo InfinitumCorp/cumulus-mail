@@ -62,6 +62,9 @@ export function poolSql(pool: PoolLike): Sql {
     let broken: unknown;
     try {
       await client.query("BEGIN");
+      // A transaction left open (a request that never settles) gives its connection back after 30 s of
+      // silence instead of holding one of the pool's few connections forever.
+      await client.query("SET LOCAL idle_in_transaction_session_timeout = '30s'");
       const value = await current.run(client, run);
       await client.query("COMMIT");
       return value;
