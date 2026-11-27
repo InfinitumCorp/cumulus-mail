@@ -50,6 +50,11 @@ export type MailSettings = {
   unsubscribed: Unsubscribed[];
   /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
   setupPending: boolean;
+  /**
+   * Server-held: the last rename from Cumulus://ID (profile.updated), the name it replaced and the event's time.
+   * A save from a tab still showing that old name doesn't put it back, and an older event doesn't undo a newer one.
+   */
+  renamedFrom?: { name: string; at: string };
   /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
   theme: Theme;
   /**
@@ -251,6 +256,9 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       : [],
     setupPending: row.setupPending === true,
     theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
+    ...(row.renamedFrom && typeof row.renamedFrom.name === "string" && typeof row.renamedFrom.at === "string" && !Number.isNaN(Date.parse(row.renamedFrom.at))
+      ? { renamedFrom: { name: text(row.renamedFrom.name, 120), at: new Date(row.renamedFrom.at).toISOString() } }
+      : {}),
     ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
     ...(b64url(row.indexSalt, 16, 64) ? { indexSalt: b64url(row.indexSalt, 16, 64) } : {}),
     ...(typeof row.clientIndex === "string" && row.clientIndex.startsWith("cmh1.") && row.clientIndex.length < 120_000
@@ -321,7 +329,9 @@ export function keepServerNotes(previous: MailSettings, next: MailSettings): Mai
     if (!prior || item.at > prior.at) byKey.set(item.key, item);
   }
   const unsubscribed = [...byKey.values()].sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-200);
-  return { ...next, autoReply: { ...next.autoReply, sent }, unsubscribed };
+  // renamedFrom is the server's alone: whatever a client sends, the stored one stays.
+  const { renamedFrom: _client, ...rest } = next;
+  return { ...rest, autoReply: { ...next.autoReply, sent }, unsubscribed, ...(previous.renamedFrom ? { renamedFrom: previous.renamedFrom } : {}) };
 }
 
 /** A domain stays verified only when the stored row already was, and its TXT value did not change. */

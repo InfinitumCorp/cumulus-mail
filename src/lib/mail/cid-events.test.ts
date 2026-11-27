@@ -114,23 +114,36 @@ test("the daily PIN cap says 24 hours, and that a recovery code still works", ()
 });
 
 test("profile.updated renames the mailbox only while it still shows the previous name", async () => {
+  const { sealText } = await import("./field-crypto.ts");
+  const { writeSnapshot } = await import("./mailbox.ts");
   const cid = "cid_33333333-3333-4333-8333-333333333333";
   const created: CidEvent = { cid, type: "account.created", detail: { username: "maid", displayName: "Marian", mailAddress: "maid@cumuluscloud.app" }, at };
   assert.equal(await handleCidEvent(harness.db, created, "cumuluscloud.app"), "provisioned");
   const tenant = (await tenantForCid(harness.db, cid))!;
   const name = async () => (await readSnapshot(harness.db, tenant)).me.name;
+  const t = (s: number) => new Date(Date.parse(at) + s * 1000).toISOString();
+  const renamed = (displayName: string, previous: string, when: string): CidEvent => ({ cid, type: "profile.updated", detail: { displayName, previous }, at: when });
   assert.equal(await name(), "Marian");
-  const renamed = (displayName: string, previous: string): CidEvent => ({ cid, type: "profile.updated", detail: { displayName, previous }, at });
-  assert.equal(await handleCidEvent(harness.db, renamed("Maid Marian", "Marian"), "cumuluscloud.app"), "renamed");
+  const tab = await readSnapshot(harness.db, tenant); // a tab opened before the rename
+  assert.equal(await handleCidEvent(harness.db, renamed("Maid Marian", "Marian", t(10)), "cumuluscloud.app"), "renamed");
   assert.equal(await name(), "Maid Marian");
+  // That tab's next full save still says "Marian": the rename stays.
+  await writeSnapshot(harness.db, harness.storageFor, tenant, { ...tab, signature: "from the old tab" });
+  assert.equal(await name(), "Maid Marian");
+
+  // Out of order: B→C arrives, then the older A→B retry; Mail ends on C.
+  assert.equal(await handleCidEvent(harness.db, renamed("Marian F.", "Maid Marian", t(30)), "cumuluscloud.app"), "renamed");
+  assert.equal(await handleCidEvent(harness.db, renamed("Maid Marian", "Marian", t(10)), "cumuluscloud.app"), "ignored");
+  assert.equal(await name(), "Marian F.");
+
   // A name chosen in Mail itself stays the person's choice.
-  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, (await import("./field-crypto.ts")).sealText(tenant, "Lady Marian")]);
-  assert.equal(await handleCidEvent(harness.db, renamed("M. Fitzwalter", "Maid Marian"), "cumuluscloud.app"), "ignored");
+  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, sealText(tenant, "Lady Marian")]);
+  assert.equal(await handleCidEvent(harness.db, renamed("M. Fitzwalter", "Marian F.", t(40)), "cumuluscloud.app"), "ignored");
   assert.equal(await name(), "Lady Marian");
   // Header-breaking characters never get in.
-  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, (await import("./field-crypto.ts")).sealText(tenant, "Old")]);
-  assert.equal(await handleCidEvent(harness.db, renamed('Eve <eve@evil.example>\r\nBcc: x', "Old"), "cumuluscloud.app"), "renamed");
+  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, sealText(tenant, "Old")]);
+  assert.equal(await handleCidEvent(harness.db, renamed('Eve <eve@evil.example>\r\nBcc: x', "Old", t(50)), "cumuluscloud.app"), "renamed");
   assert.doesNotMatch(await name(), /[<>\r\n"]/);
-  // No mailbox: nothing to rename.
-  assert.equal(await handleCidEvent(harness.db, { ...renamed("X", "Y"), cid: "cid_44444444-4444-4444-8444-444444444444" }, "cumuluscloud.app"), "no-mailbox");
+  // Someone without Mail: nothing to do, and answered as done (no retries for an hour).
+  assert.equal(await handleCidEvent(harness.db, { ...renamed("X", "Y", t(60)), cid: "cid_44444444-4444-4444-8444-444444444444" }, "cumuluscloud.app"), "ignored");
 });

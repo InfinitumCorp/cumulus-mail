@@ -19,7 +19,7 @@ import { assertTenantId } from "../storage/adapter.ts";
 import { sha256Hex } from "../storage/index.ts";
 import type { MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertMessage } from "./records.ts";
+import { insertMessage, readSettings, writeSettings } from "./records.ts";
 import { replaceRoutedAddresses } from "./directory.ts";
 import { provisionMailbox } from "./seed.ts";
 import { cleanDisplayName } from "./mailbox.ts";
@@ -182,7 +182,7 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     return "provisioned";
   }
   const tenantId = await tenantForCid(db, e.cid);
-  if (!tenantId) return "no-mailbox";
+  if (!tenantId) return e.type === "profile.updated" ? "ignored" : "no-mailbox";
   assertTenantId(tenantId);
   if (e.type === "account.deleted") {
     if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
@@ -191,16 +191,20 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
   }
   if (e.type === "profile.updated") {
     // A rename on Cumulus://ID renames the mailbox only while it still shows the previous name: a name the person
-    // set in Mail itself (setup, settings) is theirs and stays.
+    // set in Mail itself (setup) is theirs and stays. Events can arrive out of order (queue retries), so one older
+    // than the last applied rename is ignored.
     const name = cleanDisplayName(e.detail.displayName);
     const previous = cleanDisplayName(e.detail.previous);
     if (!name) return "ignored";
     const rows = await db.query<{ display_name: string | null }>(`select display_name from cumulus_mail.mailboxes where tenant_id = $1`, [tenantId]);
-    if (!rows.length) return "no-mailbox";
+    // Nobody to rename: answered as done, so a rename by someone without Mail isn't retried for an hour.
+    if (!rows.length) return "ignored";
+    const settings = await readSettings(db, tenantId);
+    if (settings.renamedFrom && settings.renamedFrom.at >= e.at) return "ignored";
     const current = rows[0]!.display_name ? cleanDisplayName(openText(tenantId, rows[0]!.display_name)) : "";
-    if (current && current !== previous) return "ignored";
-    if (current === name) return "ignored";
+    if ((current && current !== previous) || current === name) return "ignored";
     await db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenantId, sealText(tenantId, name)]);
+    await writeSettings(db, tenantId, { ...settings, renamedFrom: { name: current || previous, at: e.at } });
     return "renamed";
   }
   const notice = noticeFor(e);

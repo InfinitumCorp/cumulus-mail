@@ -256,7 +256,7 @@ export async function writeSnapshot(
   const next: MailboxSnapshot = {
     ...rest,
     // Only the display name comes from the client (first-run setup); address, plan and quota never do.
-    me: { ...current.me, name: cleanDisplayName(snapshot.me?.name) || current.me.name },
+    me: { ...current.me, name: chosenName(cleanDisplayName(snapshot.me?.name), current) },
     messages,
     aliases,
     signature: snapshot.signature.slice(0, 4000),
@@ -317,6 +317,16 @@ export async function readAttachment(
     throw new Error("Stored attachment checksum does not match its record");
   }
   return { name: row.name, contentType: row.content_type, bytes: stored.body };
+}
+
+/**
+ * The display name a full save keeps. Only the client sets it (first-run setup), but every full save sends it, so a
+ * tab still showing the name a Cumulus://ID rename replaced would put the old one back: that one is ignored.
+ */
+function chosenName(sent: string, current: MailboxSnapshot): string {
+  if (!sent) return current.me.name;
+  const replaced = current.settings?.renamedFrom?.name;
+  return replaced && sent === replaced && sent !== current.me.name ? current.me.name : sent;
 }
 
 /** A display name as stored: one line, no quotes or angle brackets (they would break a From header). */
