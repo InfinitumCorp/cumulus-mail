@@ -2,7 +2,7 @@ import type { ArchitectTask, Attachment, Contact, MailMessage, MailRule, Message
 import { assertTenantId } from "../storage/adapter.ts";
 import { syncUidsForMailbox } from "./bridge/uids.ts";
 import { mailDomain } from "./domain.ts";
-import { addressBlind, replaceRoutedAddresses } from "./directory.ts";
+import { addressBlind, findOwnerOfAddress, replaceRoutedAddresses } from "./directory.ts";
 import { blindIndex, openText, sealText } from "./field-crypto.ts";
 import { messageSnippet } from "./logic.ts";
 import { indexMessageWords } from "./search.ts";
@@ -489,7 +489,7 @@ export async function replaceMailboxContents(
         [tenantId, rule.id, rule.from.slice(0, 320), rule.action, rule.label?.slice(0, 80) ?? null],
       );
     }
-    await replaceRoutedAddresses(db, tenantId, routedAddresses({ ...snapshot, settings }));
+    await publishRoutes(db, tenantId, { ...snapshot, settings });
     // IMAP UID bookkeeping for the read-only bridge. A no-op unless MAIL_BRIDGE=on.
     await syncUidsForMailbox(db, tenantId, snapshot.messages.map((m) => ({ id: m.id, folder: asFolder(m.folder) })));
     for (const [key, text] of Object.entries(snapshot.briefs)) {
@@ -585,11 +585,13 @@ function openPrivate(tenantId: string, stored: string | null): Pick<Contact, "ph
 
 /**
  * The addresses mail is delivered to this mailbox for. An alias on a custom domain is routed only while this mailbox
- * has that domain verified: it stays saved (a brief DNS failure loses nothing, and it routes again once the domain
- * verifies), but a domain removed or no longer pointing here doesn't keep receiving mail, or block the domain's next
- * owner from that address.
+ * has that domain verified: it stays saved (and routes again once the domain verifies; mail arriving while the
+ * check finds the record missing, a DNS failure included, isn't routed), but a domain removed or no longer pointing
+ * here doesn't keep receiving mail, or block the domain's next owner from that address.
  */
-export function routedAddresses(snapshot: MailboxSnapshot): string[] {
+export type RouteState = Pick<MailboxSnapshot, "aliases" | "settings"> & { me: Pick<MailboxSnapshot["me"], "email" | "limits"> };
+
+export function routedAddresses(snapshot: RouteState): string[] {
   const verified = new Set((snapshot.settings?.domains ?? []).filter((d) => d.verified).map((d) => d.domain.toLowerCase()));
   const platform = mailDomain().toLowerCase();
   const routable = (alias: string) => {
@@ -602,6 +604,37 @@ export function routedAddresses(snapshot: MailboxSnapshot): string[] {
     if (catchAllAllowed && domain.verified && domain.catchAll) addresses.push(catchAllAddress(domain.domain));
   }
   return addresses;
+}
+
+/** Just what routing needs (no messages), for the domain check. */
+export async function readRouteState(db: MailQuery, tenantId: string): Promise<RouteState | null> {
+  const rows = await db.query<{ address: string; plan_id: string; plan_status: string }>(
+    `select address, plan_id, plan_status from cumulus_mail.mailboxes where tenant_id = $1`,
+    [tenantId],
+  );
+  const box = rows[0];
+  if (!box) return null;
+  const aliases = await db.query<{ address: string }>(`select address from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
+  return {
+    me: { email: openText(tenantId, box.address), limits: limitsFor(box.plan_id, box.plan_status) },
+    aliases: aliases.map((row) => openText(tenantId, row.address)),
+    settings: await readSettings(db, tenantId),
+  };
+}
+
+/**
+ * Publish this mailbox's routes, leaving out any address (or catch-all) another mailbox already routes: after a
+ * domain changed hands, the new owner keeps its addresses even if the old mailbox verifies again. The mailbox's own
+ * address is always published.
+ */
+export async function publishRoutes(db: MailQuery, tenantId: string, state: RouteState): Promise<void> {
+  const own = state.me.email.toLowerCase();
+  const keep: string[] = [];
+  for (const address of routedAddresses(state)) {
+    const owner = address.toLowerCase() === own ? null : await findOwnerOfAddress(db, address);
+    if (owner === null || owner === tenantId) keep.push(address);
+  }
+  await replaceRoutedAddresses(db, tenantId, keep);
 }
 
 export async function readSettings(db: MailQuery, tenantId: string): Promise<MailSettings> {

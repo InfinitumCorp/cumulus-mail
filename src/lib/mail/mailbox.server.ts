@@ -32,11 +32,10 @@ import {
   stripeConfig,
   verifyStripeSignature,
 } from "./billing.ts";
-import { replaceRoutedAddresses } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
-import { readProfile, readSettings, readSnapshot, routedAddresses, writeSettings } from "./records.ts";
+import { publishRoutes, readProfile, readRouteState, readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -439,7 +438,8 @@ export async function checkDomainForSession(
   });
   // Re-publish this mailbox's routes from what is now verified: a domain that stopped verifying stops routing its
   // aliases and catch-all; one that verifies again routes them again.
-  await withTransaction(db, async () => replaceRoutedAddresses(db, tenantId, routedAddresses(await readSnapshot(db, tenantId))));
+  const state = await readRouteState(db, tenantId);
+  if (state) await withTransaction(db, async () => publishRoutes(db, tenantId, state));
   return { verified, txtName: current.txtName, txtValue: current.txtValue };
 }
 
