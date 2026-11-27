@@ -10,7 +10,7 @@ import { runScheduledJobsOn, type ScheduledJobsReport } from "./scheduled-jobs.t
  */
 export async function runScheduledJobs(now = Date.now()): Promise<ScheduledJobsReport> {
   const sql = await getSql();
-  const db: MailQuery = { query: (text, params) => sql.query(text, params ?? []) };
+  const db: MailQuery = { query: (text, params) => sql.query(text, params ?? []), transaction: sql.transaction?.bind(sql) };
   const driver = createStorageDriver();
   const { deletionStripe } = await import("./account-deletion.ts");
   return runScheduledJobsOn(db, (tenantId) => openTenantStorage(tenantId, driver), now, {

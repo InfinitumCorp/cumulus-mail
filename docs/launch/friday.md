@@ -10,17 +10,13 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #211 (27 Nov, main 328d1d1). **Production has not been cut over yet:** on
-27 Nov `mail.` and `ru.mail.` still serve the old page (no `/api/health`). Still open, merge before the deploy
-commit, in this order, waiting for CI after each:
-1. #214: real transactions on the pooled database (one connection from BEGIN to COMMIT). **Blocker**;
-2. #216: on Workers, one Postgres pool per request (a shared pool hangs every second request). **Blocker**;
-3. #217: CI `smoke:worker`, the Workers build in workerd against Postgres;
-4. #219: on Workers, the API worker dials SMTP with `cloudflare:sockets` (its `node:tls` STARTTLS fails there);
-5. #213: each tab's saves are ordered on the server (migration 0024);
-6. #212: a deployed copy checks WebAuthn against `https://<MAIL_APP_HOST>`, not request headers;
-7. #215: a test-only e2e fix;
-8. the PR that updates these pages (Hyperdrive query cache, below).
+**Needs on `main`:** everything up to #217 (27 Nov, main fc7c058): #212, #213, #215, #216 and #217, which carried
+#214's transactions fix. **Production has not been cut over yet:** on 27 Nov `mail.` and `ru.mail.` still serve the
+old page (no `/api/health`). Still open, merge before the deploy commit, waiting for CI after each:
+1. #219: on Workers, the API worker dials SMTP with `cloudflare:sockets` (its `node:tls` STARTTLS fails there);
+2. the PR that updates these pages (Hyperdrive query cache, below).
+
+#214 is already on `main` through #217 and can be closed.
 
 Migrations to apply at cutover (US): the dedicated database already has `0001`–`0021` (checked 26 Nov), so
 `0022`, `0023` and `0024` are pending: 3 files. A new RU database applies every file.
