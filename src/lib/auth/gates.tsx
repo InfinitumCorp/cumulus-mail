@@ -1,8 +1,9 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { SIGN_IN_PROVIDERS, authEnabled, signIn, signOut } from "./client";
 import { hasGateSessionMarker } from "./gate-session-marker";
 import { resolveSignInGateState } from "./sign-in-gate";
+import { signInErrorFromUrl, signInErrorKind, type SignInErrorKind } from "./sign-in-errors";
 import { useCurrentUser, useCurrentUserState } from "./use-current-user";
 
 const subscribeToNothing = () => () => {};
@@ -68,8 +69,18 @@ export function SignInGate({
  * Both run the same Cumulus ID flow and land back here signed in.
  */
 export function SignInButtons() {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SignInErrorKind | null>(null);
   const [busy, setBusy] = useState(false);
+  // A sign-in that failed at Cumulus ID comes back here with ?error=…: say so, then tidy the URL.
+  useEffect(() => {
+    const kind = signInErrorFromUrl(window.location.search);
+    if (!kind) return;
+    setError(kind);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("error");
+    url.searchParams.delete("error_description");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
   return (
     <div className="flex w-full max-w-sm flex-col gap-2">
       {SIGN_IN_PROVIDERS.map((p) => (
@@ -82,7 +93,7 @@ export function SignInButtons() {
             setBusy(true);
             void signIn(p.providerId, { callbackURL: "/" }).catch((e: unknown) => {
               setBusy(false);
-              setError(e instanceof Error ? e.message : "Sign-in failed. Please try again.");
+              setError(signInErrorKind(e));
             });
           }}
           className={
@@ -95,10 +106,25 @@ export function SignInButtons() {
         </button>
       ))}
       {error && (
-        <p role="alert" className="text-sm opacity-70">
-          {error}
+        <p role="alert" data-sign-in-error={error} className="text-sm opacity-70">
+          {error === "rate_limited" ? (
+            <>Too many sign-in attempts from this network. Wait a few minutes, then try again.</>
+          ) : error === "popup_blocked" ? (
+            <>Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.</>
+          ) : error === "cancelled" ? (
+            <>Sign-in was cancelled. Nothing changed; you can try again.</>
+          ) : error === "offline" ? (
+            <>Could not reach the server. Check your connection, then try again.</>
+          ) : error === "provider" ? (
+            <>Sign-in did not finish at Cumulus ID. Try again; if it keeps happening, Cumulus ID may be down for a moment.</>
+          ) : (
+            <>Sign-in failed. Please try again.</>
+          )}
         </p>
       )}
+      <p className="mt-2 text-xs opacity-60">
+        Lost access to your Cumulus ID? Recover it at Cumulus ID first. Your mail stays here and opens again when you sign in.
+      </p>
     </div>
   );
 }

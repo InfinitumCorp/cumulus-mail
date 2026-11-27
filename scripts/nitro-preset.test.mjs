@@ -16,18 +16,21 @@ function assertInboundSafe(config) {
   assert.equal(config.workers_dev, false);
   assert.deepEqual(config.compatibility_flags, ["nodejs_compat"]);
   assert.equal(config.hyperdrive?.[0]?.binding, "HYPERDRIVE");
-  assert.equal(config.hyperdrive?.[0]?.id, "REPLACE_WITH_HYPERDRIVE_ID");
+  assert.equal(config.hyperdrive?.[0]?.id, "d07a82ac7fcc42ac84dc6469140ef551");
   assert.equal(config.vars.SUPABASE_S3_BUCKET, "cumulus-mail");
+  assert.equal(config.vars.SUPABASE_S3_REGION, "us-east-1");
   assert.equal(
     config.vars.SUPABASE_S3_ENDPOINT,
-    "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
   );
   assert.equal(config.vars.CUMULUS_ALLOW_SUPABASE, "1");
   assert.equal(config.observability?.enabled, true);
   assert.equal(config.observability?.traces?.enabled, true);
   for (const key of FORBIDDEN) assert.equal(config[key], undefined, key);
-  assert.equal(JSON.stringify(config).includes("REPLACE_WITH_HYPERDRIVE_ID"), true);
-  assert.equal(JSON.stringify(config).includes("AKIA"), false);
+  const encoded = JSON.stringify(config);
+  assert.equal(encoded.includes("REPLACE_WITH_HYPERDRIVE_ID"), false);
+  assert.equal(encoded.includes("ivqiskeziohbbtkcvlun"), false);
+  assert.equal(encoded.includes("AKIA"), false);
 }
 
 function assertApiSafe(config) {
@@ -38,9 +41,18 @@ function assertApiSafe(config) {
   assert.equal(config.vars.MAIL_STORAGE, "s3");
   assert.equal(
     config.vars.CUMULUS_OIDC_ISSUER,
-    "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna",
+    "https://id.cumuluscloud.app/realms/cumulus",
   );
   assert.equal(config.hyperdrive?.[0]?.binding, "HYPERDRIVE");
+  assert.equal(config.hyperdrive?.[0]?.id, "d07a82ac7fcc42ac84dc6469140ef551");
+  assert.equal(config.vars.SUPABASE_S3_REGION, "us-east-1");
+  assert.equal(
+    config.vars.SUPABASE_S3_ENDPOINT,
+    "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
+  );
+  const encoded = JSON.stringify(config);
+  assert.equal(encoded.includes("REPLACE_WITH_HYPERDRIVE_ID"), false);
+  assert.equal(encoded.includes("ivqiskeziohbbtkcvlun"), false);
   assert.equal(config.routes, undefined);
   assert.equal(config.workers_dev, true);
   for (const key of FORBIDDEN) assert.equal(config[key], undefined, key);

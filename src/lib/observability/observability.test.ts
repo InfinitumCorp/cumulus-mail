@@ -16,6 +16,13 @@ test("the path is scrubbed: no query string, no token, no address", () => {
   assert.equal(scrubPath("/api/auth/sign-in/social"), "/api/auth/sign-in/social");
   assert.equal(scrubPath("/"), "/");
   assert.equal(scrubPath("/x".repeat(400)).length <= 200, true);
+  // Credentials next to a dot: the calendar feed and the data-export link.
+  assert.equal(scrubPath(`/api/calendar/cal_${"Ab1-_".repeat(9)}.ics`), "/api/calendar/:id");
+  assert.equal(scrubPath("/api/account/export/YWxpY2U.mbox.1763460000000.3q2-7w8Xj0a9Kp2LmN4oQ5rS6tU7vW8x"), "/api/account/export/:id");
+  // File names stay readable.
+  assert.equal(scrubPath("/manifest.webmanifest"), "/manifest.webmanifest");
+  assert.equal(scrubPath("/assets/index-DgzZKND8.js"), "/assets/index-DgzZKND8.js");
+  assert.equal(scrubPath("/legal/privacy"), "/legal/privacy");
 });
 
 test("the request id comes from the proxy when it is plain, else a fresh one", () => {

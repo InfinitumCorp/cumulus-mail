@@ -25,7 +25,9 @@ test("inbound upload metadata matches the worker config and carries no secrets",
     "SUPABASE_S3_SECRET_ACCESS_KEY",
   ]);
   assert.equal(metadata.bindings[0].type, "hyperdrive");
-  assert.equal(metadata.bindings[0].id, "REPLACE_WITH_HYPERDRIVE_ID");
+  assert.equal(metadata.bindings[0].id, "d07a82ac7fcc42ac84dc6469140ef551");
+  const endpoint = metadata.bindings.find((binding) => binding.name === "SUPABASE_S3_ENDPOINT");
+  assert.equal(endpoint.text, "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3");
   for (const binding of metadata.bindings.filter((item) => item.type === "secret_text")) {
     assert.equal(binding.text, undefined);
   }

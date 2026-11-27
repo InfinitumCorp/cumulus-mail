@@ -87,12 +87,21 @@ function boundaryFor(seed: string): string {
  * multipart/mixed when there are attachments (each base64, with an RFC 2231
  * file name). Header values are stripped of CR/LF so nothing can be injected.
  */
+/** An Autocrypt header this builder is willing to emit. Folds are allowed. Anything else is dropped. */
+export function safeAutocryptHeader(header: string): boolean {
+  if (!header.startsWith("Autocrypt: ")) return false;
+  const unfolded = header.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "");
+  if (/[\r\n]/.test(unfolded)) return false;
+  return /^Autocrypt: addr=[^;\s]+; prefer-encrypt=(?:mutual|nopreference); keydata=[A-Za-z0-9+/=]+$/.test(unfolded);
+}
+
 export function buildRawMessage(
   message: MailMessage,
   from: Person,
   domain: string,
   now = new Date(),
   files: OutgoingFile[] = [],
+  extraHeaders: string[] = [],
 ): string {
   const headers = [
     `From: ${address(from)}`,
@@ -101,6 +110,7 @@ export function buildRawMessage(
     `Subject: ${encodeWord(message.subject.replace(/[\r\n]+/g, " "))}`,
     `Date: ${now.toUTCString().replace("GMT", "+0000")}`,
     `Message-ID: <${message.id.replace(/[^A-Za-z0-9._-]/g, "")}@${domain}>`,
+    ...extraHeaders.filter(safeAutocryptHeader),
     "MIME-Version: 1.0",
   ];
   const text = base64Body(new TextEncoder().encode(message.body));

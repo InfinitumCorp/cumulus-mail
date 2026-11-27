@@ -22,6 +22,7 @@ import { Route as ApiBridgeMoveRouteImport } from './routes/api/bridge/move'
 import { Route as ApiBridgeSyncRouteImport } from './routes/api/bridge/sync'
 import { Route as ApiCalendarTokenRouteImport } from './routes/api/calendar/$token'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
+import { Route as ApiMailboxDeltaRouteImport } from './routes/api/mailbox/delta'
 import { Route as ApiAccountExportTokenRouteImport } from './routes/api/account/export/$token'
 
 const IndexRoute = IndexRouteImport.update({
@@ -89,6 +90,11 @@ const ApiCronTickRoute = ApiCronTickRouteImport.update({
   path: '/api/cron/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMailboxDeltaRoute = ApiMailboxDeltaRouteImport.update({
+  id: '/api/mailbox/delta',
+  path: '/api/mailbox/delta',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAccountExportTokenRoute = ApiAccountExportTokenRouteImport.update({
   id: '/api/account/export/$token',
   path: '/api/account/export/$token',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/mailbox/delta': typeof ApiMailboxDeltaRoute
   '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesByTo {
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/mailbox/delta': typeof ApiMailboxDeltaRoute
   '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRoutesById {
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/api/bridge/sync': typeof ApiBridgeSyncRoute
   '/api/calendar/$token': typeof ApiCalendarTokenRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/mailbox/delta': typeof ApiMailboxDeltaRoute
   '/api/account/export/$token': typeof ApiAccountExportTokenRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/mailbox/delta'
     | '/api/account/export/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/mailbox/delta'
     | '/api/account/export/$token'
   id:
     | '__root__'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/api/bridge/sync'
     | '/api/calendar/$token'
     | '/api/cron/tick'
+    | '/api/mailbox/delta'
     | '/api/account/export/$token'
   fileRoutesById: FileRoutesById
 }
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   ApiBridgeSyncRoute: typeof ApiBridgeSyncRoute
   ApiCalendarTokenRoute: typeof ApiCalendarTokenRoute
   ApiCronTickRoute: typeof ApiCronTickRoute
+  ApiMailboxDeltaRoute: typeof ApiMailboxDeltaRoute
   ApiAccountExportTokenRoute: typeof ApiAccountExportTokenRoute
 }
 
@@ -305,6 +318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mailbox/delta': {
+      id: '/api/mailbox/delta'
+      path: '/api/mailbox/delta'
+      fullPath: '/api/mailbox/delta'
+      preLoaderRoute: typeof ApiMailboxDeltaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/account/export/$token': {
       id: '/api/account/export/$token'
       path: '/api/account/export/$token'
@@ -329,6 +349,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBridgeSyncRoute: ApiBridgeSyncRoute,
   ApiCalendarTokenRoute: ApiCalendarTokenRoute,
   ApiCronTickRoute: ApiCronTickRoute,
+  ApiMailboxDeltaRoute: ApiMailboxDeltaRoute,
   ApiAccountExportTokenRoute: ApiAccountExportTokenRoute,
 }
 export const routeTree = rootRouteImport

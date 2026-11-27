@@ -218,3 +218,76 @@ test("a public-looking name that resolves to a private or metadata address is re
   assert.deepEqual(calls, []);
   await assertPublicHost("ok.example", async () => ["1.1.1.1"]);
 });
+
+test("one-click on Node connects to the address that was checked, not a second DNS answer", async () => {
+  const { pinnedLookup, nodePinnedPost } = await import("./categories.ts");
+  const v4: unknown[] = [];
+  pinnedLookup("93.184.216.34")("x.example", { all: true }, (...args) => v4.push(args));
+  pinnedLookup("93.184.216.34")("x.example", {}, (...args) => v4.push(args));
+  pinnedLookup("2606:4700::1111")("x.example", 0, (...args) => v4.push(args));
+  assert.deepEqual(v4, [
+    [null, [{ address: "93.184.216.34", family: 4 }]],
+    [null, "93.184.216.34", 4],
+    [null, "2606:4700::1111", 6],
+  ]);
+
+  // Resolving twice would let a rebinding name answer public for the check and private for the request.
+  let lookups = 0;
+  const rebinding = async () => (++lookups === 1 ? ["93.184.216.34"] : ["169.254.169.254"]);
+  const seen: Array<{ host: string; address: string; body: string }> = [];
+  const pinned = async (url: URL, address: string, body: string) => {
+    seen.push({ host: url.hostname, address, body });
+    return 202;
+  };
+  assert.deepEqual(await oneClickUnsubscribe("https://unsub.rebind.example/u", null, 10_000, rebinding, pinned), { ok: true, status: 202 });
+  assert.deepEqual(seen, [{ host: "unsub.rebind.example", address: "93.184.216.34", body: "List-Unsubscribe=One-Click" }]);
+  assert.equal(lookups, 1);
+
+  // The real transport: the TLS hello lands on the pinned address and still names the URL's host (SNI).
+  const net = await import("node:net");
+  const hello = await new Promise<string>((resolve, reject) => {
+    const server = net.createServer((socket) => {
+      socket.once("data", (chunk) => {
+        resolve(chunk.toString("latin1"));
+        socket.destroy();
+        server.close();
+      });
+    });
+    server.listen(0, "127.0.0.1", async () => {
+      const port = (server.address() as { port: number }).port;
+      const post = await nodePinnedPost();
+      assert.ok(post);
+      post(new URL(`https://unsub.rebind.example:${port}/u`), "127.0.0.1", "x", AbortSignal.timeout(5_000)).then(
+        () => reject(new Error("expected the TLS handshake to fail")),
+        () => undefined,
+      );
+    });
+  });
+  assert.match(hello, /unsub\.rebind\.example/);
+});
+
+test("on Workers the DNS check is left to the platform and the POST goes through fetch; on Node each checked address is tried", async () => {
+  const { systemResolver } = await import("./categories.ts");
+  assert.equal(await systemResolver("lists.example", { CUMULUS_RUNTIME: "cloudflare" }), null);
+
+  // No resolver answer (Workers): the injected fetch is used, never a pinned socket.
+  const calls: string[] = [];
+  const viaFetch = (async (url: string) => {
+    calls.push(url);
+    return new Response(null, { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u", viaFetch, 10_000, async () => null as never), { ok: true, status: 200 });
+  assert.deepEqual(calls, ["https://lists.example/u"]);
+
+  // Node: the first checked address does not connect, the second answers.
+  const tried: string[] = [];
+  const pinned = async (_url: URL, address: string) => {
+    tried.push(address);
+    if (address === "2606:4700::1111") throw Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" });
+    return 202;
+  };
+  const dual = async () => ["2606:4700::1111", "93.184.216.34"];
+  assert.deepEqual(await oneClickUnsubscribe("https://lists.example/u", null, 10_000, dual, pinned), { ok: true, status: 202 });
+  assert.deepEqual(tried, ["2606:4700::1111", "93.184.216.34"]);
+  await assert.rejects(() => oneClickUnsubscribe("https://lists.example/u", null, 10_000, async () => ["2606:4700::1111"], pinned), /ENETUNREACH/);
+});

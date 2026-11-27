@@ -20,7 +20,7 @@ test("aliases on other domains: only ones this mailbox verified", () => {
   assert.match(aliasProblem("x@someone-else.example", ME, ["mine.example"], D) ?? "", /verify/);
 });
 
-test("saving a mailbox leaves out a new alias that takes a system address or a possible username; valid ones stay", async () => {
+test("saving a mailbox refuses a new alias that takes a system address or a possible username; valid ones save", async () => {
   const { createHarness, profile } = await import("./test-support.ts");
   const { openMailbox, writeSnapshot } = await import("./mailbox.ts");
   const harness = await createHarness();
@@ -29,8 +29,10 @@ test("saving a mailbox leaves out a new alias that takes a system address or a p
     const ada = profile("al-ada", "ada.al@cumuluscloud.app", "Ada");
     await openMailbox(db, "al-ada", ada);
     const base = { me: ada, messages: [], briefs: {}, tasks: [], contacts: [], signature: "", rules: [] };
-    // Refused addresses are left out (the save itself goes through, so one bad alias can't block later edits).
-    const saved = await writeSnapshot(db, storageFor, "al-ada", { ...base, aliases: ["security@cumuluscloud.app", "bob@cumuluscloud.app", "ada.al.smith@cumuluscloud.app", "x@not-verified.example", "ada.al+shop@cumuluscloud.app"] });
+    for (const bad of ["security@cumuluscloud.app", "bob@cumuluscloud.app", "ada.al.smith@cumuluscloud.app", "x@not-verified.example"]) {
+      await assert.rejects(writeSnapshot(db, storageFor, "al-ada", { ...base, aliases: [bad] }), /plus and a word|verify/, bad);
+    }
+    const saved = await writeSnapshot(db, storageFor, "al-ada", { ...base, aliases: ["ada.al+shop@cumuluscloud.app"] });
     assert.deepEqual(saved.aliases, ["ada.al+shop@cumuluscloud.app"]);
   } finally {
     await harness.close();

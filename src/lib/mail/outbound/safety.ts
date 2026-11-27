@@ -14,12 +14,43 @@
 import { assertTenantId } from "../../storage/adapter.ts";
 import type { MailMessage } from "../model.ts";
 import type { MailQuery } from "../query.ts";
+import { metric } from "../../observability/metrics.ts";
+import { isCumulus } from "../logic.ts";
 import type { SendLimits } from "./limits.ts";
 
 export const SPAM_THRESHOLD = 5;
 export const BURST_WINDOW_MS = 10 * 60_000;
 export const BURST_RECIPIENTS = 30;
 export const PAUSE_MS = 24 * 3_600_000;
+
+/** People outside Cumulus one message may go to (To + Cc, each address once). More is a mailing list. */
+export const DEFAULT_MAX_RECIPIENTS = 50;
+
+/**
+ * All mailboxes under a week old, together, per hour: off unless MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY is
+ * set. Each new mailbox is already capped (warm-up), but a scripted wave of sign-ups would multiply that
+ * cap; this bounds the wave as a whole. Off by default because in launch week every mailbox is under a
+ * week old, so a fixed number would hold everyone's mail. Turn it on once most mailboxes are older.
+ */
+export function newAccountsHourlyFromEnv(env: Record<string, string | undefined> = process.env): number | null {
+  const n = Number.parseInt(env.MAIL_OUTBOUND_NEW_ACCOUNTS_HOURLY ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : null;
+}
+
+/** Distinct addresses outside Cumulus on a message: what goes out by SMTP. */
+export function outsideRecipients(message: Pick<MailMessage, "to" | "cc">): number {
+  const seen = new Set<string>();
+  for (const person of [...message.to, ...message.cc]) {
+    const email = person.email.trim().toLowerCase();
+    if (email && !isCumulus(email)) seen.add(email);
+  }
+  return seen.size;
+}
+
+export function maxRecipientsFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const n = Number.parseInt(env.MAIL_OUTBOUND_MAX_RECIPIENTS ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000) : DEFAULT_MAX_RECIPIENTS;
+}
 
 /** Caps for a mailbox `ageDays` old: tight on day 0, the configured limits from day 7. */
 export function warmupLimits(base: SendLimits, ageDays: number): SendLimits {
@@ -74,8 +105,19 @@ export async function outboundSafety(
   message: Pick<MailMessage, "subject" | "body" | "to" | "cc">,
   base: SendLimits,
   now = new Date(),
+  maxRecipients = maxRecipientsFromEnv(),
+  newAccountsHourly = newAccountsHourlyFromEnv(),
 ): Promise<SafetyDecision> {
   assertTenantId(tenantId);
+  const recipients = outsideRecipients(message);
+  if (recipients > maxRecipients) {
+    metric("mail.outbound.held", { reason: "too_many_recipients", recipients });
+    return {
+      allowed: false,
+      // One fixed sentence, so the interface can translate it (the numbers are in the metric).
+      reason: "Held in the outbox. This message goes to more people outside Cumulus than one message may. Split it, or use a mailing-list service.",
+    };
+  }
   const rows = await db.query<{ send_verified: boolean; created_at: string | Date; paused_until: string | Date | null; reason: string | null }>(
     `select m.send_verified, m.created_at, p.paused_until, p.reason
        from cumulus_mail.mailboxes m left join cumulus_mail.outbound_pauses p on p.tenant_id = m.tenant_id
@@ -88,6 +130,7 @@ export async function outboundSafety(
     return { allowed: false, reason: "Held in the outbox. Verify your Cumulus ID email to send outside Cumulus." };
   }
   if (row.paused_until && new Date(row.paused_until).getTime() > now.getTime()) {
+    metric("mail.outbound.held", { reason: "paused" });
     return { allowed: false, reason: `Held in the outbox. ${row.reason ?? "Sending outside Cumulus is paused."}` };
   }
   const recent = await db.query<{ n: number | string }>(
@@ -103,9 +146,24 @@ export async function outboundSafety(
        on conflict (tenant_id) do update set paused_until = excluded.paused_until, reason = excluded.reason, created_at = excluded.created_at`,
       [tenantId, until.toISOString(), reason, now.toISOString()],
     );
+    metric("mail.outbound.paused", { by: "auto", hours: PAUSE_MS / 3_600_000, score });
     return { allowed: false, reason: `Held in the outbox. ${reason}` };
   }
   const ageDays = (now.getTime() - new Date(row.created_at).getTime()) / 86_400_000;
+  if (newAccountsHourly !== null && ageDays < 7) {
+    const wave = await db.query<{ n: number | string }>(
+      `select count(*) as n from cumulus_mail.outbound_queue q join cumulus_mail.mailboxes m on m.tenant_id = q.tenant_id
+        where q.created_at > $1 and m.created_at > $2`,
+      [new Date(now.getTime() - 3_600_000).toISOString(), new Date(now.getTime() - 7 * 86_400_000).toISOString()],
+    );
+    if (Number(wave[0]?.n ?? 0) >= newAccountsHourly) {
+      metric("mail.outbound.held", { reason: "new_accounts_busy" });
+      return {
+        allowed: false,
+        reason: "Held in the outbox. New mailboxes are sending a lot right now, so mail from mailboxes under a week old waits. Try again in an hour.",
+      };
+    }
+  }
   return { allowed: true, limits: warmupLimits(base, ageDays) };
 }
 
@@ -113,4 +171,25 @@ export async function outboundSafety(
 export async function markSendVerified(db: MailQuery, tenantId: string): Promise<void> {
   assertTenantId(tenantId);
   await db.query(`update cumulus_mail.mailboxes set send_verified = true where tenant_id = $1 and not send_verified`, [tenantId]);
+}
+
+/**
+ * The admin kill switch: stop all outside sending for one mailbox, including mail already queued
+ * (the queue skips paused mailboxes), until `until`. `resumeSending` lifts it.
+ */
+export async function pauseSending(db: MailQuery, tenantId: string, until: Date, reason: string, now = new Date()): Promise<void> {
+  assertTenantId(tenantId);
+  const text = reason.trim().slice(0, 300) || "Sending outside Cumulus is paused by an administrator. Contact support.";
+  await db.query(
+    `insert into cumulus_mail.outbound_pauses (tenant_id, paused_until, reason, created_at) values ($1, $2, $3, $4)
+     on conflict (tenant_id) do update set paused_until = excluded.paused_until, reason = excluded.reason, created_at = excluded.created_at`,
+    [tenantId, until.toISOString(), text, now.toISOString()],
+  );
+  metric("mail.outbound.paused", { by: "admin", hours: Math.round((until.getTime() - now.getTime()) / 3_600_000) });
+}
+
+export async function resumeSending(db: MailQuery, tenantId: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  const rows = await db.query(`delete from cumulus_mail.outbound_pauses where tenant_id = $1 returning tenant_id`, [tenantId]);
+  return rows.length > 0;
 }

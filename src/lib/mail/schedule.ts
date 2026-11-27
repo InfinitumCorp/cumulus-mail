@@ -14,13 +14,15 @@ export function sanitizeExtra(extra: MessageExtra | undefined): MessageExtra | u
       expiresAt: extra.protection.expiresAt.slice(0, 40),
       readsLeft: Math.max(0, Math.min(100, Math.trunc(extra.protection.readsLeft))),
       selfDestruct: extra.protection.selfDestruct === true,
-      iterations: Math.max(1_000, Math.min(200_000, Math.trunc(extra.protection.iterations) || 20_000)),
+      // 1,000,000 = MAX_ITERATIONS in protect.ts (new envelopes use 600,000; older ones 20,000).
+      iterations: Math.max(1_000, Math.min(1_000_000, Math.trunc(extra.protection.iterations) || 20_000)),
     };
   }
   if (extra.readReceipt === "requested" || extra.readReceipt === "accepted" || extra.readReceipt === "declined") {
     next.readReceipt = extra.readReceipt;
   }
   if (extra.pgp) next.pgp = true;
+  if (extra.zeroAccess) next.zeroAccess = true;
   if (extra.autoReply) next.autoReply = true;
   const links = (extra.cloudLinks ?? []).filter((link) => isDriveShareHref(link.href)).slice(0, 8);
   if (links.length) {
@@ -41,6 +43,7 @@ function cleanExtra(extra: MessageExtra): MessageExtra | undefined {
   if (extra.protection) next.protection = extra.protection;
   if (extra.readReceipt) next.readReceipt = extra.readReceipt;
   if (extra.pgp) next.pgp = true;
+  if (extra.zeroAccess) next.zeroAccess = true;
   if (extra.autoReply) next.autoReply = true;
   if (extra.cloudLinks?.length) next.cloudLinks = extra.cloudLinks;
   return Object.keys(next).length ? next : undefined;

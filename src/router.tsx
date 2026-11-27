@@ -1,4 +1,3 @@
-import "@/lib/zod-config";
 import { createRouter } from "@tanstack/react-router";
 import { createIsomorphicFn, getGlobalStartContext } from "@tanstack/react-start";
 import { AppErrorComponent, AppNotFoundComponent } from "@/lib/error-component";

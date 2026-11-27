@@ -226,8 +226,14 @@ export function isPublicAddress(ip: string): boolean {
   return true;
 }
 
-/** node:dns lookup, or null where the runtime has no DNS module (Workers block private targets themselves). */
-async function systemResolver(host: string): Promise<string[] | null> {
+/**
+ * node:dns lookup, or null on Cloudflare Workers. Workers refuse private and metadata targets
+ * themselves, and under nodejs_compat `node:dns/promises` imports but its lookup cannot be relied on
+ * (it may throw "not implemented"), which would make every one-click unsubscribe fail as "does not
+ * resolve". So on Workers the check is left to the platform and the POST goes through fetch.
+ */
+export async function systemResolver(host: string, env: Record<string, string | undefined> = process.env): Promise<string[] | null> {
+  if (env.CUMULUS_RUNTIME === "cloudflare") return null;
   let dns: typeof import("node:dns/promises");
   try {
     dns = await import("node:dns/promises");
@@ -243,30 +249,100 @@ async function systemResolver(host: string): Promise<string[] | null> {
  * address. The name checks in `safeUnsubscribeUrl` cannot see this: anyone can point a public-looking
  * name at 169.254.169.254 or 10.0.0.1, and the URL comes from an email anyone can send.
  */
-export async function assertPublicHost(host: string, resolve: Resolver | null = null): Promise<void> {
+export async function assertPublicHost(host: string, resolve: Resolver | null = null): Promise<string[] | null> {
   let addresses: string[] | null;
   try {
     addresses = resolve ? await resolve(host) : await systemResolver(host);
   } catch {
     throw new Error("That unsubscribe address does not resolve.");
   }
-  if (addresses === null) return;
+  if (addresses === null) return null;
   if (addresses.length === 0) throw new Error("That unsubscribe address does not resolve.");
   if (!addresses.every(isPublicAddress)) throw new Error("That unsubscribe address points to a private network.");
+  return addresses;
 }
 
+export type PinnedPost = (url: URL, address: string, body: string, signal: AbortSignal) => Promise<number>;
+
+/**
+ * A `lookup` for node:net that answers only with the address already checked, so the connection
+ * cannot be rebound to a private address between the check and the request (DNS rebinding).
+ */
+export function pinnedLookup(address: string) {
+  const family = address.includes(":") ? 6 : 4;
+  return (
+    _host: string,
+    options: { all?: boolean } | number | undefined,
+    callback: (error: Error | null, address: string | Array<{ address: string; family: number }>, family?: number) => void,
+  ) => {
+    if (typeof options === "object" && options?.all) callback(null, [{ address, family }]);
+    else callback(null, address, family);
+  };
+}
+
+/** One-click POST over node:https, connecting to `address` while TLS still checks the URL's host name. */
+export async function nodePinnedPost(): Promise<PinnedPost | null> {
+  let https: typeof import("node:https");
+  try {
+    https = await import("node:https");
+  } catch {
+    return null;
+  }
+  return (url, address, body, signal) =>
+    new Promise<number>((resolve, reject) => {
+      const request = https.request(
+        url,
+        {
+          method: "POST",
+          lookup: pinnedLookup(address) as never,
+          headers: { "content-type": "application/x-www-form-urlencoded", "content-length": String(Buffer.byteLength(body)) },
+          signal,
+        },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        },
+      );
+      request.on("error", reject);
+      request.end(body);
+    });
+}
+
+/**
+ * RFC 8058 one-click POST. With no `fetcher` given, on Node the request is pinned to the address
+ * that passed `assertPublicHost` (closing the DNS-rebinding window); on Workers, which have no DNS
+ * module and refuse private targets themselves, it goes through `fetch`.
+ */
 export async function oneClickUnsubscribe(
   url: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch | null = null,
   timeoutMs = 10_000,
   resolve: Resolver | null = null,
+  pinned: PinnedPost | null = null,
 ): Promise<{ ok: boolean; status: number }> {
   const safe = safeUnsubscribeUrl(url);
   if (!safe) throw new Error("That unsubscribe address is not allowed.");
-  await assertPublicHost(safe.hostname, resolve);
+  const addresses = await assertPublicHost(safe.hostname, resolve);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const post = fetcher ? null : (pinned ?? (addresses ? await nodePinnedPost() : null));
+    if (post && addresses) {
+      // Every address passed the check; try them in turn, as a resolver-driven fetch would (an IPv6
+      // answer first on a host without IPv6 must not fail the unsubscribe).
+      let lastError: unknown;
+      for (const address of addresses) {
+        try {
+          const status = await post(safe, address, "List-Unsubscribe=One-Click", controller.signal);
+          return { ok: status >= 200 && status < 300, status };
+        } catch (error) {
+          lastError = error;
+          if (controller.signal.aborted) break;
+        }
+      }
+      throw lastError;
+    }
+    fetcher ??= fetch;
     const response = await fetcher(safe.href, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
