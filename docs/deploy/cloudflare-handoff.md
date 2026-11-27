@@ -180,6 +180,8 @@ npx wrangler deploy --config .output/server/wrangler.json
 
 The generated worker name is `cumulus-mail-api`. `main` is `index.mjs` next to that config, and the static assets directory is the build output for this worker's own `workers.dev` URL. If the generated config's name is anything else, or if it contains `routes` or `send_email`, stop. Do not add a custom domain. Do not set `routes` to `mail.cumuluscloud.app`. Call the API on `https://cumulus-mail-api.<account>.workers.dev`.
 
+Before deploying a new commit, CI's `worker-smoke` job has run that build in workerd against Postgres (`npm run smoke:worker`, `scripts/worker-smoke.mjs`). To run it locally: `npm run build:workers`, then `WORKER_SMOKE_DATABASE_URL=postgres://<user>:<password>@127.0.0.1:5432/<scratch-db> npm run smoke:worker`. Use a scratch database: it gets every migration and one throwaway user, which is deleted at the end.
+
 ## 8. Smoke and the real-database probe
 
 `node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or the identity host.
