@@ -22,6 +22,8 @@ import type { MailQuery } from "./query.ts";
 import { insertMessage } from "./records.ts";
 import { replaceRoutedAddresses } from "./directory.ts";
 import { provisionMailbox } from "./seed.ts";
+import { cleanDisplayName } from "./mailbox.ts";
+import { openText, sealText } from "./field-crypto.ts";
 
 export type CidEvent = {
   cid: string;
@@ -165,7 +167,7 @@ async function mailboxExists(db: MailQuery, tenantId: string): Promise<boolean> 
   return (await db.query<{ tenant_id: string }>(`select tenant_id from cumulus_mail.mailboxes where tenant_id = $1 limit 1`, [tenantId])).length > 0;
 }
 
-export type HandleResult = "provisioned" | "unrouted" | "notified" | "duplicate" | "no-mailbox" | "ignored";
+export type HandleResult = "provisioned" | "unrouted" | "renamed" | "notified" | "duplicate" | "no-mailbox" | "ignored";
 
 /** Apply one verified event to the Mail tenant of that Cumulus://ID (see tenantForCid). */
 export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: string): Promise<HandleResult> {
@@ -186,6 +188,20 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
     await replaceRoutedAddresses(db, tenantId, []);
     return "unrouted";
+  }
+  if (e.type === "profile.updated") {
+    // A rename on Cumulus://ID renames the mailbox only while it still shows the previous name: a name the person
+    // set in Mail itself (setup, settings) is theirs and stays.
+    const name = cleanDisplayName(e.detail.displayName);
+    const previous = cleanDisplayName(e.detail.previous);
+    if (!name) return "ignored";
+    const rows = await db.query<{ display_name: string | null }>(`select display_name from cumulus_mail.mailboxes where tenant_id = $1`, [tenantId]);
+    if (!rows.length) return "no-mailbox";
+    const current = rows[0]!.display_name ? cleanDisplayName(openText(tenantId, rows[0]!.display_name)) : "";
+    if (current && current !== previous) return "ignored";
+    if (current === name) return "ignored";
+    await db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenantId, sealText(tenantId, name)]);
+    return "renamed";
   }
   const notice = noticeFor(e);
   if (!notice) return "ignored";

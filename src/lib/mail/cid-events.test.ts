@@ -112,3 +112,25 @@ test("the daily PIN cap says 24 hours, and that a recovery code still works", ()
   assert.match(n.body, /change it now/);
   assert.doesNotMatch(noticeFor({ cid: "cid_x", type: "signin.paused", detail: { path: "pin", failures: 10 }, at: "2026-11-12T00:00:00.000Z" })!.body, /24 hours/);
 });
+
+test("profile.updated renames the mailbox only while it still shows the previous name", async () => {
+  const cid = "cid_33333333-3333-4333-8333-333333333333";
+  const created: CidEvent = { cid, type: "account.created", detail: { username: "maid", displayName: "Marian", mailAddress: "maid@cumuluscloud.app" }, at };
+  assert.equal(await handleCidEvent(harness.db, created, "cumuluscloud.app"), "provisioned");
+  const tenant = (await tenantForCid(harness.db, cid))!;
+  const name = async () => (await readSnapshot(harness.db, tenant)).me.name;
+  assert.equal(await name(), "Marian");
+  const renamed = (displayName: string, previous: string): CidEvent => ({ cid, type: "profile.updated", detail: { displayName, previous }, at });
+  assert.equal(await handleCidEvent(harness.db, renamed("Maid Marian", "Marian"), "cumuluscloud.app"), "renamed");
+  assert.equal(await name(), "Maid Marian");
+  // A name chosen in Mail itself stays the person's choice.
+  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, (await import("./field-crypto.ts")).sealText(tenant, "Lady Marian")]);
+  assert.equal(await handleCidEvent(harness.db, renamed("M. Fitzwalter", "Maid Marian"), "cumuluscloud.app"), "ignored");
+  assert.equal(await name(), "Lady Marian");
+  // Header-breaking characters never get in.
+  await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, (await import("./field-crypto.ts")).sealText(tenant, "Old")]);
+  assert.equal(await handleCidEvent(harness.db, renamed('Eve <eve@evil.example>\r\nBcc: x', "Old"), "cumuluscloud.app"), "renamed");
+  assert.doesNotMatch(await name(), /[<>\r\n"]/);
+  // No mailbox: nothing to rename.
+  assert.equal(await handleCidEvent(harness.db, { ...renamed("X", "Y"), cid: "cid_44444444-4444-4444-8444-444444444444" }, "cumuluscloud.app"), "no-mailbox");
+});
