@@ -10,14 +10,16 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #207 is merged (25 Nov: #186 and #192–#207 except #202, so migrations
-0021–0023 are on main). **Production has not been cut over yet:** on 25 Nov `mail.` and `ru.mail.` still serve
-the old page (no `/api/health`). Still open, merge before the deploy commit, waiting for CI after each:
-1. #209, review follow-ups: hybrid key wraps keep the format every build reads (a rollback would otherwise drop
-   hybrid keys), and the localhost WebAuthn check also covers Workers. Do not deploy, or roll back to, a commit
-   between #200 and #209;
-2. #208, review follow-ups to the delta save (#206): a stale copy is never written over a newer server copy;
-3. #202, no zod in the browser (`/` loads 23 kB less JS) and lower perf budgets.
+**Needs on `main`:** everything up to #211 (27 Nov, main 328d1d1). **Production has not been cut over yet:** on
+27 Nov `mail.` and `ru.mail.` still serve the old page (no `/api/health`). Still open, merge before the deploy
+commit, in this order, waiting for CI after each:
+1. #214: real transactions on the pooled database (one connection from BEGIN to COMMIT). **Blocker**;
+2. #216: on Workers, one Postgres pool per request (a shared pool hangs every second request). **Blocker**;
+3. #217: CI `smoke:worker`, the Workers build in workerd against Postgres;
+4. #213: each tab's saves are ordered on the server (migration 0024);
+5. #212: a deployed copy checks WebAuthn against `https://<MAIL_APP_HOST>`, not request headers;
+6. #215: a test-only e2e fix;
+7. the PR that updates these pages (Hyperdrive query cache, below).
 
 Migrations to apply at cutover (US): the dedicated database already has `0001`–`0021` (checked 26 Nov), so
 `0022`, `0023` and `0024` are pending: 3 files. A new RU database applies every file.
@@ -75,6 +77,13 @@ Tick every line, or move the launch.
         its own new database, it lists **every** file in `migrations/` (no `_migrations` table yet); that is right.
       Anything else MISSING (a secret, the Hyperdrive id, the token issuer): fix it first. A
       `Migrations skipped in the middle` line means a file other than `0001_auth.sql` was skipped: stop.
+- [ ] **Hyperdrive query caching is off** on `cumulus-mail` (`d07a82ac7fcc42ac84dc6469140ef551`):
+      `npx wrangler hyperdrive get d07a82ac7fcc42ac84dc6469140ef551` shows `"caching": { "disabled": true }`.
+      If not: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled`. Caching is on
+      unless disabled, and a cached read can be served after a write to the same rows. For this app,
+      that would mean a signed-out session still accepted, a new second factor or alias not seen yet, rate
+      limits counting late, and a reload showing the mailbox from before a save.
+      `docs/deploy/cloudflare-handoff.md` §3 has the details.
 
 ---
 

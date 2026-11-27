@@ -4,13 +4,18 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #207 except #202 (migrations to 0024 once the save-ordering PR is in). Production still serves the old
-page (checked 25 Nov). Still open, merge in this order, waiting for CI after each:
+Already on `main`: everything up to #211 (main 328d1d1). Production still serves the old page (checked 27 Nov).
+Still open, merge in this order, waiting for CI after each:
 
-1. **#209**: hybrid key wraps keep the format every build reads; localhost WebAuthn check covers Workers.
-2. **#208**: delta save never writes a stale copy over a newer one.
-3. **#202**: no zod in the browser (23 kB less on `/`), lower perf budgets.
-4. The PR that updates these pages.
+1. **#214**: real transactions on the pooled database. Blocker.
+2. **#216**: on Workers, one Postgres pool per request. Blocker.
+3. **#217**: CI `smoke:worker` (the Workers build in workerd).
+4. **#213**: per-tab save ordering (migration 0024).
+5. **#212**: WebAuthn checked against `https://<MAIL_APP_HOST>`.
+6. **#215**: e2e test fix.
+7. The PR that updates these pages.
+
+**Before go:** Hyperdrive query caching off: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled` (see `friday.md`, go/no-go).
 
 Then write down the `main` commit you will deploy. Every command below runs from a checkout of it.
 
