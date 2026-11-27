@@ -22,7 +22,7 @@ import {
 } from "./records.ts";
 import { fileName, type MailboxSnapshot } from "./snapshot.ts";
 import { applyDelta, type MailboxDelta } from "./delta.ts";
-import { asSaveTag, claimSave } from "./save-seq.ts";
+import { asSaveTag, claimSave, StaleSaveError, type SaveTag } from "./save-seq.ts";
 import { assertId } from "./snapshot.ts";
 import { provisionMailbox } from "./seed.ts";
 import type { MailProfile } from "./snapshot.ts";
@@ -124,7 +124,7 @@ export async function writeDelta(
   assertTenantId(tenantId);
   const tag = asSaveTag(delta.tab, delta.seq);
   if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
-  await writeSnapshot(db, storageFor, tenantId, applyDelta(await readSnapshot(db, tenantId), delta));
+  await writeSnapshot(db, storageFor, tenantId, applyDelta(await readSnapshot(db, tenantId), delta), { claimed: tag });
   // The full save this delta stands in for may still be on the wire, carrying an older copy of these
   // messages. Counting the delta as a server-side change makes that save lose for them, by the same rule
   // that keeps a scheduled release or a delivery report from being undone by an older tab.
@@ -140,11 +140,16 @@ export async function writeSnapshot(
   storageFor: TenantStorage,
   tenantId: string,
   snapshot: MailboxSnapshot,
+  options: { claimed?: SaveTag } = {},
 ): Promise<MailboxSnapshot> {
   assertTenantId(tenantId);
   // A save this tab has already been overtaken by (save-seq.ts) is not written: the newer one stands.
-  const tag = asSaveTag(snapshot.saveTab, snapshot.saveSeq);
-  if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
+  // `claimed`: the caller (writeDelta) has taken the claim already.
+  let tag = options.claimed;
+  if (!tag) {
+    tag = asSaveTag(snapshot.saveTab, snapshot.saveSeq);
+    if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
+  }
   const current = await readSnapshot(db, tenantId);
   const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
   if (snapshot.messages.length > limits.messages) throw new Error("Mailbox is too large");
@@ -266,7 +271,13 @@ export async function writeSnapshot(
     rules: snapshot.rules.filter((rule) => rule.action === "star" || rule.action === "archive" || rule.action === "label"),
   };
   const before = await blobIds(db, tenantId);
-  await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw, serverRevs);
+  try {
+    // Checked again under the row lock: a newer save from this tab may have landed while this one ran.
+    await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw, serverRevs, tag);
+  } catch (error) {
+    if (error instanceof StaleSaveError) return readSnapshot(db, tenantId);
+    throw error;
+  }
   await deliverPending(db, storageFor, tenantId);
   await discardUnreferenced(db, storage, tenantId, before);
   return readSnapshot(db, tenantId);

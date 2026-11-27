@@ -253,6 +253,8 @@ export const useMail = create<MailStore>((set, get) => ({
     // server has not acknowledged: a save still on the wire, or one waiting for a retry. A full snapshot is
     // too big for a keepalive request, so send only what changed since the last acknowledged snapshot
     // (delta.ts). Nothing is sent when nothing is pending, so an idle tab keeps the back/forward cache.
+    // Numbered one past the newest full save: no full save can carry that number, so a save that claimed
+    // its number but never finished (a killed worker) cannot block this one (save-seq.ts).
     // The request must start synchronously here: a page that is unloading runs no later await, which is why
     // this is a plain route (src/routes/api/mailbox/delta.ts) and not a server function.
     window.addEventListener("pagehide", (event) => {
@@ -269,7 +271,7 @@ export const useMail = create<MailStore>((set, get) => ({
       } catch {
         // No storage: the cookie carries the session.
       }
-      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify({ ...delta, tab: TAB_ID, seq: revision }), headers, keepalive: true, credentials: "same-origin" }).catch(
+      void fetch("/api/mailbox/delta", { method: "POST", body: JSON.stringify({ ...delta, tab: TAB_ID, seq: revision + 1 }), headers, keepalive: true, credentials: "same-origin" }).catch(
         () => undefined,
       );
     });

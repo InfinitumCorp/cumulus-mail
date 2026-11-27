@@ -42,3 +42,27 @@ export async function claimSave(db: MailQuery, tenantId: string, tag: SaveTag): 
     throw error;
   }
 }
+
+/** A save another, newer save from the same tab overtook while it was being processed. */
+export class StaleSaveError extends Error {
+  constructor() {
+    super("A newer save from this tab was applied first");
+    this.name = "StaleSaveError";
+  }
+}
+
+/**
+ * Inside the transaction that writes the mailbox: locks the tab's row and throws StaleSaveError when a
+ * newer save from the same tab claimed it since this one did. The claim at the start of a save refuses
+ * what is already late; this catches a save that was overtaken while it read, checked and stored files.
+ * Does nothing when 0024 is not applied (checked first, so no failed statement aborts the transaction).
+ */
+export async function assertStillNewest(db: MailQuery, tenantId: string, tag: SaveTag): Promise<void> {
+  const [table] = await db.query<{ t: string | null }>(`select to_regclass('cumulus_mail.save_sequences')::text as t`);
+  if (!table?.t) return;
+  const rows = await db.query<{ seq: string | number }>(
+    `select seq from cumulus_mail.save_sequences where tenant_id = $1 and tab_id = $2 for update`,
+    [tenantId, tag.tab],
+  );
+  if (rows[0] && Number(rows[0].seq) > tag.seq) throw new StaleSaveError();
+}

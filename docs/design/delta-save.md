@@ -89,7 +89,12 @@ Since migration `0024_save_sequences.sql` (`src/lib/mail/save-seq.ts`), saves ar
 - every page load picks a random tab id, and every save, full or delta, carries it with its number (`revision`);
 - the server records the highest number it has applied per tab, and skips a save from that tab with an
   equal or lower one;
-- the late full save is not written at all, so the delta's removals and field changes stand.
+- the late full save is not written at all, so the delta's removals and field changes stand;
+- the number is checked twice: when a save arrives, and again under a row lock inside the transaction that
+  writes the mailbox. So a save overtaken *while* it was being processed (storing a large file, say) doesn't
+  commit over the newer one;
+- the delta is numbered one past the newest full save. No full save can carry that number, so one that
+  claimed its number but never finished can't block the delta.
 
 Saves without a tag (an older client) are written as before, and so is every save while 0024 isn't applied
 yet. Saves from different tabs are not ordered against each other; that is the per-message rev's job, as

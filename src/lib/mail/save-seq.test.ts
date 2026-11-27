@@ -98,3 +98,39 @@ test("without migration 0024 saves are written as before", async () => {
     await local.close();
   }
 });
+
+test("a save overtaken while it was being processed does not commit over the newer one", async () => {
+  const { db, storageFor } = harness;
+  await openMailbox(db, "seq-4", profile("seq-4", "seq4@cumuluscloud.app"));
+  const start = await readSnapshot(db, "seq-4");
+  const loaded = await writeSnapshot(db, storageFor, "seq-4", {
+    ...start,
+    messages: [letter("o-a"), letter("o-b")],
+    knownIds: start.messages.map((m) => m.id),
+    saveTab: TAB,
+    saveSeq: 1,
+  });
+  // Save 2 reaches the server and claims its number, then is slow (storing a large file)...
+  assert.equal(await claimSave(db, "seq-4", { tab: TAB, seq: 2 }), true);
+  // ...while the tab closes and its delta (numbered past every full save) removes o-b and lands.
+  const closed = { ...loaded, signature: "closed", messages: loaded.messages.filter((m) => m.id !== "o-b") };
+  await writeDelta(db, storageFor, "seq-4", { ...diffSnapshot(loaded, closed, loaded.revs ?? {})!, tab: TAB, seq: 3 });
+  // Save 2 finally reaches its write, with the old state: refused under the lock, nothing changes.
+  await writeSnapshot(db, storageFor, "seq-4", { ...loaded, signature: "slow", knownIds: loaded.messages.map((m) => m.id) }, { claimed: { tab: TAB, seq: 2 } });
+  const after = await readSnapshot(db, "seq-4");
+  assert.equal(after.signature, "closed");
+  assert.equal(after.messages.some((m) => m.id === "o-b"), false);
+});
+
+test("the in-transaction check is skipped cleanly when 0024 is not applied", async () => {
+  const local = await createHarness();
+  try {
+    await local.db.query("drop table cumulus_mail.save_sequences");
+    await openMailbox(local.db, "seq-5", profile("seq-5", "seq5@cumuluscloud.app"));
+    const start = await readSnapshot(local.db, "seq-5");
+    const saved = await writeSnapshot(local.db, local.storageFor, "seq-5", { ...start, signature: "ok", saveTab: TAB, saveSeq: 7 });
+    assert.equal(saved.signature, "ok");
+  } finally {
+    await local.close();
+  }
+});
