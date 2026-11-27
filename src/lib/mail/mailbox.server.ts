@@ -59,6 +59,7 @@ async function database(): Promise<MailQuery> {
   const sql = await getSql();
   return {
     query: (text, params) => sql.query(text, params ?? []),
+    transaction: sql.transaction?.bind(sql),
   };
 }
 
