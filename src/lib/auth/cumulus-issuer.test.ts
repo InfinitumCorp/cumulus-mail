@@ -5,7 +5,8 @@ import {
   DEFAULT_CUMULUS_COGNITO_DOMAIN,
   DEFAULT_CUMULUS_COGNITO_USER_POOL_ID,
   DEFAULT_CUMULUS_ISSUER,
-  RETIRED_KEYCLOAK_ISSUER,
+  LEGACY_COGNITO_ISSUER,
+  CUMULUS_REALM_ISSUER,
   cognitoPoolFromIssuer,
   createLocalJWKSet,
   cumulusDiscoveryUrl,
@@ -33,11 +34,13 @@ function withoutIssuerEnv<T>(run: () => T): T {
   }
 }
 
-test("the default issuer is the Cumulus://ID Cognito user pool, not the retired realm", () => {
+test("the default issuer is the live Cumulus://ID realm; the Cognito pool stays available by configuration", () => {
   withoutIssuerEnv(() => {
     assert.equal(cumulusIssuer(), DEFAULT_CUMULUS_ISSUER);
-    assert.equal(DEFAULT_CUMULUS_ISSUER, "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna");
-    assert.notEqual(DEFAULT_CUMULUS_ISSUER, RETIRED_KEYCLOAK_ISSUER);
+    // The live realm is the default (the Cognito pool's discovery answers 404).
+    assert.equal(DEFAULT_CUMULUS_ISSUER, "https://id.cumuluscloud.app/realms/cumulus");
+    assert.equal(DEFAULT_CUMULUS_ISSUER, CUMULUS_REALM_ISSUER);
+    assert.equal(LEGACY_COGNITO_ISSUER, "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna");
     // The hosted UI domain serves the browser endpoints and no discovery document.
     assert.equal(DEFAULT_CUMULUS_COGNITO_DOMAIN, "cumulus-id.auth.us-east-1.amazoncognito.com");
     assert.equal(cumulusIssuer().includes(DEFAULT_CUMULUS_COGNITO_DOMAIN), false);
@@ -62,21 +65,21 @@ test("the pool, the region and the issuer come from the environment", () => {
 
 test("discovery and JWKS hang off the issuer, with the Keycloak path kept for a realm", () => {
   assert.equal(
-    cumulusDiscoveryUrl(DEFAULT_CUMULUS_ISSUER),
-    `${DEFAULT_CUMULUS_ISSUER}/.well-known/openid-configuration`,
+    cumulusDiscoveryUrl(LEGACY_COGNITO_ISSUER),
+    `${LEGACY_COGNITO_ISSUER}/.well-known/openid-configuration`,
   );
-  assert.equal(cumulusJwksUrl(DEFAULT_CUMULUS_ISSUER, {}), `${DEFAULT_CUMULUS_ISSUER}/.well-known/jwks.json`);
+  assert.equal(cumulusJwksUrl(LEGACY_COGNITO_ISSUER, {}), `${LEGACY_COGNITO_ISSUER}/.well-known/jwks.json`);
   assert.equal(
-    cumulusJwksUrl(RETIRED_KEYCLOAK_ISSUER, {}),
-    `${RETIRED_KEYCLOAK_ISSUER}/protocol/openid-connect/certs`,
+    cumulusJwksUrl(CUMULUS_REALM_ISSUER, {}),
+    `${CUMULUS_REALM_ISSUER}/protocol/openid-connect/certs`,
   );
-  assert.equal(cumulusJwksUrl(DEFAULT_CUMULUS_ISSUER, { CUMULUS_OIDC_JWKS_URL: "https://keys.example/jwks" }), "https://keys.example/jwks");
+  assert.equal(cumulusJwksUrl(LEGACY_COGNITO_ISSUER, { CUMULUS_OIDC_JWKS_URL: "https://keys.example/jwks" }), "https://keys.example/jwks");
 
-  assert.deepEqual(cognitoPoolFromIssuer(DEFAULT_CUMULUS_ISSUER), {
+  assert.deepEqual(cognitoPoolFromIssuer(LEGACY_COGNITO_ISSUER), {
     region: "us-east-1",
     userPoolId: DEFAULT_CUMULUS_COGNITO_USER_POOL_ID,
   });
-  assert.equal(cognitoPoolFromIssuer(RETIRED_KEYCLOAK_ISSUER), null);
+  assert.equal(cognitoPoolFromIssuer(CUMULUS_REALM_ISSUER), null);
   // A pool id has to start with the region in the host, or it is not that pool.
   assert.equal(cognitoPoolFromIssuer("https://cognito-idp.us-east-1.amazonaws.com/eu-west-1_Abc123"), null);
 });
@@ -86,25 +89,25 @@ test("JWKS comes from discovery, and a document for another issuer is refused", 
   const respond = (body: unknown, ok = true) =>
     ({ ok, status: ok ? 200 : 500, json: async () => body }) as unknown as Response;
 
-  const keys = await fetchCumulusJwks(DEFAULT_CUMULUS_ISSUER, {
+  const keys = await fetchCumulusJwks(LEGACY_COGNITO_ISSUER, {
     env: {},
     fetch: (async (input: string) => {
       calls.push(String(input));
       if (String(input).endsWith("/.well-known/openid-configuration")) {
-        return respond({ issuer: DEFAULT_CUMULUS_ISSUER, jwks_uri: "https://keys.example/pool/jwks.json" });
+        return respond({ issuer: LEGACY_COGNITO_ISSUER, jwks_uri: "https://keys.example/pool/jwks.json" });
       }
       return respond({ keys: [{ kid: "from-discovery" }] });
     }) as unknown as typeof fetch,
   });
   assert.deepEqual(calls, [
-    `${DEFAULT_CUMULUS_ISSUER}/.well-known/openid-configuration`,
+    `${LEGACY_COGNITO_ISSUER}/.well-known/openid-configuration`,
     "https://keys.example/pool/jwks.json",
   ]);
   assert.deepEqual(keys, { keys: [{ kid: "from-discovery" }] });
 
   await assert.rejects(
     () =>
-      fetchCumulusJwks(DEFAULT_CUMULUS_ISSUER, {
+      fetchCumulusJwks(LEGACY_COGNITO_ISSUER, {
         env: {},
         fetch: (async () => respond({ issuer: "https://evil.example", jwks_uri: "https://evil.example/jwks" })) as unknown as typeof fetch,
       }),
@@ -113,7 +116,7 @@ test("JWKS comes from discovery, and a document for another issuer is refused", 
 
   // Discovery unreachable: fall back to the conventional path for the issuer.
   const fallback: string[] = [];
-  await fetchCumulusJwks(DEFAULT_CUMULUS_ISSUER, {
+  await fetchCumulusJwks(LEGACY_COGNITO_ISSUER, {
     env: {},
     fetch: (async (input: string) => {
       fallback.push(String(input));
@@ -121,7 +124,7 @@ test("JWKS comes from discovery, and a document for another issuer is refused", 
       return respond({ keys: [] });
     }) as unknown as typeof fetch,
   });
-  assert.equal(fallback[1], `${DEFAULT_CUMULUS_ISSUER}/.well-known/jwks.json`);
+  assert.equal(fallback[1], `${LEGACY_COGNITO_ISSUER}/.well-known/jwks.json`);
 });
 
 test("the tenant comes only from the verified token", async () => {
@@ -129,7 +132,7 @@ test("the tenant comes only from the verified token", async () => {
   const jwk = await exportJWK(publicKey);
   jwk.kid = "mail-test";
   const keys = createLocalJWKSet({ keys: [jwk] });
-  const issuer = RETIRED_KEYCLOAK_ISSUER;
+  const issuer = CUMULUS_REALM_ISSUER;
   const token = await new SignJWT({ tenant_id: "tenant-a", email: "ada@cumuluscloud.app" })
     .setProtectedHeader({ alg: "RS256", kid: "mail-test" })
     .setIssuer(issuer)
@@ -165,7 +168,7 @@ test("a Cognito token without tenant_id is scoped to its verified subject", asyn
   const jwk = await exportJWK(publicKey);
   jwk.kid = "cognito-test";
   const keys = createLocalJWKSet({ keys: [jwk] });
-  const issuer = DEFAULT_CUMULUS_ISSUER;
+  const issuer = LEGACY_COGNITO_ISSUER;
   const sign = (claims: Record<string, unknown>) =>
     new SignJWT(claims)
       .setProtectedHeader({ alg: "RS256", kid: "cognito-test" })

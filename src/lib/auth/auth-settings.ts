@@ -98,3 +98,34 @@ export function deployedTrustedOrigins(explicitBaseURL: string, localDevOrigins:
   const own = explicitBaseURL.trim().replace(/\/+$/, "");
   return LOOPBACK.test(own) ? [own, ...localDevOrigins] : [own];
 }
+
+/** The session cookie's name. `__Host-`: Secure, Path=/ and no Domain, enforced by the browser. */
+export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
+
+/**
+ * Cookie and session settings for Better Auth (src/lib/auth/server.ts), here so the auth hardening test
+ * (auth-hardening.test.ts) runs a real Better Auth instance with exactly these.
+ *
+ * `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that carries a `Domain` attribute,
+ * so a sibling app cannot "toss" a `Domain=` session cookie onto this one, and `mail.` and `ru.mail.` never
+ * share a session. `__Host-` requires Secure + Path=/ + no Domain; Better Auth otherwise uses `__Secure-`
+ * (which permits Domain), so its auto prefix is off (`useSecureCookies: false`) and Secure and the names
+ * are set here. (Browsers allow Secure cookies on `http://localhost`, so local dev still works.)
+ */
+export const AUTH_COOKIES = {
+  useSecureCookies: false,
+  defaultCookieAttributes: { secure: true, sameSite: "lax" as const, path: "/" },
+  cookies: {
+    session_token: { name: SESSION_TOKEN_COOKIE },
+    session_data: { name: "__Host-grok-auth.session_data" },
+    account_data: { name: "__Host-grok-auth.account_data" },
+    dont_remember: { name: "__Host-grok-auth.dont_remember" },
+  },
+};
+
+/**
+ * The session is cached in the short-lived signed `session_data` cookie so the browser's /get-session
+ * skips the database (less sign-in flicker). Server-side authorization does NOT use the cache
+ * (verify.server.ts getSessionUser), so ending a session takes effect on the next request.
+ */
+export const AUTH_SESSION = { cookieCache: { enabled: true, maxAge: 300 } };

@@ -40,6 +40,17 @@ export type MailboxSnapshot = {
    * arrived after it loaded) is kept. Omitted by older clients, which then replace the mailbox as before.
    */
   knownIds?: string[];
+  /**
+   * Load (server -> client): each message's count of server-side changes, for the messages with any
+   * (migrations/0019_message_rev.sql). The client keeps it and sends it back as `knownRevs`.
+   */
+  revs?: Record<string, number>;
+  /**
+   * Save only (client -> server): the `revs` the client last received. A message the server changed since
+   * (a scheduled send released, a delivery report, an IMAP move) keeps the server's version: an older tab
+   * cannot undo it. Omitted by older clients, which then overwrite as before.
+   */
+  knownRevs?: Record<string, number>;
 };
 
 const FOLDERS = new Set<FolderId>(["inbox", "sent", "drafts", "archive", "trash", "quarantine"]);

@@ -198,8 +198,11 @@ export default defineConfig(({ command, isPreview }) => ({
             // Node server (Russia copy): keep PGLite out of the bundle so its
             // wasm/data files load from node_modules (the local-mode fallback
             // when DATABASE_URL is unset; production uses Postgres).
+            // Also precompress the static assets (gzip and brotli) and serve the smaller file when the
+            // browser accepts it: nothing in front of the Russia copy compresses for us, unlike
+            // Cloudflare's edge for the US copy. About 540 KiB less on a first visit to /.
             ...(nitroPreset() === "node-server"
-              ? { rollupConfig: { external: [/^@electric-sql\/pglite/] } }
+              ? { rollupConfig: { external: [/^@electric-sql\/pglite/] }, compressPublicAssets: { gzip: true, brotli: true } }
               : {}),
           }),
         ]

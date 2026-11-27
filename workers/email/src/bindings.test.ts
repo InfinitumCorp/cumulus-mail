@@ -19,7 +19,7 @@ function workerEnv(
     HYPERDRIVE: {
       connectionString: "postgres://db.example:5432/postgres?sslmode=require",
     },
-    SUPABASE_S3_ENDPOINT: "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    SUPABASE_S3_ENDPOINT: "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
     SUPABASE_S3_REGION: "us-east-1",
     SUPABASE_S3_ACCESS_KEY_ID: "key",
     SUPABASE_S3_SECRET_ACCESS_KEY: "secret",
@@ -40,7 +40,7 @@ function workerEnv(
       },
       createDriver(options: { bucket: string; endpoint?: string; forcePathStyle?: boolean }) {
         assert.equal(options.bucket, bucket || "cumulus-mail");
-        assert.equal(options.endpoint, "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3");
+        assert.equal(options.endpoint, "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3");
         assert.equal(options.forcePathStyle, undefined);
         return harness.driver;
       },
@@ -115,7 +115,7 @@ test("sslmode=disable is refused before a connection is opened", async () => {
     () =>
       openWorkerIngest({
         HYPERDRIVE: { connectionString: "postgres://db.example:5432/postgres?sslmode=disable" },
-        SUPABASE_S3_ENDPOINT: "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+        SUPABASE_S3_ENDPOINT: "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
         SUPABASE_S3_ACCESS_KEY_ID: "key",
         SUPABASE_S3_SECRET_ACCESS_KEY: "secret",
         MAIL_BLOB_KEY: KEY,
@@ -136,7 +136,7 @@ test("the inbound worker accepts the string Hyperdrive actually gives it (<id>.h
   let connected = "";
   const opened = await openWorkerIngest({
     HYPERDRIVE: { connectionString: "postgres://postgres:pw@547414fe3a8b737a87dd17ca93df4b52.hyperdrive.local:5432/postgres?sslmode=disable" },
-    SUPABASE_S3_ENDPOINT: "https://ivqiskeziohbbtkcvlun.supabase.co/storage/v1/s3",
+    SUPABASE_S3_ENDPOINT: "https://percackrrhhreusasspr.storage.supabase.co/storage/v1/s3",
     SUPABASE_S3_ACCESS_KEY_ID: "key",
     SUPABASE_S3_SECRET_ACCESS_KEY: "secret",
     MAIL_BLOB_KEY: KEY,

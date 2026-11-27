@@ -104,7 +104,7 @@ test("scheduled mail waits, and the bridge and identity stay outside this app", 
   const released = releaseDue([draft], Date.parse("2026-11-10T00:00:00.000Z"));
   assert.equal(released[0]?.folder, "sent");
   assert.equal(released[0]?.extra?.heldUntil, "2099-01-01T00:00:00.000Z");
-  assert.equal(bridgeDesign().status, "deferred");
+  assert.equal(bridgeDesign().status, "ready");
   assert.equal(identityPosture().issuer, DEFAULT_CUMULUS_ISSUER);
   assert.equal(identityPosture().twoFactor, "delegated-to-cumulus-id");
 });
@@ -214,6 +214,27 @@ test("plus addresses, catch-all, auto-reply, holds, and sealed contact fields", 
     await burnProtectedLink(db, link.token);
     await assert.rejects(() => readProtectedLink(db, link.token), /no longer available|does not exist/);
 
+    // The envelope's expiry comes from the client: a link can't be made to outlive 30 days.
+    const forever = await issueProtectedLink(db, "par-ada", { ...envelope, expiresAt: "9999-12-31T00:00:00.000Z" });
+    const capped = await readProtectedLink(db, forever.token);
+    assert.ok(Date.parse(capped.expiresAt) <= Date.now() + 30 * 24 * 60 * 60 * 1000);
+    assert.equal(capped.envelope.expiresAt, new Date(Date.parse(capped.expiresAt)).toISOString());
+    const garbled = await issueProtectedLink(db, "par-ada", { ...envelope, expiresAt: "soon" });
+    await assert.rejects(() => readProtectedLink(db, garbled.token), /no longer available/);
+
+    // Inside Cumulus the envelope travels with the copy: its expiry gets the same 30-day cap.
+    const latest = await readSnapshot(db, "par-ada");
+    await writeSnapshot(db, storageFor, "par-ada", {
+      ...latest,
+      messages: [
+        ...latest.messages,
+        { ...outgoing, id: "par-prot", threadId: "par-prot", body: "", extra: { protection: { ...envelope, expiresAt: "2099-01-01T00:00:00.000Z" } } },
+      ],
+    });
+    const copy = (await readMessages(db, "par-bea")).find((message) => message.extra?.protection && message.from.email === ada.email);
+    assert.ok(copy, "the protected copy arrived");
+    assert.ok(Date.parse(copy!.extra!.protection!.expiresAt) <= Date.now() + 30 * 24 * 60 * 60 * 1000 + 1_000);
+
     await writeSnapshot(db, storageFor, "par-ada", {
       me: ada,
       messages: [],
@@ -231,4 +252,20 @@ test("plus addresses, catch-all, auto-reply, holds, and sealed contact fields", 
   } finally {
     await harness.close();
   }
+});
+
+test("protected messages: new envelopes use 600,000 PBKDF2 rounds, old 20,000-round ones still open, and an absurd count is refused", async () => {
+  const { DEFAULT_ITERATIONS, MAX_ITERATIONS } = await import("./protect.ts");
+  const { sanitizeExtra } = await import("./schedule.ts");
+  assert.equal(DEFAULT_ITERATIONS, 600_000);
+  const options = { expiresAt: "2099-01-01T00:00:00.000Z", reads: 2, selfDestruct: false };
+  const strong = await sealWithPassword("new secret", "correct-horse", options);
+  assert.equal(strong.iterations, 600_000);
+  assert.equal(await openWithPassword(strong, "correct-horse"), "new secret");
+  // The server keeps the count when the message is saved (it used to clamp at 200,000).
+  assert.equal(sanitizeExtra({ protection: strong })?.protection?.iterations, 600_000);
+  const old = await sealWithPassword("old secret", "correct-horse", { ...options, iterations: 20_000 });
+  assert.equal(await openWithPassword(old, "correct-horse"), "old secret");
+  await assert.rejects(openWithPassword({ ...old, iterations: MAX_ITERATIONS + 1 }, "correct-horse"), /cannot be opened/);
+  await assert.rejects(openWithPassword({ ...old, iterations: 10 }, "correct-horse"), /cannot be opened/);
 });

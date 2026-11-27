@@ -141,3 +141,27 @@ test("maintenance mode left on is a warning", () => {
   assert.equal(levels(findings)["MAIL_MAINTENANCE is on"], "warn");
   assert.equal(levels(checkEnv(US_READY, { region: "us" }))["MAIL_MAINTENANCE is on"], undefined);
 });
+
+test("issuers: a live token issuer and sign-in pass; a 404, a mismatched issuer and an unreachable host are each named", async () => {
+  const { checkIssuers } = await import("./preflight.mjs");
+  const realm = "https://id.cumuluscloud.app/realms/cumulus";
+  const answer = (map) => async (url) => {
+    const hit = map[url];
+    if (hit === "down") throw new TypeError("fetch failed");
+    if (typeof hit === "number") return new Response("{}", { status: hit });
+    return new Response(JSON.stringify(hit), { status: 200 });
+  };
+  const live = answer({
+    [`${realm}/.well-known/openid-configuration`]: { issuer: realm },
+    "https://id.cumuluscloud.app/.well-known/openid-configuration": { issuer: realm },
+  });
+  const good = await checkIssuers(live, {}, { region: "us" });
+  assert.deepEqual(missingNames(good), []);
+  const cognito = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
+  const dead = await checkIssuers(answer({ [`${cognito}/.well-known/openid-configuration`]: 404, "https://id.cumuluscloud.app/.well-known/openid-configuration": { issuer: realm } }), { CUMULUS_OIDC_ISSUER: cognito }, { region: "us" });
+  assert.match(missingNames(dead)[0], /answers 404/);
+  const base = await checkIssuers(live, { CUMULUS_OIDC_ISSUER: "https://id.cumuluscloud.app" }, { region: "us" });
+  assert.match(missingNames(base)[0], /names issuer https:\/\/id\.cumuluscloud\.app\/realms\/cumulus/);
+  const ru = await checkIssuers(answer({ [`${realm}/.well-known/openid-configuration`]: { issuer: realm }, "https://ru.id.cumuluscloud.app/.well-known/openid-configuration": "down" }), {}, { region: "ru" });
+  assert.match(missingNames(ru)[0], /sign-in \(Russia\) https:\/\/ru\.id\.cumuluscloud\.app could not be reached/);
+});

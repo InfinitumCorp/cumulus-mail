@@ -21,6 +21,8 @@ type Props = {
   onArchive: (id: string) => void;
   onTrash: (id: string) => void;
   onSnooze: () => void;
+  onSnoozeUntil?: (choice: "tomorrow" | "weekend" | "next-week") => void;
+  onBlock?: () => void;
   onUnread: () => void;
   onMute: () => void;
   onRestore: (id: string) => void;
@@ -94,6 +96,8 @@ function Opened({
   onArchive,
   onTrash,
   onSnooze,
+  onSnoozeUntil,
+  onBlock,
   onUnread,
   onMute,
   onRestore,
@@ -173,6 +177,22 @@ function Opened({
             <button type="button" className="grid size-11 place-items-center" onClick={onSnooze} aria-label="Snooze until tomorrow morning">
               <Clock className="size-4" />
             </button>
+            {onSnoozeUntil ? (
+              <select
+                className="h-11 bg-transparent px-2 text-sm hover:text-accent"
+                aria-label="Snooze until"
+                value=""
+                onChange={(event) => {
+                  const choice = event.target.value as "tomorrow" | "weekend" | "next-week";
+                  if (choice) onSnoozeUntil(choice);
+                }}
+              >
+                <option value="">Snooze until…</option>
+                <option value="tomorrow">Tomorrow morning</option>
+                <option value="weekend">This weekend</option>
+                <option value="next-week">Next week</option>
+              </select>
+            ) : null}
             {onMoveTo && folders.length > 0 && message.folder !== "drafts" && message.folder !== "sent" ? (
               <select
                 className="h-11 bg-transparent px-2 text-sm hover:text-accent"
@@ -202,6 +222,11 @@ function Opened({
         {message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
           <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onMute}>
             Mute
+          </button>
+        ) : null}
+        {onBlock && message.from.email.toLowerCase() !== meEmail.toLowerCase() ? (
+          <button type="button" className="inline-flex h-11 items-center px-3 text-sm hover:text-accent" onClick={onBlock}>
+            Block sender
           </button>
         ) : null}
         <button type="button" className="inline-flex h-11 items-center gap-2 px-3 text-sm hover:text-accent" onClick={onTask}>

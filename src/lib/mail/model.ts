@@ -98,6 +98,8 @@ export type Contact = {
   phone?: string;
   address?: string;
   publicKey?: string;
+  /** Names of contact groups. Stored with the other sealed fields. */
+  groups?: string[];
 };
 
 export type ProtectedEnvelope = {
@@ -123,6 +125,8 @@ export type MessageExtra = {
   protection?: ProtectedEnvelope;
   readReceipt?: "requested" | "accepted" | "declined";
   pgp?: boolean;
+  /** The body is OpenPGP ciphertext. The server key can open the field, not this layer. */
+  zeroAccess?: boolean;
   autoReply?: boolean;
   cloudLinks?: CloudLinkRef[];
 };

@@ -45,7 +45,8 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export type VerifiedUser = { id: string; email: string | null; emailVerified?: boolean };
+/** `sessionId`: the Better Auth session (one sign-in on one device); the mailbox second factor is passed per session. */
+export type VerifiedUser = { id: string; email: string | null; emailVerified?: boolean; sessionId?: string };
 
 /**
  * Resolve the signed-in user from the current request, or `null` when auth isn't
@@ -68,9 +69,18 @@ export async function getSessionUser(
     headers = new Headers(request.headers);
     headers.set("Authorization", `Bearer ${bearerToken}`);
   }
-  const session = await auth.api.getSession({ headers });
+  // Always from the database, never from the 5-minute session_data cookie cache: a session ended on
+  // another device ("Sign out" there, "Sign out all other devices", account deletion) must stop reaching
+  // mail on the next request, not up to five minutes later. One indexed lookup per server call. The
+  // browser's own /get-session still uses the cache, so sign-in does not flicker.
+  const session = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
   if (!session?.user) return null;
-  return { id: session.user.id, email: session.user.email ?? null, emailVerified: session.user.emailVerified === true };
+  return {
+    id: session.user.id,
+    email: session.user.email ?? null,
+    emailVerified: session.user.emailVerified === true,
+    sessionId: session.session?.id,
+  };
 }
 
 /**

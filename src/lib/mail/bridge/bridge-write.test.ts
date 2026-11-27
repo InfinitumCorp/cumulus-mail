@@ -57,7 +57,8 @@ const rfc822 = (from: string, subject: string, extra = "") =>
 
 test("writes are off unless MAIL_BRIDGE_WRITE=on as well as MAIL_BRIDGE=on", () => {
   assert.equal(bridgeWriteEnabled({}), false);
-  assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE_WRITE: "on" }), false, "the write switch alone does nothing");
+  assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE: "off", MAIL_BRIDGE_WRITE: "on" }), false, "writes stay off when the bridge is off");
+  assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE_WRITE: "on" }), false, "the bridge is off by default, so the write flag alone is not enough");
   assert.equal(bridgeWriteEnabled({ MAIL_BRIDGE: "on" }), false);
   assert.equal(bridgeWriteEnabled(WRITE), true);
   assert.equal(idleSeconds({}), 25);
@@ -90,7 +91,7 @@ test("routes: 404 while off, 401 without a token, 403 for a read token on a writ
   try {
     const reader = await createToken(harness.db, "bw-http", "Reader", { env: WRITE });
     const req = (token?: string) => new Request("http://x/api/bridge/move", { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {} });
-    assert.equal(((await authorize(harness.db, req(reader.token), "write", {})) as Response).status, 404);
+    assert.equal(((await authorize(harness.db, req(reader.token), "write", { MAIL_BRIDGE: "off" })) as Response).status, 404);
     assert.equal(((await authorize(harness.db, req(), "write", WRITE)) as Response).status, 401);
     assert.equal(((await authorize(harness.db, req(reader.token), "write", WRITE)) as Response).status, 403);
     const ok = await authorize(harness.db, req(reader.token), "read", WRITE);
@@ -169,7 +170,7 @@ test("inbound mail gets its UID at once when the bridge is on, and writes no bri
   const harness = await mailbox("bw-inbound");
   const raw = (subject: string) => new TextEncoder().encode(["From: Leah <leah@example.org>", "To: Ada <bw-inbound@cumuluscloud.app>", `Subject: ${subject}`, "Content-Type: text/plain", "", "Hello"].join("\r\n"));
   try {
-    delete process.env.MAIL_BRIDGE;
+    process.env.MAIL_BRIDGE = "off";
     await ingestInboundEmail(harness.db, harness.storageFor, { from: "leah@example.org", to: "bw-inbound@cumuluscloud.app", raw: raw("off") });
     assert.deepEqual(await harness.db.query(`select 1 from cumulus_mail.message_uids where tenant_id = 'bw-inbound'`), []);
     process.env.MAIL_BRIDGE = "on";
@@ -200,6 +201,9 @@ test("MOVE moves the messages, expunges the old UIDs and returns COPYUID pairs",
     assert.deepEqual(result.moved.map(([, to]) => to), [1, 2], "new UIDs in the destination");
     assert.equal(await folderOf(harness, "bw-move", "m1"), "archive");
     assert.equal(await folderOf(harness, "bw-move", "m3"), "inbox", "untouched");
+    // An open tab's older copy cannot move it back (src/lib/mail/mailbox.ts writeSnapshot).
+    const { readServerRevs } = await import("../records.ts");
+    assert.deepEqual(await readServerRevs(harness.db, "bw-move"), { m1: 1, m2: 1 });
 
     const inbox = await changesSince(harness.db, "bw-move", "inbox", before, 10);
     assert.deepEqual(inbox.map((r) => [r.uid, r.expunged]), [[u1, true], [u2, true]]);

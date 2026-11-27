@@ -89,18 +89,31 @@ type Row = {
 
 export type QueueReport = { sent: number; retried: number; bounced: number };
 
-/** Rows waiting to send, and how long the oldest has waited: the queue-depth metric. */
-export async function queueDepth(db: MailQuery, now = new Date()): Promise<{ queued: number; sending: number; oldestQueuedSeconds: number }> {
-  const rows = await db.query<{ queued: number | string; sending: number | string; oldest: string | Date | null }>(
-    `select count(*) filter (where status = 'queued') as queued,
-            count(*) filter (where status = 'sending') as sending,
-            min(created_at) filter (where status in ('queued', 'sending')) as oldest
-       from cumulus_mail.outbound_queue`,
-    [],
+/**
+ * Rows waiting to send, and how long the oldest has waited: the queue-depth metric. Mail of a paused
+ * mailbox is counted apart (`paused`): it waits on purpose, and must not page "Outbound stuck".
+ */
+export async function queueDepth(
+  db: MailQuery,
+  now = new Date(),
+): Promise<{ queued: number; sending: number; oldestQueuedSeconds: number; paused: number }> {
+  const rows = await db.query<{ queued: number | string; sending: number | string; paused: number | string; oldest: string | Date | null }>(
+    `select count(*) filter (where q.status = 'queued' and p.tenant_id is null) as queued,
+            count(*) filter (where q.status = 'sending') as sending,
+            count(*) filter (where q.status = 'queued' and p.tenant_id is not null) as paused,
+            min(q.created_at) filter (where q.status in ('queued', 'sending') and p.tenant_id is null) as oldest
+       from cumulus_mail.outbound_queue q
+       left join cumulus_mail.outbound_pauses p on p.tenant_id = q.tenant_id and p.paused_until > $1::timestamptz`,
+    [now.toISOString()],
   );
   const row = rows[0];
   const oldest = row?.oldest ? new Date(row.oldest).getTime() : now.getTime();
-  return { queued: Number(row?.queued ?? 0), sending: Number(row?.sending ?? 0), oldestQueuedSeconds: Math.max(0, Math.round((now.getTime() - oldest) / 1000)) };
+  return {
+    queued: Number(row?.queued ?? 0),
+    sending: Number(row?.sending ?? 0),
+    oldestQueuedSeconds: Math.max(0, Math.round((now.getTime() - oldest) / 1000)),
+    paused: Number(row?.paused ?? 0),
+  };
 }
 
 /**
@@ -128,6 +141,11 @@ export async function processOutboundQueue(
        select tenant_id, id from cumulus_mail.outbound_queue
        where ((status = 'queued' and next_attempt_at <= $1)
               or (status = 'sending' and updated_at <= $1::timestamptz - interval '${STALE_SENDING_MS / 1000} seconds'))
+         -- A paused mailbox (spam burst, or the admin kill switch) sends nothing, queued mail included.
+         and not exists (
+           select 1 from cumulus_mail.outbound_pauses p
+            where p.tenant_id = outbound_queue.tenant_id and p.paused_until > $1::timestamptz
+         )
          ${options.tenantId ? "and tenant_id = $3" : ""}
        order by next_attempt_at
        limit $2

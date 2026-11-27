@@ -9,6 +9,10 @@
 export type MetricName =
   /** One per outbound recipient attempt. outcome: sent | retry | bounced; status: the SMTP enhanced status. */
   | "mail.outbound.result"
+  /** Outside mail not queued. reason: too_many_recipients | paused | new_accounts_busy. */
+  | "mail.outbound.held"
+  /** Outside sending paused for a mailbox. by: auto (spam burst) | admin (kill switch); hours. */
+  | "mail.outbound.paused"
   /** Per scheduled run: queued, sending, oldestQueuedSeconds. */
   | "mail.queue.depth"
   /** One per inbound message offered. outcome: stored | duplicate | rejected | no_mailbox | other_domain | failed. */
@@ -18,7 +22,11 @@ export type MetricName =
   /** A refused authenticated call. reason: no_session | cross_site | tenant_mismatch. */
   | "auth.failure"
   /** A Content-Security-Policy violation a browser reported: directive, blocked (origin or keyword), path, disposition. */
-  | "csp.violation";
+  | "csp.violation"
+  /** A bounce report about mail this mailbox did not send to that address: ignored, never suppresses. */
+  | "mail.dsn.unverified"
+  /** A mailbox with a key whose message could not be sealed (stored as it arrived). kind: hybrid | openpgp; error: the error class. */
+  | "mail.inbound.seal_failed";
 
 export type MetricFields = Record<string, string | number | boolean | null>;
 
