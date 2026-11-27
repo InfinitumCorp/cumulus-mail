@@ -6,7 +6,7 @@ import { applyRules, isCumulus } from "./logic.ts";
 import type { DeliveryHop, MailMessage, MailRule, Person } from "./model.ts";
 import { issueProtectedLink, PROTECTED_LINK_MAX_MS } from "./protect-store.ts";
 import type { MailQuery } from "./query.ts";
-import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, readProfile, readSettings, writeDelivery, writeSettings, type StoredAttachment } from "./records.ts";
+import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, readProfile, readSettings, updateSettings, writeDelivery, type StoredAttachment } from "./records.ts";
 import { isHeld } from "./schedule.ts";
 import { applySieve } from "./sieve.ts";
 import { noteAutoReply, shouldAutoReply } from "./settings.ts";
@@ -284,7 +284,7 @@ export async function deliverMessage(
             },
             null,
           );
-          await writeSettings(db, dest, noteAutoReply(settings, message.from.email));
+          await updateSettings(db, dest, (current) => noteAutoReply(current, message.from.email));
         }
       }
     }

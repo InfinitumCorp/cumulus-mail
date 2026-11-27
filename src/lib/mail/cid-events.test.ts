@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { createHarness } from "./test-support.ts";
-import { handleCidEvent, noticeFor, parseCidEvent, tenantForCid, verifyCidEventSignature, type CidEvent } from "./cid-events.ts";
+import { handleCidEvent, noticeFor, parseCidEvent, tenantForBearer, tenantForCid, verifyCidEventSignature, type CidEvent } from "./cid-events.ts";
 import { findTenantByAddress } from "./directory.ts";
 import { readSnapshot } from "./records.ts";
 
@@ -135,6 +135,9 @@ test("profile.updated renames the mailbox only while it still shows the previous
   assert.equal(await handleCidEvent(harness.db, renamed("Marian F.", "Maid Marian", t(30)), "cumuluscloud.app"), "renamed");
   assert.equal(await handleCidEvent(harness.db, renamed("Maid Marian", "Marian", t(10)), "cumuluscloud.app"), "ignored");
   assert.equal(await name(), "Marian F.");
+  // The tab opened before both renames still sends "Marian": the newest name stays.
+  await writeSnapshot(harness.db, harness.storageFor, tenant, { ...tab, signature: "older tab again" });
+  assert.equal(await name(), "Marian F.");
 
   // A name chosen in Mail itself stays the person's choice.
   await harness.db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenant, sealText(tenant, "Lady Marian")]);
@@ -169,4 +172,25 @@ test("after account.deleted, opening, saving or a domain check never routes the 
   await publishRoutes(harness.db, tenant, (await readRouteState(harness.db, tenant))!);
   assert.equal(await findTenantByAddress(harness.db, "gone@cumuluscloud.app"), null, "still unrouted");
   assert.equal((await readSnapshot(harness.db, tenant)).settings?.closedAt, new Date(at).toISOString(), "a client can't clear it");
+});
+
+test("a bearer token's tenant is the person's linked Mail user, the same one account events use", async () => {
+  const cid = "cid_66666666-6666-4666-8666-666666666666";
+  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.created", detail: { username: "bear", displayName: "Bear", mailAddress: "bear@cumuluscloud.app" }, at }, "cumuluscloud.app"), "provisioned");
+  const linked = await tenantForCid(harness.db, cid);
+  assert.ok(linked && linked !== cid);
+  assert.equal(await tenantForBearer(harness.db, cid, { email: "bear@cumuluscloud.app", name: "Bear" }), linked);
+  // Someone who never opened Mail: linked on first use, and the next sign-in of any kind finds the same user.
+  const fresh = "cid_77777777-7777-4777-8777-777777777777";
+  const first = await tenantForBearer(harness.db, fresh, { email: "fresh@cumuluscloud.app", name: "Fresh" });
+  assert.notEqual(first, fresh);
+  assert.equal(await tenantForCid(harness.db, fresh), first);
+});
+
+test("Mail's bearer sign-in resolves its tenant through tenantForBearer (not the token's sub)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("./mailbox.server.ts", import.meta.url), "utf8");
+  const branch = source.slice(source.indexOf("if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer())"), source.indexOf("} else {", source.indexOf("if (bearerToken && unverifiedIssuer")));
+  assert.match(branch, /const tenantId = await tenantForBearer\(/);
+  assert.doesNotMatch(branch, /const tenantId = await tenantFromCumulusToken\(/);
 });

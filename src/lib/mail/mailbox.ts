@@ -338,12 +338,14 @@ export async function readAttachment(
 
 /**
  * The display name a full save keeps. Only the client sets it (first-run setup), but every full save sends it, so a
- * tab still showing the name a Cumulus://ID rename replaced would put the old one back: that one is ignored.
+ * tab still showing a name a Cumulus://ID rename replaced would put the old one back: for a day after the rename,
+ * such a name is ignored (after that, choosing it again in Mail works).
  */
-function chosenName(sent: string, current: MailboxSnapshot): string {
+function chosenName(sent: string, current: MailboxSnapshot, now = Date.now()): string {
   if (!sent) return current.me.name;
-  const replaced = current.settings?.renamedFrom?.name;
-  return replaced && sent === replaced && sent !== current.me.name ? current.me.name : sent;
+  if (sent === current.me.name) return sent;
+  const replacedLately = (current.settings?.renames ?? []).some((r) => r.from === sent && now - Date.parse(r.at) < 24 * 60 * 60 * 1000);
+  return replacedLately ? current.me.name : sent;
 }
 
 /** A display name as stored: one line, no quotes or angle brackets (they would break a From header). */

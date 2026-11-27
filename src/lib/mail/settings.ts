@@ -51,10 +51,11 @@ export type MailSettings = {
   /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
   setupPending: boolean;
   /**
-   * Server-held: the last rename from Cumulus://ID (profile.updated), the name it replaced and the event's time.
-   * A save from a tab still showing that old name doesn't put it back, and an older event doesn't undo a newer one.
+   * Server-held: recent renames from Cumulus://ID (profile.updated), newest last: the name each replaced and the
+   * event's time. For a day, a save from a tab still showing one of those names doesn't put it back; an event older
+   * than the newest is ignored.
    */
-  renamedFrom?: { name: string; at: string };
+  renames?: Array<{ from: string; at: string }>;
   /** Server-held: when the Cumulus://ID behind this mailbox was deleted. Its addresses are never routed again. */
   closedAt?: string;
   /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
@@ -258,8 +259,13 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       : [],
     setupPending: row.setupPending === true,
     theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
-    ...(row.renamedFrom && typeof row.renamedFrom.name === "string" && typeof row.renamedFrom.at === "string" && !Number.isNaN(Date.parse(row.renamedFrom.at))
-      ? { renamedFrom: { name: text(row.renamedFrom.name, 120), at: new Date(row.renamedFrom.at).toISOString() } }
+    ...(Array.isArray(row.renames)
+      ? {
+          renames: row.renames
+            .filter((r) => r && typeof r.from === "string" && typeof r.at === "string" && !Number.isNaN(Date.parse(r.at)))
+            .map((r) => ({ from: text(r.from, 120), at: new Date(r.at).toISOString() }))
+            .slice(-5),
+        }
       : {}),
     ...(typeof row.closedAt === "string" && !Number.isNaN(Date.parse(row.closedAt)) ? { closedAt: new Date(row.closedAt).toISOString() } : {}),
     ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
@@ -332,13 +338,13 @@ export function keepServerNotes(previous: MailSettings, next: MailSettings): Mai
     if (!prior || item.at > prior.at) byKey.set(item.key, item);
   }
   const unsubscribed = [...byKey.values()].sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-200);
-  // renamedFrom and closedAt are the server's alone: whatever a client sends, the stored ones stay.
-  const { renamedFrom: _client, closedAt: _closed, ...rest } = next;
+  // renames and closedAt are the server's alone: whatever a client sends, the stored ones stay.
+  const { renames: _client, closedAt: _closed, ...rest } = next;
   return {
     ...rest,
     autoReply: { ...next.autoReply, sent },
     unsubscribed,
-    ...(previous.renamedFrom ? { renamedFrom: previous.renamedFrom } : {}),
+    ...(previous.renames ? { renames: previous.renames } : {}),
     ...(previous.closedAt ? { closedAt: previous.closedAt } : {}),
   };
 }

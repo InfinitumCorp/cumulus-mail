@@ -426,6 +426,7 @@ export async function replaceMailboxContents(
 ): Promise<void> {
   assertTenantId(tenantId);
   await withTransaction(db, async () => {
+    await lockMailbox(db, tenantId);
     if (guard) await assertStillNewest(db, tenantId, guard);
     const previous = await readSettings(db, tenantId);
     const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, withOwnershipTxt(tenantId, sanitizeSettings(snapshot.settings, mailDomain())))));
@@ -649,6 +650,24 @@ export async function readSettings(db: MailQuery, tenantId: string): Promise<Mai
     [tenantId],
   );
   return parseSettings(tenantId, rows[0]?.settings_enc ?? null);
+}
+
+/** Holds the mailbox row until the transaction ends, so settings read-modify-writes never lose each other's changes. */
+export async function lockMailbox(db: MailQuery, tenantId: string): Promise<void> {
+  await db.query(`select 1 from cumulus_mail.mailboxes where tenant_id = $1 for update`, [tenantId]);
+}
+
+/**
+ * Read, change and write a mailbox's settings under the row lock. Use it for every server-side change, so one
+ * that runs at the same time as another (a save, a deletion closing the mailbox) can't put back what it removed.
+ */
+export async function updateSettings(db: MailQuery, tenantId: string, change: (settings: MailSettings) => MailSettings | Promise<MailSettings>): Promise<MailSettings> {
+  return withTransaction(db, async () => {
+    await lockMailbox(db, tenantId);
+    const next = await change(await readSettings(db, tenantId));
+    await writeSettings(db, tenantId, next);
+    return next;
+  });
 }
 
 export async function writeSettings(db: MailQuery, tenantId: string, settings: MailSettings): Promise<void> {

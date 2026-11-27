@@ -19,7 +19,8 @@ import { assertTenantId } from "../storage/adapter.ts";
 import { sha256Hex } from "../storage/index.ts";
 import type { MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertMessage, readSettings, writeSettings } from "./records.ts";
+import { insertMessage, lockMailbox, readSettings, writeSettings } from "./records.ts";
+import { withTransaction } from "./query.ts";
 import { replaceRoutedAddresses } from "./directory.ts";
 import { provisionMailbox } from "./seed.ts";
 import { cleanDisplayName } from "./mailbox.ts";
@@ -163,6 +164,17 @@ export async function tenantForCid(
   return userId;
 }
 
+/**
+ * The Mail tenant for a verified Cumulus://ID bearer (another product calling Mail's API with the person's access
+ * token): the same Better Auth user their cookie sign-in and account events use, linked now if it isn't yet. Never
+ * the cid itself, which would give the person a second, empty mailbox.
+ */
+export async function tenantForBearer(db: MailQuery, cid: string, person: { email: string; name: string }): Promise<string> {
+  const tenantId = await tenantForCid(db, cid, person);
+  if (!tenantId) throw new Error("No Mail user for that Cumulus ID");
+  return tenantId;
+}
+
 async function mailboxExists(db: MailQuery, tenantId: string): Promise<boolean> {
   return (await db.query<{ tenant_id: string }>(`select tenant_id from cumulus_mail.mailboxes where tenant_id = $1 limit 1`, [tenantId])).length > 0;
 }
@@ -188,9 +200,12 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
     // Closed for good: saves, opens and domain checks never route its addresses again (publishRoutes,
     // provisionMailbox), and Mail's own sign-in sessions for it end. Stored mail is kept.
-    const settings = await readSettings(db, tenantId);
-    if (!settings.closedAt) await writeSettings(db, tenantId, { ...settings, closedAt: e.at });
-    await replaceRoutedAddresses(db, tenantId, []);
+    await withTransaction(db, async () => {
+      await lockMailbox(db, tenantId);
+      const settings = await readSettings(db, tenantId);
+      if (!settings.closedAt) await writeSettings(db, tenantId, { ...settings, closedAt: e.at });
+      await replaceRoutedAddresses(db, tenantId, []);
+    });
     try {
       await db.query(`delete from "session" where "userId" = $1`, [tenantId]);
     } catch {
@@ -205,16 +220,20 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     const name = cleanDisplayName(e.detail.displayName);
     const previous = cleanDisplayName(e.detail.previous);
     if (!name) return "ignored";
-    const rows = await db.query<{ display_name: string | null }>(`select display_name from cumulus_mail.mailboxes where tenant_id = $1`, [tenantId]);
-    // Nobody to rename: answered as done, so a rename by someone without Mail isn't retried for an hour.
-    if (!rows.length) return "ignored";
-    const settings = await readSettings(db, tenantId);
-    if (settings.renamedFrom && settings.renamedFrom.at >= e.at) return "ignored";
-    const current = rows[0]!.display_name ? cleanDisplayName(openText(tenantId, rows[0]!.display_name)) : "";
-    if ((current && current !== previous) || current === name) return "ignored";
-    await db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenantId, sealText(tenantId, name)]);
-    await writeSettings(db, tenantId, { ...settings, renamedFrom: { name: current || previous, at: e.at } });
-    return "renamed";
+    return withTransaction(db, async (): Promise<HandleResult> => {
+      await lockMailbox(db, tenantId);
+      const rows = await db.query<{ display_name: string | null }>(`select display_name from cumulus_mail.mailboxes where tenant_id = $1`, [tenantId]);
+      // Nobody to rename: answered as done, so a rename by someone without Mail isn't retried for an hour.
+      if (!rows.length) return "ignored";
+      const settings = await readSettings(db, tenantId);
+      const newest = settings.renames?.at(-1);
+      if (newest && newest.at >= e.at) return "ignored";
+      const current = rows[0]!.display_name ? cleanDisplayName(openText(tenantId, rows[0]!.display_name)) : "";
+      if ((current && current !== previous) || current === name) return "ignored";
+      await db.query(`update cumulus_mail.mailboxes set display_name = $2 where tenant_id = $1`, [tenantId, sealText(tenantId, name)]);
+      await writeSettings(db, tenantId, { ...settings, renames: [...(settings.renames ?? []), { from: current || previous, at: e.at }].slice(-5) });
+      return "renamed";
+    });
   }
   const notice = noticeFor(e);
   if (!notice) return "ignored";

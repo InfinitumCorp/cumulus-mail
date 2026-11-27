@@ -38,7 +38,7 @@ import {
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
-import { publishRoutes, readProfile, readRouteState, readSettings, writeSettings } from "./records.ts";
+import { lockMailbox, publishRoutes, readProfile, readRouteState, readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -87,15 +87,20 @@ async function sessionMailbox(
   // Which sign-in the second factor is passed for: the session (cookie sign-in) or the bearer token.
   let sessionRef = "";
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
-    const tenantId = await tenantFromCumulusToken(bearerToken);
-    assertTenantId(tenantId);
+    const cid = await tenantFromCumulusToken(bearerToken);
+    assertTenantId(cid);
     // The access token carries the cid, not the address: ask Cumulus://ID who this is (which also
     // confirms the session is still live). Using the cid as the local part would publish a
     // `cid_…@` address for the mailbox.
     const { cidProfileFromTokens } = await import("@/lib/auth/cumulus-id");
     const person = await cidProfileFromTokens(cidConfig(), { accessToken: bearerToken });
     const email = (person?.email ?? "").trim().toLowerCase();
-    if (!person || person.cid !== tenantId || !email.includes("@")) throw new UnauthorizedError();
+    if (!person || person.cid !== cid || !email.includes("@")) throw new UnauthorizedError();
+    // The same Mail tenant as that person's cookie sign-in and account events (tenantForCid: the Better Auth user
+    // linked to the cid), never a second mailbox keyed by the cid itself.
+    const { tenantForBearer } = await import("./cid-events.ts");
+    const tenantId = await tenantForBearer(await database(), cid, { email, name: person.name || person.username || email.split("@")[0]! });
+    assertTenantId(tenantId);
     sessionRef = `bearer:${bearerToken}`;
     resolved = {
       verified: true, // a Cumulus ID token: the identity provider verified the email
@@ -444,14 +449,19 @@ export async function checkDomainForSession(
   if (!current) throw new Error("Add that domain in the account panel first.");
   const checked = await refreshDomainVerification({ ...settings, domains: [current] }, resolverFromEnv());
   const verified = checked.domains[0]?.verified === true;
-  await writeSettings(db, tenantId, {
-    ...settings,
-    domains: settings.domains.map((item) => (item.domain === domain ? { ...item, verified } : item)),
+  // Under the row lock (the DNS lookup above is not): record the result on the stored settings as they are now,
+  // then re-publish routes from what is verified. A domain that stopped verifying stops routing its aliases and
+  // catch-all; one that verifies again routes them again; a closed mailbox routes nothing.
+  await withTransaction(db, async () => {
+    await lockMailbox(db, tenantId);
+    const fresh = await readSettings(db, tenantId);
+    await writeSettings(db, tenantId, {
+      ...fresh,
+      domains: fresh.domains.map((item) => (item.domain === domain && item.txtValue === current.txtValue ? { ...item, verified } : item)),
+    });
+    const state = await readRouteState(db, tenantId);
+    if (state) await publishRoutes(db, tenantId, state);
   });
-  // Re-publish this mailbox's routes from what is now verified: a domain that stopped verifying stops routing its
-  // aliases and catch-all; one that verifies again routes them again.
-  const state = await readRouteState(db, tenantId);
-  if (state) await withTransaction(db, async () => publishRoutes(db, tenantId, state));
   return { verified, txtName: current.txtName, txtValue: current.txtValue };
 }
 
