@@ -366,3 +366,15 @@ export function recordAudit(settings: MailSettings, action: string, detail: stri
     audit: [...settings.audit, { at: now.toISOString(), action, detail }],
   });
 }
+
+/**
+ * The display name a full save keeps: what the client sent, unless it is a name a Cumulus://ID rename replaced in
+ * the last day (a tab still showing the old one) and the stored name differs. Decided under the save's row lock
+ * (records.ts replaceMailboxContents), so a rename landing while a save runs isn't overwritten.
+ */
+export function keptDisplayName(sent: string, stored: string, renames: MailSettings["renames"], now = Date.now()): string {
+  if (!sent) return stored;
+  if (sent === stored) return sent;
+  const replacedLately = (renames ?? []).some((r) => r.from === sent && now - Date.parse(r.at) < 24 * 60 * 60 * 1000);
+  return replacedLately ? stored : sent;
+}

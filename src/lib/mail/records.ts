@@ -12,7 +12,7 @@ import { sanitizeExtra } from "./schedule.ts";
 import { cleanGroups } from "./groups.ts";
 import { acceptMailboxKey } from "./pgp-keys.ts";
 import { mailboxAddresses, publishMailboxKey } from "./wkd.ts";
-import { defaultSettings, keepServerNotes, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
+import { defaultSettings, keepServerNotes, keptDisplayName, keepVerified, sanitizeSettings, type MailSettings } from "./settings.ts";
 import { assertId, asFolder, asPeople, type MailProfile, type MailboxSnapshot } from "./snapshot.ts";
 import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
@@ -438,8 +438,12 @@ export async function replaceMailboxContents(
     await db.query(`delete from cumulus_mail.tasks where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.rules where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.briefs where tenant_id = $1`, [tenantId]);
-    // The display name is the owner's to change (first-run setup, settings); the address never is.
-    const displayName = (snapshot.me?.name ?? "").replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+    // The display name is the owner's to change (first-run setup, settings); the address never is. Decided again
+    // here, under the lock, against the stored name: a Cumulus://ID rename that landed while this save ran stays.
+    const sentName = (snapshot.me?.name ?? "").replace(/[\r\n\t"<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+    const storedRow = await db.query<{ display_name: string | null }>(`select display_name from cumulus_mail.mailboxes where tenant_id = $1`, [tenantId]);
+    const storedName = storedRow[0]?.display_name ? openText(tenantId, storedRow[0].display_name) : "";
+    const displayName = keptDisplayName(sentName, storedName, previous.renames);
     await db.query(
       `update cumulus_mail.mailboxes
           set signature = $2, settings_enc = $3, display_name = coalesce($4, display_name)

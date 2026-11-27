@@ -95,7 +95,8 @@ async function sessionMailbox(
     const { cidProfileFromTokens } = await import("@/lib/auth/cumulus-id");
     const person = await cidProfileFromTokens(cidConfig(), { accessToken: bearerToken });
     const email = (person?.email ?? "").trim().toLowerCase();
-    if (!person || person.cid !== cid || !email.includes("@")) throw new UnauthorizedError();
+    // The address Cumulus://ID gives every account is on Mail's domain; anything else isn't a mailbox of ours.
+    if (!person || person.cid !== cid || !email.endsWith(`@${mailDomain()}`)) throw new UnauthorizedError();
     // The same Mail tenant as that person's cookie sign-in and account events (tenantForCid: the Better Auth user
     // linked to the cid), never a second mailbox keyed by the cid itself.
     const { tenantForBearer } = await import("./cid-events.ts");

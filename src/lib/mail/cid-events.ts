@@ -143,6 +143,21 @@ export async function tenantForCid(
   cid: string,
   create?: { email: string; name: string },
 ): Promise<string | null> {
+  try {
+    return await findOrLinkUser(db, cid, create);
+  } catch (error) {
+    // Two first requests for one person at once (a bearer call and the account event, say): the other one created
+    // the user a moment ago, so the unique email refused this insert. Look again; it is found now.
+    if (!create) throw error;
+    return findOrLinkUser(db, cid, create);
+  }
+}
+
+async function findOrLinkUser(
+  db: MailQuery,
+  cid: string,
+  create?: { email: string; name: string },
+): Promise<string | null> {
   const found = await db.query<{ userId: string }>(
     `select "userId" from "account" where "accountId" = $1 and "providerId" like 'cumulus-id%' order by "createdAt" limit 1`,
     [cid],

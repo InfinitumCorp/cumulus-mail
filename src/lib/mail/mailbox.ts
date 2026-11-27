@@ -5,7 +5,7 @@ import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
 import { addressOwnedByOther } from "./directory.ts";
-import { requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { keptDisplayName, requestedDomainCount, sanitizeSettings } from "./settings.ts";
 import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
 import { mailDomain } from "./domain.ts";
 import { validEmail } from "./logic.ts";
@@ -341,11 +341,8 @@ export async function readAttachment(
  * tab still showing a name a Cumulus://ID rename replaced would put the old one back: for a day after the rename,
  * such a name is ignored (after that, choosing it again in Mail works).
  */
-function chosenName(sent: string, current: MailboxSnapshot, now = Date.now()): string {
-  if (!sent) return current.me.name;
-  if (sent === current.me.name) return sent;
-  const replacedLately = (current.settings?.renames ?? []).some((r) => r.from === sent && now - Date.parse(r.at) < 24 * 60 * 60 * 1000);
-  return replacedLately ? current.me.name : sent;
+function chosenName(sent: string, current: MailboxSnapshot): string {
+  return keptDisplayName(sent, current.me.name, current.settings?.renames);
 }
 
 /** A display name as stored: one line, no quotes or angle brackets (they would break a From header). */
