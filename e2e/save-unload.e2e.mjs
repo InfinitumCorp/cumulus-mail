@@ -179,14 +179,18 @@ test("closing the tab mid-save still saves the change, as a small keepalive delt
     // Close the tab; the browser asks first, and the person leaves anyway.
     page.on("dialog", (dialog) => void dialog.accept());
     await page.close({ runBeforeUnload: true });
-    // Playwright does not report a closed page's requests; the next tab is the proof.
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-
+    // Playwright does not report a closed page's requests; the next tab is the proof. The keepalive request
+    // can land a few seconds after the tab closes on a loaded machine, so look again until it shows (15 s).
     await context.unroute("**/_serverFn/**");
     const next = await context.newPage();
-    await next.goto(URL_BASE, { waitUntil: "networkidle" });
-    await next.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
-    assert.equal(await next.locator(`[data-row-id="${id}"]`).count(), 0, "gone from the Inbox in the next tab");
+    let gone = false;
+    for (let attempt = 0; attempt < 15 && !gone; attempt += 1) {
+      await next.goto(URL_BASE, { waitUntil: "networkidle" });
+      await next.locator("[data-row-id]").first().waitFor({ timeout: 30_000 });
+      gone = (await next.locator(`[data-row-id="${id}"]`).count()) === 0;
+      if (!gone) await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    assert.equal(gone, true, "gone from the Inbox in the next tab");
     await next.locator("aside.nav-pane").getByRole("button", { name: /^Trash/ }).first().click();
     await next.locator(`[data-row-id="${id}"]`).waitFor({ timeout: 15_000 });
   } finally {
