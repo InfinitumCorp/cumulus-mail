@@ -145,7 +145,7 @@ function buildAuth(region: Region) {
   const database = databaseUrl
     ? process.env.CUMULUS_RUNTIME === "cloudflare"
       ? // Workers: per-request connections, shared with getSql() (sql-surface.ts withDbScope).
-        requestScopedPool(() => new Pool({ connectionString: databaseUrl, max: 4 }) as unknown as ClosablePool)
+        requestScopedPool(() => new Pool({ connectionString: databaseUrl, max: 4, connectionTimeoutMillis: 10_000 }) as unknown as ClosablePool)
       : new Pool({ connectionString: databaseUrl })
     : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 

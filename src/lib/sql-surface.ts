@@ -49,6 +49,11 @@ export type PoolLike = {
 
 /** The Sql surface over a pg Pool, with real transactions (see `Sql.transaction`). Exported for tests. */
 export function poolSql(pool: PoolLike): Sql {
+  return pooledSql(pool).sql;
+}
+
+/** `poolSql`, plus whether the caller is inside one of its transactions right now. */
+function pooledSql(pool: PoolLike): { sql: Sql; inTransaction: () => boolean } {
   const current = new AsyncLocalStorage<PoolClientLike>();
   const sql = toSql(async <T>(text: string, params: unknown[]) => {
     const client = current.getStore();
@@ -80,7 +85,7 @@ export function poolSql(pool: PoolLike): Sql {
       client.release(broken);
     }
   };
-  return sql;
+  return { sql, inTransaction: () => current.getStore() !== undefined };
 }
 
 
@@ -89,8 +94,19 @@ export function poolSql(pool: PoolLike): Sql {
  */
 export type ClosablePool = PoolLike & { end(): Promise<void> };
 
-type DbScope = { pool?: ClosablePool; sql?: Sql; ended: boolean };
-const scopes = new AsyncLocalStorage<DbScope>();
+type DbScope = {
+  pool?: ClosablePool;
+  pooled?: { sql: Sql; inTransaction: () => boolean };
+  ended: boolean;
+};
+
+/**
+ * On globalThis, not in module scope: the Nitro middleware that opens a scope and the app code that
+ * reads it are bundled separately (the app is its own Vite environment), so each bundle has its own copy
+ * of this module. Two AsyncLocalStorage objects would never see each other's scope.
+ */
+const scopeRef = globalThis as typeof globalThis & { __cumulusDbScopes__?: AsyncLocalStorage<DbScope> };
+const scopes = (scopeRef.__cumulusDbScopes__ ??= new AsyncLocalStorage<DbScope>());
 
 /**
  * Runs `run` with its own database connections. On Workers a socket belongs to the request that opened
@@ -104,16 +120,14 @@ export async function withDbScope<T>(run: () => Promise<T>): Promise<T> {
     return await scopes.run(scope, run);
   } finally {
     scope.ended = true;
-    const pool = scope.pool;
-    scope.pool = undefined;
-    scope.sql = undefined;
-    // end() waits for checked-out connections to be released, then closes every socket.
-    if (pool) void pool.end().catch(() => undefined);
+    // end() waits for checked-out connections (a transaction still running) to be released, then
+    // closes every socket. `pooled` is kept so that transaction can finish on its own connection.
+    if (scope.pool) void scope.pool.end().catch(() => undefined);
   }
 }
 
-/** The live scope's pool, made on first use; undefined outside a scope or after it ended. */
-function scopePool(makePool: () => ClosablePool): DbScope | undefined {
+/** The live scope, with its pool made on first use; undefined outside a scope or after it ended. */
+function liveScope(makePool: () => ClosablePool): DbScope | undefined {
   const scope = scopes.getStore();
   if (!scope || scope.ended) return undefined;
   scope.pool ??= makePool();
@@ -122,18 +136,27 @@ function scopePool(makePool: () => ClosablePool): DbScope | undefined {
 
 /**
  * The `Sql` surface for Workers: each request uses its own pool (see `withDbScope`). A query made outside
- * any request scope (or after its request ended) gets a pool of its own, closed when that query settles.
- * Transactions work as in `poolSql`.
+ * any request scope, or after its request ended, gets a pool of its own, closed when that query settles.
+ * A transaction still running when its request ends keeps its own connection. Transactions work as in
+ * `poolSql`.
  */
 export function requestScopedSql(makePool: () => ClosablePool): Sql {
-  const use = <T>(work: (sql: Sql) => Promise<T>): Promise<T> => {
-    const scope = scopePool(makePool);
-    if (!scope) return withDbScope(() => use(work));
-    scope.sql ??= poolSql(scope.pool!);
-    return work(scope.sql);
-  };
-  const sql = toSql(<T>(text: string, params: unknown[]) => use((inner) => inner.query<T>(text, params)));
-  sql.transaction = <T>(run: () => Promise<T>) => use((inner) => inner.transaction!(run));
+  function withScopedSql<T>(work: (inner: Sql) => Promise<T>): Promise<T> {
+    const current = scopes.getStore();
+    if (current?.ended && current.pooled?.inTransaction()) return work(current.pooled.sql);
+    const scope = liveScope(makePool);
+    if (!scope) return withDbScope(() => withScopedSql(work));
+    scope.pooled ??= pooledSql(scope.pool!);
+    return work(scope.pooled.sql);
+  }
+  async function run<T>(text: string, params: unknown[]): Promise<T[]> {
+    return withScopedSql((inner) => inner.query<T>(text, params));
+  }
+  async function transaction<T>(body: () => Promise<T>): Promise<T> {
+    return withScopedSql((inner) => inner.transaction!(body));
+  }
+  const sql = toSql(run);
+  sql.transaction = transaction;
   return sql;
 }
 
@@ -144,25 +167,29 @@ export function requestScopedSql(makePool: () => ClosablePool): Sql {
  * the connection is released. `end()` does nothing: the scope closes the real pools.
  */
 export function requestScopedPool(makePool: () => ClosablePool): ClosablePool {
-  return {
-    query: async (text, params) => {
-      const scope = scopePool(makePool);
-      if (scope) return scope.pool!.query(text, params);
-      return withDbScope(async () => scopePool(makePool)!.pool!.query(text, params));
-    },
-    connect: async () => {
-      const scope = scopePool(makePool);
-      if (scope) return scope.pool!.connect();
-      const own = makePool();
-      const client = await own.connect();
-      return {
-        query: (text, params) => client.query(text, params),
-        release: (error) => {
-          client.release(error);
-          void own.end().catch(() => undefined);
-        },
-      };
-    },
-    end: async () => undefined,
-  };
+  async function query(text: string, params?: unknown[]) {
+    const scope = liveScope(makePool);
+    if (scope) return scope.pool!.query(text, params);
+    return withDbScope(async () => liveScope(makePool)!.pool!.query(text, params));
+  }
+  async function connect(): Promise<PoolClientLike> {
+    const scope = liveScope(makePool);
+    if (scope) return scope.pool!.connect();
+    const own = makePool();
+    let client: PoolClientLike;
+    try {
+      client = await own.connect();
+    } catch (error) {
+      void own.end().catch(() => undefined);
+      throw error;
+    }
+    return {
+      query: (text, params) => client.query(text, params),
+      release: (error) => {
+        client.release(error);
+        void own.end().catch(() => undefined);
+      },
+    };
+  }
+  return { query, connect, end: async () => undefined };
 }

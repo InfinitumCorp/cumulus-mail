@@ -239,3 +239,53 @@ test("Workers: outside a request, or after it ended, each call gets a pool of it
   assert.deepEqual(made[4].log, ["late"]);
   assert.ok(made.every((pool) => pool.ended));
 });
+
+test("Workers: the scope is shared by separate copies of this module (the server and app bundles)", async () => {
+  // A second module instance, as when Nitro's middleware and the app are bundled separately.
+  const copy = (await import(`./sql-surface.ts?copy=${Date.now()}`)) as typeof import("./sql-surface.ts");
+  assert.notEqual(copy.withDbScope, withDbScope, "a separate module instance");
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  const auth = requestScopedPool(make);
+  await copy.withDbScope(async () => {
+    await sql.query("one");
+    await sql.query("two");
+    const client = await auth.connect();
+    await client.query("auth");
+    client.release();
+  });
+  await settle();
+  assert.equal(made.length, 1, "one pool for the whole request");
+  assert.deepEqual(made[0].log, ["one", "two", "tx: auth"]);
+  assert.equal(made[0].ended, true);
+});
+
+test("Workers: a transaction still running when its request ends finishes on its own connection", async () => {
+  const { make, made } = poolFactory();
+  const sql = requestScopedSql(make);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let running: Promise<unknown> | undefined;
+  await withDbScope(async () => {
+    running = sql.transaction!(async () => {
+      await sql.query("first");
+      await gate; // the request returns here
+      await sql.query("second");
+    });
+    await settle();
+  });
+  release();
+  await running;
+  await settle();
+  assert.equal(made.length, 1, "no stray pool for the late query");
+  assert.deepEqual(made[0].log, [
+    "tx: BEGIN",
+    "tx: SET LOCAL idle_in_transaction_session_timeout = '30s'",
+    "tx: first",
+    "tx: second",
+    "tx: COMMIT",
+  ]);
+  assert.equal(made[0].ended, true);
+});

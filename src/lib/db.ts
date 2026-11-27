@@ -81,8 +81,9 @@ function createNeonSql(): Promise<Sql> {
     // Workers: a socket belongs to the request that opened it, so each request gets its own pool
     // (sql-surface.ts withDbScope). At most 4 connections: a Worker request may hold 6 open at once,
     // and storage fetches need the rest. Hyperdrive keeps the pooled connections to the database.
+    // A connection still queued when the request's pool closes fails after 10 s instead of waiting forever.
     if (cloudflareRuntime()) {
-      return requestScopedSql(() => new Pool({ connectionString, max: 4 }) as unknown as ClosablePool);
+      return requestScopedSql(() => new Pool({ connectionString, max: 4, connectionTimeoutMillis: 10_000 }) as unknown as ClosablePool);
     }
     const pool = new Pool({ connectionString });
     return poolSql(pool as unknown as PoolLike);
