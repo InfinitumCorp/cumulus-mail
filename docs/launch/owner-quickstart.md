@@ -4,11 +4,7 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #217 (main fc7c058), including #214's transactions fix (through #217) and migration 0024 (#213). Production still serves the old page (checked 27 Nov).
-Still open, merge in this order, waiting for CI after each:
-
-1. **#219**: outbound SMTP from the API worker over `cloudflare:sockets`.
-2. The PR that updates these pages.
+Already on `main`: everything up to #219 (main bc6f9d6), including #214's transactions fix (through #217) and migration 0024 (#213). **Nothing is left to merge.** Production still serves the old page (checked 27 Nov).
 
 **Before go:** Hyperdrive query caching off: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled` (see `friday.md`, go/no-go).
 

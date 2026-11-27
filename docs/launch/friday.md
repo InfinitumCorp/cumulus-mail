@@ -10,11 +10,9 @@ repository or its CI makes these changes**; every switch below is yours.
 **Short version:** `docs/launch/owner-quickstart.md` is this page on one screen: the merge order, what to set
 where, the commands in order, go/no-go and the rollback.
 
-**Needs on `main`:** everything up to #217 (27 Nov, main fc7c058): #212, #213, #215, #216 and #217, which carried
-#214's transactions fix. **Production has not been cut over yet:** on 27 Nov `mail.` and `ru.mail.` still serve the
-old page (no `/api/health`). Still open, merge before the deploy commit, waiting for CI after each:
-1. #219: on Workers, the API worker dials SMTP with `cloudflare:sockets` (its `node:tls` STARTTLS fails there);
-2. the PR that updates these pages (Hyperdrive query cache, below).
+**Needs on `main`:** everything up to #219 (27 Nov, main bc6f9d6): #212, #213, #215, #216, #217 (which carried
+#214's transactions fix), #218 and #219. **Nothing is left to merge before the deploy commit.** **Production has not
+been cut over yet:** on 27 Nov `mail.` and `ru.mail.` still serve the old page (no `/api/health`).
 
 #214 is already on `main` through #217 and can be closed.
 
