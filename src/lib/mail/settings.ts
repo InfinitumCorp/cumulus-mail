@@ -55,6 +55,8 @@ export type MailSettings = {
    * A save from a tab still showing that old name doesn't put it back, and an older event doesn't undo a newer one.
    */
   renamedFrom?: { name: string; at: string };
+  /** Server-held: when the Cumulus://ID behind this mailbox was deleted. Its addresses are never routed again. */
+  closedAt?: string;
   /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
   theme: Theme;
   /**
@@ -259,6 +261,7 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
     ...(row.renamedFrom && typeof row.renamedFrom.name === "string" && typeof row.renamedFrom.at === "string" && !Number.isNaN(Date.parse(row.renamedFrom.at))
       ? { renamedFrom: { name: text(row.renamedFrom.name, 120), at: new Date(row.renamedFrom.at).toISOString() } }
       : {}),
+    ...(typeof row.closedAt === "string" && !Number.isNaN(Date.parse(row.closedAt)) ? { closedAt: new Date(row.closedAt).toISOString() } : {}),
     ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
     ...(b64url(row.indexSalt, 16, 64) ? { indexSalt: b64url(row.indexSalt, 16, 64) } : {}),
     ...(typeof row.clientIndex === "string" && row.clientIndex.startsWith("cmh1.") && row.clientIndex.length < 120_000
@@ -329,9 +332,15 @@ export function keepServerNotes(previous: MailSettings, next: MailSettings): Mai
     if (!prior || item.at > prior.at) byKey.set(item.key, item);
   }
   const unsubscribed = [...byKey.values()].sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-200);
-  // renamedFrom is the server's alone: whatever a client sends, the stored one stays.
-  const { renamedFrom: _client, ...rest } = next;
-  return { ...rest, autoReply: { ...next.autoReply, sent }, unsubscribed, ...(previous.renamedFrom ? { renamedFrom: previous.renamedFrom } : {}) };
+  // renamedFrom and closedAt are the server's alone: whatever a client sends, the stored ones stay.
+  const { renamedFrom: _client, closedAt: _closed, ...rest } = next;
+  return {
+    ...rest,
+    autoReply: { ...next.autoReply, sent },
+    unsubscribed,
+    ...(previous.renamedFrom ? { renamedFrom: previous.renamedFrom } : {}),
+    ...(previous.closedAt ? { closedAt: previous.closedAt } : {}),
+  };
 }
 
 /** A domain stays verified only when the stored row already was, and its TXT value did not change. */

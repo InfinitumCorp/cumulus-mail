@@ -631,6 +631,8 @@ export async function readRouteState(db: MailQuery, tenantId: string): Promise<R
  * address is always published.
  */
 export async function publishRoutes(db: MailQuery, tenantId: string, state: RouteState): Promise<void> {
+  // The Cumulus://ID behind it was deleted: stored mail stays readable, but nothing is delivered to it again.
+  if (state.settings?.closedAt) return replaceRoutedAddresses(db, tenantId, []);
   const own = state.me.email.toLowerCase();
   const keep: string[] = [];
   for (const address of routedAddresses(state)) {

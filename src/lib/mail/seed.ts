@@ -7,7 +7,7 @@ import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import { EVENTS, SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertMessage } from "./records.ts";
+import { insertMessage, readSettings } from "./records.ts";
 
 function previewAddress(): string {
   return mailboxAddress("alex");
@@ -114,7 +114,8 @@ export async function provisionMailbox(
       startPlan,
     ],
   );
-  await publishAddress(db, tenantId, email);
+  // A mailbox whose Cumulus://ID was deleted (settings.closedAt) isn't routed again by being opened.
+  if (!(await readSettings(db, tenantId)).closedAt) await publishAddress(db, tenantId, email);
   if (email === previewAddress()) await ensureDemoDirectory(db);
   const claimed = await db.query<{ tenant_id: string }>(
     `update cumulus_mail.mailboxes set seeded = true where tenant_id = $1 and seeded = false returning tenant_id`,

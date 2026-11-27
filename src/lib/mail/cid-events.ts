@@ -186,7 +186,16 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
   assertTenantId(tenantId);
   if (e.type === "account.deleted") {
     if (!(await mailboxExists(db, tenantId))) return "no-mailbox";
+    // Closed for good: saves, opens and domain checks never route its addresses again (publishRoutes,
+    // provisionMailbox), and Mail's own sign-in sessions for it end. Stored mail is kept.
+    const settings = await readSettings(db, tenantId);
+    if (!settings.closedAt) await writeSettings(db, tenantId, { ...settings, closedAt: e.at });
     await replaceRoutedAddresses(db, tenantId, []);
+    try {
+      await db.query(`delete from "session" where "userId" = $1`, [tenantId]);
+    } catch {
+      // Sign-in off (no Better Auth tables): nothing to end.
+    }
     return "unrouted";
   }
   if (e.type === "profile.updated") {

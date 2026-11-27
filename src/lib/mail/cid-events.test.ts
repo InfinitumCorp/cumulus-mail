@@ -147,3 +147,26 @@ test("profile.updated renames the mailbox only while it still shows the previous
   // Someone without Mail: nothing to do, and answered as done (no retries for an hour).
   assert.equal(await handleCidEvent(harness.db, { ...renamed("X", "Y", t(60)), cid: "cid_44444444-4444-4444-8444-444444444444" }, "cumuluscloud.app"), "ignored");
 });
+
+test("after account.deleted, opening, saving or a domain check never routes the address again; Mail's sessions end", async () => {
+  const { openMailbox, writeSnapshot } = await import("./mailbox.ts");
+  const { publishRoutes, readRouteState } = await import("./records.ts");
+  const cid = "cid_55555555-5555-4555-8555-555555555555";
+  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.created", detail: { username: "gone", displayName: "Gone", mailAddress: "gone@cumuluscloud.app" }, at }, "cumuluscloud.app"), "provisioned");
+  const tenant = (await tenantForCid(harness.db, cid))!;
+  await harness.db.query(`insert into "session" ("id", "expiresAt", "token", "updatedAt", "userId") values ('s-gone', now() + interval '1 day', 'tok-gone', now(), $1)`, [tenant]);
+  assert.equal(await findTenantByAddress(harness.db, "gone@cumuluscloud.app"), tenant);
+
+  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.deleted", detail: {}, at }, "cumuluscloud.app"), "unrouted");
+  assert.equal(await findTenantByAddress(harness.db, "gone@cumuluscloud.app"), null);
+  assert.equal((await harness.db.query(`select 1 from "session" where "userId" = $1`, [tenant])).length, 0, "Mail sign-in ended");
+
+  // A tab or token still around afterwards: open, save, domain check.
+  const profile = (await readSnapshot(harness.db, tenant)).me;
+  await openMailbox(harness.db, tenant, profile);
+  const snap = await readSnapshot(harness.db, tenant);
+  await writeSnapshot(harness.db, harness.storageFor, tenant, { ...snap, settings: { ...snap.settings!, closedAt: undefined } });
+  await publishRoutes(harness.db, tenant, (await readRouteState(harness.db, tenant))!);
+  assert.equal(await findTenantByAddress(harness.db, "gone@cumuluscloud.app"), null, "still unrouted");
+  assert.equal((await readSnapshot(harness.db, tenant)).settings?.closedAt, new Date(at).toISOString(), "a client can't clear it");
+});
