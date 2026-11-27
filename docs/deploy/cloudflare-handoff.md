@@ -69,7 +69,7 @@ Do not call `ensureBucket()` against this project. The bucket is already there. 
 
 ## 5. Migrations
 
-Checked 2026-11-26: the dedicated Mail database already has `0001` through `0021` recorded in `public._migrations`. Pending against this repo: `0022_factor_sessions.sql` and `0023_outbound_queue_created.sql`. Apply only those, and only against `percackrrhhreusasspr`.
+Checked 2026-11-26: the dedicated Mail database already has `0001` through `0021` recorded in `public._migrations`. Pending against this repo: `0022_factor_sessions.sql`, `0023_outbound_queue_created.sql` and `0024_save_sequences.sql`. Apply only those, and only against `percackrrhhreusasspr`.
 
 `0007_mail_rls.sql` is already applied. It enables row level security on every table in `cumulus_mail`, creates no policies, and revokes `anon` and `authenticated` on that schema when those roles exist. The table owner (the pooler login) keeps access. `FORCE ROW LEVEL SECURITY` is not set. `0001_auth.sql` and `0020_auth_lockdown.sql` are both applied. On Supabase, applying `0001` alone would leave the sign-in tables readable with the public anon key; `0020` closes that.
 
@@ -128,7 +128,7 @@ Discovery is `/.well-known/openid-configuration` under the issuer, and Mail read
 
 Confirm the account before any command that talks to Cloudflare. `npx wrangler whoami` must be the account that already owns `cumulus-mail`. If it is not, stop.
 
-1. Apply pending migrations `0022` and `0023` (section 5) after they are approved. Do not apply them to `ivqiskeziohbbtkcvlun`.
+1. Apply pending migrations `0022`, `0023` and `0024` (section 5) after they are approved. Do not apply them to `ivqiskeziohbbtkcvlun`.
 2. Confirm Hyperdrive id `d07a82ac7fcc42ac84dc6469140ef551` in `workers/email/wrangler.jsonc` and, if you are deploying the API, in `workers/api/wrangler.jsonc`. That config already exists. Do not create another one.
 3. Put the three inbound secrets (section 6). Do not put them in `[vars]` or in git.
 
@@ -186,7 +186,7 @@ Before deploying a new commit, CI's `worker-smoke` job has run that build in wor
 
 `node scripts/smoke.mjs` with no Supabase variables prints four skip lines (storage, database, oidc, inbound) and exits 0. CI runs it that way. It does not contact Supabase or the identity host.
 
-After `0022` and `0023` are applied and the bucket credentials are available:
+After `0022`, `0023` and `0024` are applied and the bucket credentials are available:
 
 ```sh
 export DATABASE_URL="postgresql://postgres.percackrrhhreusasspr:<database-password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"

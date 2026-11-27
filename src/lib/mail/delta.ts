@@ -15,6 +15,9 @@ export type MailboxDelta = {
   upsert: MailMessage[];
   remove: string[];
   fields?: Partial<Pick<MailboxSnapshot, DeltaField>>;
+  /** This tab's id and the number of the newest save it stands for (save-seq.ts). */
+  tab?: string;
+  seq?: number;
 };
 
 export const DELTA_FIELDS = ["aliases", "briefs", "tasks", "contacts", "signature", "rules", "settings"] as const;
