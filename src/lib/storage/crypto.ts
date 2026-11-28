@@ -1,5 +1,5 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { blindKeyFromEnv, isKeyring, keyringFromEnv, openWith, sealWith, type Keyring } from "./keyring.ts";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { blindKeyFromEnv, isKeyring, keyringFromEnv, openWith, sealWith, tenantKey as derivedKey, type Keyring } from "./keyring.ts";
 
 /** One key (v1 only, as before) or a keyring (key-id'd values; see keyring.ts). */
 export type Keys = Uint8Array | Keyring;
@@ -25,9 +25,9 @@ export function masterKeyFromEnv(env: Record<string, string | undefined> = proce
   }
 }
 
-/** Per-tenant AES-256 key. A different tenant id derives a different key. */
+/** Per-tenant AES-256 key. A different tenant id derives a different key. Kept once derived (keyring.ts). */
 export function tenantKey(masterKey: Uint8Array, tenantId: string, purpose = "blob"): Buffer {
-  return createHmac("sha256", Buffer.from(masterKey)).update(`cumulus-mail-${purpose}-v1\0${tenantId}`).digest();
+  return derivedKey(masterKey, tenantId, purpose);
 }
 
 function aadFor(purpose: string, tenantId: string): Buffer {

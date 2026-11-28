@@ -5,6 +5,7 @@ import type { MailQuery } from "./query.ts";
 import { withTransaction } from "./query.ts";
 import { dueHour, readMessages, readProfile } from "./records.ts";
 import { releaseDue, sanitizeExtra } from "./schedule.ts";
+import { indexMessageWords } from "./search.ts";
 
 export type ReleaseReport = {
   /** Tenants that had a candidate draft or undelivered sent message. */
@@ -116,6 +117,14 @@ async function releaseTenant(db: MailQuery, tenantId: string, now: number): Prom
          values ($1, $2, 'from', $3) on conflict do nothing`,
         [tenantId, message.id, blindIndex(tenantId, "from", me.email.slice(0, 320))],
       );
+      // The sender's search words follow the new sender too. A save keeps a row it writes back unchanged
+      // (records.ts replaceMailboxContents), so it no longer re-indexes a released message by accident.
+      await indexMessageWords(db, tenantId, {
+        ...message,
+        folder: "sent",
+        from: { name: me.name.slice(0, 200), email: me.email.slice(0, 320) },
+        extra: clean,
+      });
       return true;
     });
     if (moved) released += 1;

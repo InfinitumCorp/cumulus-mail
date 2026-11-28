@@ -29,7 +29,25 @@ function parseKey(raw: string): Uint8Array {
   return new Uint8Array(bytes);
 }
 
+/**
+ * Parsed keys, kept while the settings they came from are unchanged. Every sealed field and every search
+ * word used to parse the key setting again (a save of a 200-message mailbox did it tens of thousands of
+ * times). Keyed by the raw setting, so a changed MAIL_BLOB_KEYS or MAIL_BLIND_KEY is picked up at once.
+ * The cached values hold nothing that is not already in the process environment.
+ */
+let ringCache: { list: string; single: string; ring: Keyring } | null = null;
+let blindCache: { raw: string; key: Uint8Array } | null = null;
+
 export function keyringFromEnv(env: Record<string, string | undefined> = process.env): Keyring {
+  const listRaw = env.MAIL_BLOB_KEYS ?? "";
+  const singleRaw = env.MAIL_BLOB_KEY ?? "";
+  if (ringCache && ringCache.list === listRaw && ringCache.single === singleRaw) return ringCache.ring;
+  const ring = parseKeyring(env);
+  ringCache = { list: listRaw, single: singleRaw, ring };
+  return ring;
+}
+
+function parseKeyring(env: Record<string, string | undefined>): Keyring {
   const list = env.MAIL_BLOB_KEYS?.trim();
   if (!list) {
     const single = env.MAIL_BLOB_KEY?.trim();
@@ -54,8 +72,28 @@ export function isKeyring(value: unknown): value is Keyring {
   return typeof value === "object" && value !== null && "keys" in value && (value as Keyring).keys instanceof Map;
 }
 
-const tenantKey = (master: Uint8Array, tenantId: string, purpose: string) =>
-  createHmac("sha256", Buffer.from(master)).update(`cumulus-mail-${purpose}-v1\0${tenantId}`).digest();
+/**
+ * The per-tenant key for one purpose: HMAC-SHA256(master, "cumulus-mail-<purpose>-v1\0<tenant>"). Derived
+ * keys are kept per master key (at most DERIVED_MAX each, then the set starts over), because every sealed
+ * field and every blind-index value used to derive its key again. Callers must not modify the result.
+ */
+const DERIVED_MAX = 512;
+const derived = new WeakMap<Uint8Array, Map<string, Buffer>>();
+
+export function tenantKey(master: Uint8Array, tenantId: string, purpose = "blob"): Buffer {
+  const label = `cumulus-mail-${purpose}-v1\0${tenantId}`;
+  let keys = derived.get(master);
+  if (!keys) {
+    keys = new Map();
+    derived.set(master, keys);
+  }
+  const known = keys.get(label);
+  if (known) return known;
+  const key = createHmac("sha256", Buffer.from(master)).update(label).digest();
+  if (keys.size >= DERIVED_MAX) keys.clear();
+  keys.set(label, key);
+  return key;
+}
 
 /** The same AAD as v1, plus the key id for v2. */
 function aad(purpose: string, tenantId: string, keyId?: number): Buffer {
@@ -111,5 +149,8 @@ export function resealed(ring: Keyring, tenantId: string, sealed: Uint8Array, pu
 export function blindKeyFromEnv(env: Record<string, string | undefined> = process.env): Uint8Array {
   const raw = env.MAIL_BLIND_KEY?.trim() || env.MAIL_BLOB_KEY?.trim();
   if (!raw) throw new Error("MAIL_BLIND_KEY or MAIL_BLOB_KEY must be set");
-  return parseKey(raw);
+  if (blindCache?.raw === raw) return blindCache.key;
+  const key = parseKey(raw);
+  blindCache = { raw, key };
+  return key;
 }
