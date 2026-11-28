@@ -62,7 +62,9 @@ Publishing the DNS record is a manual step. This repository does not change DNS.
 - **Password-protected mail** keeps the link-only path. It is not sent by SMTP.
 - **No HTML part.** Messages are sent as UTF-8 `text/plain` with a base64 body. Attachments go as `multipart/mixed`, each base64 with an RFC 2231 file name.
 - **One recipient per SMTP transaction.** This keeps per-recipient retry state simple.
-- **Sockets.** On Node the SMTP client uses `node:net` / `node:tls`. The inbound worker uses Cloudflare's
-  `cloudflare:sockets` `connect()` (STARTTLS via `socket.startTls()`, implicit TLS via
-  `secureTransport: "on"`), in `src/lib/mail/outbound/cf-socket.ts`. Note that Workers block outbound
+- **Sockets.** On Node the SMTP client uses `node:net` / `node:tls`. On Workers, both the inbound worker
+  and the API worker (`CUMULUS_RUNTIME=cloudflare`, `defaultDial` in `src/lib/mail/outbound/config.ts`)
+  use Cloudflare's `cloudflare:sockets` `connect()` (STARTTLS via `socket.startTls()`, implicit TLS via
+  `secureTransport: "on"`), in `src/lib/mail/outbound/cf-socket.ts`. workerd's `node:tls` cannot upgrade a
+  `node:net` socket, so STARTTLS over `node:net` fails there. Note that Workers block outbound
   port 25; use a relay on 587 or 465.
