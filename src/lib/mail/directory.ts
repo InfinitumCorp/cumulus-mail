@@ -56,6 +56,9 @@ export async function claimOwnAddress(db: MailQuery, tenantId: string, address: 
     }
     if (addressBlind(row.tenant_id, email) === row.address_bidx) {
       await db.query(`delete from cumulus_mail.address_routes where domain = $1 and tenant_id = $2 and address_bidx = $3`, [domain, row.tenant_id, row.address_bidx]);
+      // And the alias itself, so a later save of that mailbox can't publish it again (say after this owner's
+      // account is deleted and its own route cleared).
+      await db.query(`delete from cumulus_mail.aliases where tenant_id = $1 and address_bidx = $2`, [row.tenant_id, row.address_bidx]);
     }
   }
   await publishAddress(db, tenantId, email);

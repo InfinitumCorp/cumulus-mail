@@ -19,7 +19,7 @@ test("a real mailbox's calendar starts empty: no sample meetings", async () => {
 });
 
 test("the preview mailbox keeps the sample calendar, as its own events", async () => {
-  const snapshot = await openMailbox(harness.db, "alex", profile("alex", "alex@cumuluscloud.app", "Alex Reid"));
+  const snapshot = await openMailbox(harness.db, "dev-user", profile("dev-user", "alex@cumuluscloud.app", "Alex Reid"));
   assert.ok(EVENTS.length > 0);
   assert.deepEqual(
     snapshot.settings?.events.map((event) => event.id),
