@@ -12,6 +12,8 @@
  *   request hung until workerd cancelled it (#216);
  * - a random value made at module load in code that server rendering evaluates (#213).
  *
+ * It also saves through `POST /api/mailbox/delta`: in order from one tab, then from five tabs at once.
+ *
  * The database gets every migration (`scripts/migrate.mjs`) and one throwaway user and session, which
  * are deleted at the end. Wrangler needs a password in the connection string. Nothing is deployed.
  */
@@ -156,6 +158,25 @@ try {
   console.log(`[smoke:worker] signed-in page render: ${pages}/3`);
   if (pages !== 3) fail("the signed-in page did not render");
 
+  // Writes: the delta route runs the same save path as a full save (writeSnapshot in one transaction on
+  // one connection of the request's pool, plus the per-tab save order). Same-site as a page would send it.
+  const save = (tab, seq) =>
+    fetch(`${base}/api/mailbox/delta`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "sec-fetch-site": "same-origin", origin: base },
+      body: JSON.stringify({ base: {}, upsert: [], remove: [], fields: { signature: `smoke ${tab} ${seq}` }, tab, seq }),
+    }).then((response) => response.status);
+  const tab = `smoke-${randomBytes(8).toString("hex")}`;
+  const sequential = [];
+  for (let seq = 1; seq <= 5; seq += 1) sequential.push(await save(tab, seq));
+  const applied = await db.query(`select seq from cumulus_mail.save_sequences where tenant_id = $1 and tab_id = $2`, [id, tab]).catch(() => ({ rows: [] }));
+  const savedSeq = Number(applied.rows[0]?.seq ?? 0);
+  console.log(`[smoke:worker] saves in order: ${sequential.filter((code) => code === 204).length}/5, newest applied ${savedSeq}`);
+  if (sequential.some((code) => code !== 204) || savedSeq !== 5) fail(`saves in order answered ${sequential.join(",")}, newest applied ${savedSeq}`);
+  const parallel = await Promise.all([1, 2, 3, 4, 5].map((n) => save(`smoke-${randomBytes(8).toString("hex")}`, n)));
+  console.log(`[smoke:worker] concurrent saves: ${parallel.filter((code) => code === 204).length}/5`);
+  if (parallel.some((code) => code !== 204)) fail(`concurrent saves answered ${parallel.join(",")}`);
+
   // Give the log a moment to flush, then look for what only workerd reports.
   await new Promise((resolve) => setTimeout(resolve, 500));
   const refused = [
@@ -165,7 +186,7 @@ try {
     "Error in renderToReadableStream",
   ].filter((text) => log.includes(text));
   for (const text of refused) fail(`workerd reported: ${text}`);
-  if (process.exitCode !== 1) console.log("[smoke:worker] ok: the Workers build answers every request, signed in and out");
+  if (process.exitCode !== 1) console.log("[smoke:worker] ok: the Workers build answers every request, signed in and out, and saves");
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
 } finally {
