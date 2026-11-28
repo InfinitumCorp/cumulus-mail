@@ -4,7 +4,14 @@ The full sequence, with every check and rollback, is `friday.md`; incidents are 
 This page holds **names only**: no value of any secret belongs in this repository.
 
 ## 1. Merge order (before go/no-go)
-Already on `main`: everything up to #219 (main bc6f9d6), including #214's transactions fix (through #217) and migration 0024 (#213). **Nothing is left to merge.** Production still serves the old page (checked 27 Nov).
+Already on `main`: everything up to #221, including #214's transactions fix (through #217) and migration 0024 (#213). Production still serves the old page (checked 27 Nov).
+
+**Still to merge before go** (branches from the Cumulus://ID cut-over work; InfinitumCorp/cumulus-id `docs/prs-to-open.md` has the PR texts). Each merges cleanly, in any order, and adds no migration:
+- `launch-cid-order` (this page and `friday.md`: step 5's workers.dev sign-in, and nexus Auto deploy must not redeploy the old Mail Worker after step 6).
+- `mail-alias-rules` (security: no system addresses or other people's names as aliases).
+- `mail-domain-ownership` (security: each mailbox's own TXT record for custom domains; addresses route only while verified).
+
+**Not before go:** #36 (`cumulus-id-issuer`, the new Cumulus://ID issuer in Mail) merges after both launches.
 
 **Before go:** Hyperdrive query caching off: `npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled` (see `friday.md`, go/no-go).
 
