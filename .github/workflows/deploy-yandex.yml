@@ -6,7 +6,8 @@
 # configures with required reviewers and (Settings > Environments):
 #   secrets  YC_SA_KEY_JSON   authorized key (JSON) of the deploy service account
 #   vars     YC_CLOUD_ID, YC_FOLDER_ID, YC_REGISTRY_ID, YC_SA_ID (runtime service account), YC_LOCKBOX_ID
-#            YC_LOCKBOX_OPTIONAL_KEYS (optional: "MAIL_BLOB_KEYS" during a key rotation, docs/ops/key-rotation.md)
+#            YC_LOCKBOX_OPTIONAL_KEYS (space-separated Lockbox keys to mount: MAIL_BLIND_KEY at launch, MAIL_BLOB_KEYS
+#            during a key rotation, MAIL_SMTP_PASSWORD and MAIL_DKIM_PRIVATE_KEY for outside mail, Stripe keys)
 # App secrets (BETTER_AUTH_SECRET, DATABASE_URL, MAIL_BLOB_KEY, MAIL_S3_*) stay in Yandex Lockbox and
 # are attached to the container by reference; they never pass through GitHub.
 name: Deploy RU (Yandex Cloud)
