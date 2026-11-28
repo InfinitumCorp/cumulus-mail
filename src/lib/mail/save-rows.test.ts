@@ -4,6 +4,7 @@ import { openMailbox, writeDelta, writeSnapshot } from "./mailbox.ts";
 import { readSnapshot, sameStoredMessage } from "./records.ts";
 import { searchMessages } from "./search.ts";
 import { diffSnapshot } from "./delta.ts";
+import { releaseScheduledMail } from "./release.ts";
 import { createHarness, profile } from "./test-support.ts";
 import type { MailMessage } from "./model.ts";
 
@@ -115,7 +116,7 @@ test("every stored field counts: a change to any of them rewrites the row", asyn
     { snoozeUntil: "2026-11-09T00:00:00.000Z" },
     { threadId: "y" },
     { headers: { "x-a": "1" } },
-    { delivery: { status: "sent", at: "2026-11-07T12:00:00.000Z" } as MailMessage["delivery"] },
+    { delivery: [{ email: "bea@cumuluscloud.app", status: "inside", detail: "delivered" }] },
   ];
   assert.equal(sameStoredMessage(base, { ...base }), true);
   for (const change of variants) assert.equal(sameStoredMessage({ ...base, ...change }, base), false, JSON.stringify(change));
@@ -159,4 +160,51 @@ test("a delta save applies on the mailbox read once and returns the stored resul
   const now = await rows(tenant);
   assert.equal(now.get("m-0")!.body, before.get("m-0")!.body);
   assert.notEqual(now.get("m-2")!.body, before.get("m-2")!.body);
+});
+
+test("a save still repairs older rows: plaintext fields are sealed, a missing search row is rebuilt", async () => {
+  const tenant = "rows-5";
+  const box = await seeded(tenant, 3);
+  // m-0 as stored before field sealing; m-1 without its word row (from before the search index).
+  await harness.db.query(`update cumulus_mail.messages set body = 'plain old body kiwi', subject = 'Old subject' where tenant_id = $1 and id = 'm-0'`, [tenant]);
+  await harness.db.query(`delete from cumulus_mail.message_words where tenant_id = $1 and message_id = 'm-1'`, [tenant]);
+  const read = await readSnapshot(harness.db, tenant);
+  assert.equal(read.messages.find((m) => m.id === "m-0")!.body, "plain old body kiwi");
+  const before = await rows(tenant);
+  await save(tenant, { ...box, ...read }, read.messages);
+  const now = await rows(tenant);
+  assert.match(now.get("m-0")!.body, /^cm1\./, "the plaintext body is sealed by the save");
+  assert.match(now.get("m-0")!.subject, /^cm1\./);
+  assert.equal(now.get("m-2")!.body, before.get("m-2")!.body, "a current row is still kept");
+  assert.deepEqual((await searchMessages(harness.db, tenant, "zebram1")).hits.map((h) => h.id), ["m-1"]);
+  assert.deepEqual((await searchMessages(harness.db, tenant, "kiwi")).hits.map((h) => h.id), ["m-0"]);
+});
+
+test("an id sent twice in one save is written, the last copy winning, as before", async () => {
+  const tenant = "rows-6";
+  const box = await seeded(tenant, 2);
+  const m0 = box.messages.find((m) => m.id === "m-0")!;
+  const after = await save(tenant, box, [m0, { ...m0, starred: true }, box.messages.find((m) => m.id === "m-1")!]);
+  assert.equal(after.messages.filter((m) => m.id === "m-0").length, 1);
+  assert.equal(after.messages.find((m) => m.id === "m-0")!.starred, true);
+});
+
+test("a released scheduled send is found by its new sender, not the draft's", async () => {
+  const tenant = "rows-7";
+  const box = await openMailbox(harness.db, tenant, profile(tenant, `${tenant}@cumuluscloud.app`, "Quilla"));
+  const draft = letter("d-1", {
+    folder: "drafts",
+    from: { name: "Placeholder", email: "placeholder@example.com" },
+    to: [{ name: "Bea", email: `${tenant}@cumuluscloud.app` }],
+    extra: { scheduleAt: new Date(Date.now() + 60_000).toISOString() },
+  });
+  const saved = await writeSnapshot(harness.db, harness.storageFor, tenant, { ...box, messages: [draft], knownIds: [] });
+  assert.equal(saved.messages[0]!.folder, "drafts");
+  await releaseScheduledMail(harness.db, harness.storageFor, Date.now() + 2 * 60_000);
+  const released = await readSnapshot(harness.db, tenant);
+  const sent = released.messages.find((m) => m.id === "d-1")!;
+  assert.equal(sent.folder, "sent");
+  // The send is to this mailbox, so its delivered copy (a new id) matches too.
+  assert.ok((await searchMessages(harness.db, tenant, "quilla")).hits.some((h) => h.id === "d-1"), "found by the new sender");
+  assert.deepEqual((await searchMessages(harness.db, tenant, "placeholder")).hits.map((h) => h.id), [], "not by the draft's");
 });

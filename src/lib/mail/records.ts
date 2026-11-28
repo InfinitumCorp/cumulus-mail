@@ -472,10 +472,13 @@ export async function replaceMailboxContents(
   // re-indexing every message on every save was most of a save's CPU. Every other message is deleted and
   // written again, as before. Without `previous` (a backup import) the whole mailbox is replaced.
   const stored = new Map((previous ?? []).map((message) => [message.id, message]));
+  const seen = new Map<string, number>();
+  for (const message of snapshot.messages) seen.set(message.id, (seen.get(message.id) ?? 0) + 1);
   const untouched = new Set<string>();
   for (const message of snapshot.messages) {
     const was = stored.get(message.id);
-    if (was && sameStoredMessage(message, was)) untouched.add(message.id);
+    // An id sent twice is written as before (the last copy wins), never kept.
+    if (was && seen.get(message.id) === 1 && sameStoredMessage(message, was)) untouched.add(message.id);
   }
   await withTransaction(db, async () => {
     if (guard) await assertStillNewest(db, tenantId, guard);
@@ -483,16 +486,28 @@ export async function replaceMailboxContents(
     const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain()))));
     await publishMailboxKey(db, tenantId, [snapshot.me?.email ?? "", ...snapshot.aliases], settings.mailboxKey?.publicKey ?? null);
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
-    await db.query(`delete from cumulus_mail.messages where tenant_id = $1 and not (id = any($2::text[]))`, [tenantId, [...untouched]]);
     if (untouched.size) {
-      // A row another request removed since this save read it is written again, as a full replace would.
-      const present = await db.query<{ id: string }>(
-        `select id from cumulus_mail.messages where tenant_id = $1 and id = any($2::text[])`,
+      // Only a row that is current is kept: every text field sealed, a snippet, and a search row. A full
+      // rewrite used to repair older rows on the next save (plaintext from before field sealing, no snippet
+      // or lookup rows from before 0004, no word row), and still does for those. A row another request
+      // removed since this save read it is written again, as a full replace would.
+      const current = await db.query<{ id: string }>(
+        `select m.id from cumulus_mail.messages m
+          where m.tenant_id = $1 and m.id = any($2::text[])
+            and m.from_name like 'cm1.%' and m.from_email like 'cm1.%' and m.to_json like 'cm1.%'
+            and m.cc_json like 'cm1.%' and m.subject like 'cm1.%' and m.body like 'cm1.%'
+            and m.snippet_enc like 'cm1.%'
+            and (m.delivery_json is null or m.delivery_json like 'cm1.%')
+            and (m.auth_json is null or m.auth_json like 'cm1.%')
+            and (m.headers_enc is null or m.headers_enc like 'cm1.%')
+            and (m.extras_enc is null or m.extras_enc like 'cm1.%')
+            and exists (select 1 from cumulus_mail.message_words w where w.tenant_id = m.tenant_id and w.message_id = m.id)`,
         [tenantId, [...untouched]],
       );
-      const still = new Set(present.map((row) => row.id));
-      for (const id of [...untouched]) if (!still.has(id)) untouched.delete(id);
+      const keep = new Set(current.map((row) => row.id));
+      for (const id of [...untouched]) if (!keep.has(id)) untouched.delete(id);
     }
+    await db.query(`delete from cumulus_mail.messages where tenant_id = $1 and not (id = any($2::text[]))`, [tenantId, [...untouched]]);
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.contacts where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.tasks where tenant_id = $1`, [tenantId]);
