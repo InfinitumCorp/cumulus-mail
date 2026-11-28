@@ -51,6 +51,15 @@ The copy is the same code as `main`, built as a plain Node server (`npm run buil
 4. **Settings.** Review `deploy/yandex/ru.env.example`. Its plain `KEY=VALUE` lines are passed to the
    container as environment variables by the deploy script. Optional features (Stripe, outbound SMTP,
    `MAIL_DEFAULT_PLAN`) stay off unless their settings are added.
+   Their secrets go in the same Lockbox secret, and are mounted only when the `production-ru` variable
+   `YC_LOCKBOX_OPTIONAL_KEYS` lists them, space-separated. The allowed names are:
+   - `MAIL_BLIND_KEY` (always at launch, the same value as `MAIL_BLOB_KEY`);
+   - `MAIL_BLOB_KEYS` (key rotation);
+   - `MAIL_SMTP_PASSWORD` and `MAIL_DKIM_PRIVATE_KEY` (outside mail);
+   - `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (billing).
+
+   Any other name stops the deploy. For outside mail, also add the plain lines to `ru.env.example`:
+   `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT`, `MAIL_SMTP_USER` and `MAIL_DKIM_SELECTOR`.
 5. **Build, push, deploy.** From a checkout of `main`:
 
    ```sh

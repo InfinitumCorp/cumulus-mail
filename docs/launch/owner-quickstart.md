@@ -1,5 +1,7 @@
 # Owner quickstart: Friday on one page
 
+> **Shipping today:** follow `docs/launch/ship-today.md` (commands, expected output, stop lines, `npm run verify:live`).
+
 The full sequence, with every check and rollback, is `friday.md`; incidents are `docs/ops/incident.md`.
 This page holds **names only**: no value of any secret belongs in this repository.
 
