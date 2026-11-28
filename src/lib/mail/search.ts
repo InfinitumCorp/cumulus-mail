@@ -57,11 +57,29 @@ export function wordBlind(tenantId: string, token: string): string {
   return blindIndex(tenantId, "word", token);
 }
 
-/** Replace a message's word row (one upsert). Called whenever the message is written. */
-export async function indexMessageWords(db: MailQuery, tenantId: string, message: MailMessage): Promise<void> {
+/**
+ * Replace a message's word row (one upsert). Called whenever the message is written. `memo` (one save's
+ * worth, never kept across requests) holds each word's blind value once: a full save indexes every
+ * message, and most words repeat across them.
+ */
+export async function indexMessageWords(
+  db: MailQuery,
+  tenantId: string,
+  message: MailMessage,
+  memo?: Map<string, string>,
+): Promise<void> {
   assertTenantId(tenantId);
   const words = messageWords(message);
-  const blind = (list: string[]) => list.map((word) => wordBlind(tenantId, word));
+  const once = (word: string) => {
+    if (!memo) return wordBlind(tenantId, word);
+    let value = memo.get(word);
+    if (value === undefined) {
+      value = wordBlind(tenantId, word);
+      memo.set(word, value);
+    }
+    return value;
+  };
+  const blind = (list: string[]) => list.map(once);
   const subject = blind(words.subject);
   const sender = blind(words.from);
   const recipients = blind(words.to);

@@ -124,7 +124,10 @@ export async function writeDelta(
   assertTenantId(tenantId);
   const tag = asSaveTag(delta.tab, delta.seq);
   if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
-  await writeSnapshot(db, storageFor, tenantId, applyDelta(await readSnapshot(db, tenantId), delta), { claimed: tag });
+  // The mailbox this delta is applied to is also what the write checks against, so it is read once; the
+  // write's own result is not needed either, since the snapshot is read again below.
+  const current = await readSnapshot(db, tenantId);
+  await storeSnapshot(db, storageFor, tenantId, applyDelta(current, delta), current, tag);
   // The full save this delta stands in for may still be on the wire, carrying an older copy of these
   // messages. Counting the delta as a server-side change makes that save lose for them, by the same rule
   // that keeps a scheduled release or a delivery report from being undone by an older tab.
@@ -150,7 +153,19 @@ export async function writeSnapshot(
     tag = asSaveTag(snapshot.saveTab, snapshot.saveSeq);
     if (tag && !(await claimSave(db, tenantId, tag))) return readSnapshot(db, tenantId);
   }
-  const current = await readSnapshot(db, tenantId);
+  await storeSnapshot(db, storageFor, tenantId, snapshot, await readSnapshot(db, tenantId), tag);
+  return readSnapshot(db, tenantId);
+}
+
+/** The write itself, against `current` (the mailbox as read at the start of this save). */
+async function storeSnapshot(
+  db: MailQuery,
+  storageFor: TenantStorage,
+  tenantId: string,
+  snapshot: MailboxSnapshot,
+  current: MailboxSnapshot,
+  tag: SaveTag | undefined,
+): Promise<void> {
   const limits = current.me.limits ?? limitsFor(DEFAULT_PLAN);
   if (snapshot.messages.length > limits.messages) throw new Error("Mailbox is too large");
   const existing = await loadAttachmentMap(db, tenantId);
@@ -273,14 +288,14 @@ export async function writeSnapshot(
   const before = await blobIds(db, tenantId);
   try {
     // Checked again under the row lock: a newer save from this tab may have landed while this one ran.
-    await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw, serverRevs, tag);
+    await replaceMailboxContents(db, tenantId, next, storedFiles, keptRaw, serverRevs, tag, current.messages);
   } catch (error) {
-    if (error instanceof StaleSaveError) return readSnapshot(db, tenantId);
+    // Overtaken by a newer save from this tab: nothing is written, and the caller reads what stands.
+    if (error instanceof StaleSaveError) return;
     throw error;
   }
   await deliverPending(db, storageFor, tenantId);
   await discardUnreferenced(db, storage, tenantId, before);
-  return readSnapshot(db, tenantId);
 }
 
 async function blobIds(db: MailQuery, tenantId: string): Promise<Set<string>> {

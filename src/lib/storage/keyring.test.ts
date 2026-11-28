@@ -64,3 +64,32 @@ test("blind indexes stay on a stable key that does not rotate with MAIL_BLOB_KEY
   assert.deepEqual(blindKeyFromEnv({ MAIL_BLOB_KEY: K0, MAIL_BLOB_KEYS: `1:${K1},0:${K0}` }), new Uint8Array(Buffer.from(K0, "hex")));
   assert.deepEqual(blindKeyFromEnv({ MAIL_BLIND_KEY: K1, MAIL_BLOB_KEY: K0 }), new Uint8Array(Buffer.from(K1, "hex")));
 });
+
+test("parsed and derived keys are kept, and a changed key setting is picked up at once", async () => {
+  const { tenantKey } = await import("./keyring.ts");
+  const { createHmac } = await import("node:crypto");
+  const a = "11".repeat(32);
+  const b = "22".repeat(32);
+  const ringA = keyringFromEnv({ MAIL_BLOB_KEY: a });
+  assert.equal(keyringFromEnv({ MAIL_BLOB_KEY: a }), ringA, "same setting, same parsed ring");
+  const ringB = keyringFromEnv({ MAIL_BLOB_KEY: b });
+  assert.notEqual(ringB, ringA);
+  assert.equal(Buffer.from(ringB.keys.get(0)!).toString("hex"), b);
+  const rotated = keyringFromEnv({ MAIL_BLOB_KEY: b, MAIL_BLOB_KEYS: `1:${a},0:${b}` });
+  assert.equal(rotated.current, 1);
+  assert.equal(rotated.explicit, true);
+  assert.equal(Buffer.from(blindKeyFromEnv({ MAIL_BLOB_KEY: a })).toString("hex"), a);
+  assert.equal(Buffer.from(blindKeyFromEnv({ MAIL_BLOB_KEY: a, MAIL_BLIND_KEY: b })).toString("hex"), b);
+  // The kept derivation is exactly the HMAC it stands for, per master, tenant and purpose.
+  const master = ringA.keys.get(0)!;
+  const expected = (m: Uint8Array, t: string, p: string) =>
+    createHmac("sha256", Buffer.from(m)).update(`cumulus-mail-${p}-v1\0${t}`).digest("hex");
+  for (const [tenant, purpose] of [["t1", "blob"], ["t1", "meta"], ["t2", "blob"]] as const) {
+    assert.equal(tenantKey(master, tenant, purpose).toString("hex"), expected(master, tenant, purpose));
+    assert.equal(tenantKey(master, tenant, purpose).toString("hex"), expected(master, tenant, purpose));
+  }
+  assert.equal(tenantKey(ringB.keys.get(0)!, "t1", "blob").toString("hex"), expected(ringB.keys.get(0)!, "t1", "blob"));
+  // Past the per-master limit the set starts over and still derives correctly.
+  for (let i = 0; i < 600; i++) tenantKey(master, `many-${i}`, "blob");
+  assert.equal(tenantKey(master, "t1", "blob").toString("hex"), expected(master, "t1", "blob"));
+});

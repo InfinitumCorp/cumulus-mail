@@ -257,21 +257,63 @@ export async function readServerRevs(db: MailQuery, tenantId: string): Promise<R
   return revs;
 }
 
+/**
+ * The plaintext values insertMessage writes for a message, before sealing, in one place. Two messages
+ * with the same values are stored identically, which is how a full save knows it can leave a row alone
+ * (replaceMailboxContents `previous`).
+ */
+function messagePlain(message: MailMessage) {
+  const subject = message.subject.slice(0, 500);
+  const body = message.body;
+  const snippet = messageSnippet(body).slice(0, 180);
+  const fromEmail = message.from.email.slice(0, 320);
+  const headerJson = message.headers ? JSON.stringify(message.headers).slice(0, 32_000) : "";
+  const extra = sanitizeExtra(message.extra);
+  return {
+    threadId: message.threadId,
+    folder: asFolder(message.folder),
+    fromName: message.from.name.slice(0, 200),
+    fromEmail,
+    to: JSON.stringify(message.to),
+    cc: JSON.stringify(message.cc),
+    subject,
+    body,
+    at: message.at,
+    unread: message.unread,
+    starred: message.starred,
+    labels: JSON.stringify(message.labels),
+    snoozeUntil: message.snoozeUntil ?? null,
+    delivery: message.delivery ? JSON.stringify(message.delivery) : null,
+    auth: message.auth ? JSON.stringify(message.auth) : null,
+    snippet,
+    headerJson,
+    extra: extra ? JSON.stringify(extra) : null,
+    due: dueHour(message),
+  };
+}
+
+/** True when writing `next` would store exactly what is stored for `stored` (read back by readSnapshot). */
+export function sameStoredMessage(next: MailMessage, stored: MailMessage): boolean {
+  if (next.id !== stored.id) return false;
+  const a = messagePlain(next);
+  const b = messagePlain(stored);
+  for (const key of Object.keys(a) as Array<keyof typeof a>) if (a[key] !== b[key]) return false;
+  return true;
+}
+
 export async function insertMessage(
   db: MailQuery,
   tenantId: string,
   message: MailMessage,
   rawKey: string | null,
   serverRev = 0,
+  wordMemo?: Map<string, string>,
 ): Promise<void> {
   assertTenantId(tenantId);
   assertId(message.id, "message id");
   assertId(message.threadId, "thread id");
-  const subject = message.subject.slice(0, 500);
-  const body = message.body;
-  const snippet = messageSnippet(body).slice(0, 180);
-  const fromEmail = message.from.email.slice(0, 320);
-  const headerJson = message.headers ? JSON.stringify(message.headers).slice(0, 32_000) : "";
+  const plain = messagePlain(message);
+  const { subject, snippet, fromEmail } = plain;
   await db.query(
     `insert into cumulus_mail.messages (
        tenant_id, id, thread_id, folder, from_name, from_email, to_json, cc_json, subject, body,
@@ -305,26 +347,26 @@ export async function insertMessage(
     [
       tenantId,
       message.id,
-      message.threadId,
-      asFolder(message.folder),
-      sealText(tenantId, message.from.name.slice(0, 200)),
+      plain.threadId,
+      plain.folder,
+      sealText(tenantId, plain.fromName),
       sealText(tenantId, fromEmail),
-      sealText(tenantId, JSON.stringify(message.to)),
-      sealText(tenantId, JSON.stringify(message.cc)),
+      sealText(tenantId, plain.to),
+      sealText(tenantId, plain.cc),
       sealText(tenantId, subject),
-      sealText(tenantId, body),
-      message.at,
-      message.unread,
-      message.starred,
-      JSON.stringify(message.labels),
-      message.snoozeUntil ?? null,
-      message.delivery ? sealText(tenantId, JSON.stringify(message.delivery)) : null,
+      sealText(tenantId, plain.body),
+      plain.at,
+      plain.unread,
+      plain.starred,
+      plain.labels,
+      plain.snoozeUntil,
+      plain.delivery ? sealText(tenantId, plain.delivery) : null,
       rawKey,
-      message.auth ? sealText(tenantId, JSON.stringify(message.auth)) : null,
+      plain.auth ? sealText(tenantId, plain.auth) : null,
       sealText(tenantId, snippet),
-      headerJson ? sealText(tenantId, headerJson) : null,
-      sealExtra(tenantId, message.extra),
-      dueHour(message),
+      plain.headerJson ? sealText(tenantId, plain.headerJson) : null,
+      plain.extra ? sealText(tenantId, plain.extra) : null,
+      plain.due,
       Math.max(0, Math.trunc(serverRev)),
     ],
   );
@@ -350,7 +392,7 @@ export async function insertMessage(
     );
   }
   // Encrypted word index for server-side search (search.ts): one upsert into message_words.
-  await indexMessageWords(db, tenantId, message);
+  await indexMessageWords(db, tenantId, message, wordMemo);
 }
 
 export async function readMessages(db: MailQuery, tenantId: string): Promise<MailMessage[]> {
@@ -422,15 +464,35 @@ export async function replaceMailboxContents(
   rawKeys: Map<string, string | null>,
   revs: Record<string, number> = {},
   guard?: SaveTag,
+  previous?: MailMessage[],
 ): Promise<void> {
   assertTenantId(tenantId);
+  // `previous`: the messages as stored when the save read them (writeSnapshot). A message the save writes
+  // back exactly as stored keeps its row, and with it its search and lookup index rows: re-sealing and
+  // re-indexing every message on every save was most of a save's CPU. Every other message is deleted and
+  // written again, as before. Without `previous` (a backup import) the whole mailbox is replaced.
+  const stored = new Map((previous ?? []).map((message) => [message.id, message]));
+  const untouched = new Set<string>();
+  for (const message of snapshot.messages) {
+    const was = stored.get(message.id);
+    if (was && sameStoredMessage(message, was)) untouched.add(message.id);
+  }
   await withTransaction(db, async () => {
     if (guard) await assertStillNewest(db, tenantId, guard);
     const previous = await readSettings(db, tenantId);
     const settings = await acceptMailboxKey(keepServerNotes(previous, keepVerified(previous, sanitizeSettings(snapshot.settings, mailDomain()))));
     await publishMailboxKey(db, tenantId, [snapshot.me?.email ?? "", ...snapshot.aliases], settings.mailboxKey?.publicKey ?? null);
     await db.query(`delete from cumulus_mail.attachments where tenant_id = $1`, [tenantId]);
-    await db.query(`delete from cumulus_mail.messages where tenant_id = $1`, [tenantId]);
+    await db.query(`delete from cumulus_mail.messages where tenant_id = $1 and not (id = any($2::text[]))`, [tenantId, [...untouched]]);
+    if (untouched.size) {
+      // A row another request removed since this save read it is written again, as a full replace would.
+      const present = await db.query<{ id: string }>(
+        `select id from cumulus_mail.messages where tenant_id = $1 and id = any($2::text[])`,
+        [tenantId, [...untouched]],
+      );
+      const still = new Set(present.map((row) => row.id));
+      for (const id of [...untouched]) if (!still.has(id)) untouched.delete(id);
+    }
     await db.query(`delete from cumulus_mail.aliases where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.contacts where tenant_id = $1`, [tenantId]);
     await db.query(`delete from cumulus_mail.tasks where tenant_id = $1`, [tenantId]);
@@ -449,8 +511,11 @@ export async function replaceMailboxContents(
         displayName ? sealText(tenantId, displayName) : null,
       ],
     );
+    // One save's word values (search.ts), for this tenant only; dropped when the save ends.
+    const wordMemo = new Map<string, string>();
     for (const message of snapshot.messages) {
-      await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null, revs[message.id] ?? 0);
+      if (untouched.has(message.id)) continue;
+      await insertMessage(db, tenantId, message, rawKeys.get(message.id) ?? null, revs[message.id] ?? 0, wordMemo);
     }
     for (const entry of files) {
       await insertAttachment(db, tenantId, entry.messageId, entry.file);
@@ -548,12 +613,6 @@ export function dueHour(message: Pick<MailMessage, "folder" | "extra">): string 
   const at = message.extra?.scheduleAt ? Date.parse(message.extra.scheduleAt) : Number.NaN;
   if (!Number.isFinite(at)) return "infinity";
   return new Date(Math.floor(at / 3_600_000) * 3_600_000).toISOString();
-}
-
-function sealExtra(tenantId: string, extra: MessageExtra | undefined): string | null {
-  const clean = sanitizeExtra(extra);
-  if (!clean) return null;
-  return sealText(tenantId, JSON.stringify(clean));
 }
 
 function sealPrivate(tenantId: string, contact: Contact): string | null {
