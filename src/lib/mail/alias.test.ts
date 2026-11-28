@@ -44,3 +44,27 @@ test("a backup restore applies the same rule: no system addresses or other peopl
   assert.deepEqual(allowedAliases(["security@cumuluscloud.app", "alex+old@cumuluscloud.app", "kept.one@cumuluscloud.app"], ["kept.one@cumuluscloud.app"], ME, [], D),
     ["alex+old@cumuluscloud.app", "kept.one@cumuluscloud.app"], "valid new ones and ones the mailbox already had");
 });
+
+test("a mailbox's own address beats another mailbox's route for it (a name taken before its Cumulus ID existed)", async () => {
+  const { createHarness, profile } = await import("./test-support.ts");
+  const { openMailbox, writeSnapshot } = await import("./mailbox.ts");
+  const { readSnapshot } = await import("./records.ts");
+  const { findTenantByAddress, publishAddress } = await import("./directory.ts");
+  const harness = await createHarness();
+  try {
+    const { db, storageFor } = harness;
+    await openMailbox(db, "sq-mallory", profile("sq-mallory", "mallory@cumuluscloud.app", "M"));
+    // The rule refuses bob@ as an alias now; a route like this could only come from before it.
+    await publishAddress(db, "sq-mallory", "bob@cumuluscloud.app");
+    assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-mallory");
+    // Bob's mailbox is made (account.created, or his first sign-in): the address is his.
+    await openMailbox(db, "sq-bob", profile("sq-bob", "bob@cumuluscloud.app", "Bob"));
+    assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-bob");
+    // Saves on either side don't hand it back.
+    await writeSnapshot(db, storageFor, "sq-mallory", { ...(await readSnapshot(db, "sq-mallory")), signature: "m" });
+    await writeSnapshot(db, storageFor, "sq-bob", { ...(await readSnapshot(db, "sq-bob")), signature: "b" });
+    assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-bob");
+  } finally {
+    await harness.close();
+  }
+});

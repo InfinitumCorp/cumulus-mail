@@ -2,7 +2,7 @@ import { defaultSettings } from "./settings.ts";
 import { limitsFor, newMailboxPlan, planLabel } from "./plans.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { mailboxAddress } from "./domain.ts";
-import { addressBlind, publishAddress } from "./directory.ts";
+import { addressBlind, claimOwnAddress, publishAddress } from "./directory.ts";
 import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import { EVENTS, SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
@@ -114,7 +114,7 @@ export async function provisionMailbox(
       startPlan,
     ],
   );
-  await publishAddress(db, tenantId, email);
+  await claimOwnAddress(db, tenantId, email);
   if (email === previewAddress()) await ensureDemoDirectory(db);
   const claimed = await db.query<{ tenant_id: string }>(
     `update cumulus_mail.mailboxes set seeded = true where tenant_id = $1 and seeded = false returning tenant_id`,
