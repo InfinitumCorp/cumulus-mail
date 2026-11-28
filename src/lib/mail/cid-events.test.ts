@@ -195,10 +195,14 @@ test("Mail's bearer sign-in resolves its tenant through tenantForBearer (not the
   assert.doesNotMatch(branch, /const tenantId = await tenantFromCumulusToken\(/);
 });
 
-test("account.deleted that overtakes its account.created leaves the mailbox closed, and the late created routes nothing", async () => {
-  const cid = "cid_88888888-8888-4888-8888-888888888888";
-  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.deleted", detail: { username: "early" }, at }, "cumuluscloud.app"), "unrouted");
-  assert.equal(await findTenantByAddress(harness.db, "early@cumuluscloud.app"), null);
-  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.created", detail: { username: "early", displayName: "Early", mailAddress: "early@cumuluscloud.app" }, at }, "cumuluscloud.app"), "provisioned");
-  assert.equal(await findTenantByAddress(harness.db, "early@cumuluscloud.app"), null, "still closed");
+test("account.deleted for a cid Mail doesn't know never links by email or closes anyone else's mailbox", async () => {
+  // Carol has a mailbox; an event for some other cid carrying her username must leave it alone.
+  const carolCid = "cid_99999999-9999-4999-8999-999999999999";
+  assert.equal(await handleCidEvent(harness.db, { cid: carolCid, type: "account.created", detail: { username: "carol", displayName: "Carol", mailAddress: "carol@cumuluscloud.app" }, at }, "cumuluscloud.app"), "provisioned");
+  const carol = await tenantForCid(harness.db, carolCid);
+  const other = "cid_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  assert.equal(await handleCidEvent(harness.db, { cid: other, type: "account.deleted", detail: { username: "carol" }, at }, "cumuluscloud.app"), "no-mailbox");
+  assert.equal(await tenantForCid(harness.db, other), null, "not linked");
+  assert.equal(await findTenantByAddress(harness.db, "carol@cumuluscloud.app"), carol, "still routed");
 });
+
