@@ -1,5 +1,8 @@
 # Launch day: the ordered sequence (about 2 hours)
 
+> **Shipping today? Start with `docs/launch/ship-today.md`:** the exact commands in order, what each must print,
+> when to stop, what to have ready, and `npm run verify:live` after each deploy. This page is the long version.
+
 One page to follow on launch day, top to bottom. Every step has the command, what you should see, and how
 to undo it. The details behind each step are in the docs linked from it; this page does not replace them,
 it puts them in order.
