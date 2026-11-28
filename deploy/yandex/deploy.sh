@@ -39,10 +39,12 @@ for key in BETTER_AUTH_SECRET DATABASE_URL MAIL_BLOB_KEY MAIL_S3_ACCESS_KEY_ID M
   secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}")
 done
 # Lockbox keys mounted only when listed (a missing key fails the deploy): space-separated, from
-# MAIL_BLOB_KEYS and MAIL_BLIND_KEY (key rotation, docs/ops/key-rotation.md).
+# MAIL_BLOB_KEYS and MAIL_BLIND_KEY (key rotation, docs/ops/key-rotation.md), MAIL_SMTP_PASSWORD and
+# MAIL_DKIM_PRIVATE_KEY (outside mail, docs/deploy/outbound-smtp.md), STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET (billing). Their plain settings (MAIL_SMTP_HOST, ...) go in ru.env.example.
 for key in ${LOCKBOX_OPTIONAL_KEYS:-}; do
   case "${key}" in
-    MAIL_BLOB_KEYS|MAIL_BLIND_KEY) secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}") ;;
+    MAIL_BLOB_KEYS|MAIL_BLIND_KEY|MAIL_SMTP_PASSWORD|MAIL_DKIM_PRIVATE_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET) secret_args+=(--secret "environment-variable=${key},id=${LOCKBOX_ID},key=${key}") ;;
     *) echo "LOCKBOX_OPTIONAL_KEYS: ${key} is not an optional key" >&2; exit 1 ;;
   esac
 done
