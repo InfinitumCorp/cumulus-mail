@@ -20,6 +20,12 @@ import { handleEmail } from "../../../workers/email/src/index.ts";
 const databaseUrl = process.env.MAIL_RUNTIME_DATABASE_URL?.trim();
 const s3Endpoint = process.env.MAIL_S3_ENDPOINT?.trim();
 const ready = Boolean(databaseUrl && s3Endpoint);
+// This test re-applies every migration and writes mailboxes. Never point it at production
+// (the shared "Infinitum Corp" Supabase project). Use the "cumulus-mail" test project.
+const productionRef = "ivqiskeziohbbtkcvlun";
+if ([databaseUrl, s3Endpoint].some((value) => value?.includes(productionRef))) {
+  throw new Error("Refusing to run the inbound integration test against the production Supabase project");
+}
 
 if (!process.env.MAIL_BLOB_KEY) process.env.MAIL_BLOB_KEY = "ab".repeat(32);
 
@@ -46,7 +52,9 @@ test(
       bucket: process.env.MAIL_S3_BUCKET?.trim() || "cumulus-mail",
       accessKeyId: process.env.MAIL_S3_ACCESS_KEY_ID?.trim() || "cumulus",
       secretAccessKey: process.env.MAIL_S3_SECRET_ACCESS_KEY?.trim() || "cumulussecret",
-      loopbackOnly: true,
+      // MinIO/SeaweedFS in CI stay loopback-only. MAIL_S3_LOOPBACK_ONLY=0 (with
+      // CUMULUS_ALLOW_SUPABASE=1) runs it against Supabase Storage's S3 endpoint.
+      loopbackOnly: process.env.MAIL_S3_LOOPBACK_ONLY !== "0",
     });
     await driver.ensureBucket();
     const storageFor: TenantStorage = (tenantId) => openTenantStorage(tenantId, driver);
