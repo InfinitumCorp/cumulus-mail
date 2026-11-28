@@ -114,7 +114,7 @@ test("the server enforces the address limit, but keeps mailboxes that already we
     const me = profile("alias-cap", "cap@cumuluscloud.app", "Cap");
     await openMailbox(harness.db, "alias-cap", me);
     const base = await readSnapshot(harness.db, "alias-cap");
-    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap.alias${index}@cumuluscloud.app`);
+    const many = (n: number) => Array.from({ length: n }, (_, index) => `cap+alias${index}@cumuluscloud.app`);
     const saved = await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...base, aliases: many(MAX_ALIASES) });
     assert.equal(saved.aliases.length, MAX_ALIASES);
     await assert.rejects(
@@ -123,7 +123,7 @@ test("the server enforces the address limit, but keeps mailboxes that already we
     );
     assert.equal((await readSnapshot(harness.db, "alias-cap")).aliases.length, MAX_ALIASES);
     // Duplicates and the mailbox's own address do not count toward the limit.
-    const dupes = [...many(MAX_ALIASES), "CAP.ALIAS0@cumuluscloud.app", me.email];
+    const dupes = [...many(MAX_ALIASES), "CAP+ALIAS0@cumuluscloud.app", me.email];
     assert.equal((await writeSnapshot(harness.db, harness.storageFor, "alias-cap", { ...saved, aliases: dupes })).aliases.length, MAX_ALIASES);
 
     // A mailbox stored with more than the limit before this check existed can still save, but not grow.
@@ -319,16 +319,16 @@ test("an older client without knownRevs still overwrites (unchanged behaviour); 
   for (const bad of [null, [], { a: -1 }, { a: 1.5 }, { a: "2" }]) assert.equal(isRevMap(bad), false, JSON.stringify(bad));
 });
 
-test("an alias must be on the platform domain (not a reserved name) or on one of the mailbox's verified domains", async () => {
+test("an alias must be the owner's name plus a word (or Mail's random form) on the platform domain, or on a verified domain", async () => {
   const { readSettings, writeSettings } = await import("./records.ts");
   const { db, storageFor } = harness;
   const base = await openMailbox(db, "alias-own", profile("alias-own", "alias.own@cumuluscloud.app", "Own"));
-  const saved = await writeSnapshot(db, storageFor, "alias-own", { ...base, aliases: ["own.two@cumuluscloud.app"] });
-  assert.deepEqual(saved.aliases, ["own.two@cumuluscloud.app"]);
+  const saved = await writeSnapshot(db, storageFor, "alias-own", { ...base, aliases: ["alias.own+two@cumuluscloud.app"] });
+  assert.deepEqual(saved.aliases, ["alias.own+two@cumuluscloud.app"]);
   for (const claim of ["postmaster@cumuluscloud.app", "abuse+x@cumuluscloud.app", "ceo@acme.example", "x@gmail.com"]) {
     await assert.rejects(
       () => writeSnapshot(db, storageFor, "alias-own", { ...saved, aliases: [...saved.aliases, claim] }),
-      /verified domains/,
+      /plus and a word|verify/,
       claim,
     );
   }
@@ -339,7 +339,7 @@ test("an alias must be on the platform domain (not a reserved name) or on one of
     domains: [{ domain: "own.example", catchAll: false, verified: false, txtName: "_cumulus.own.example", txtValue: "x" }],
   });
   const unverified = await readSnapshot(db, "alias-own");
-  await assert.rejects(() => writeSnapshot(db, storageFor, "alias-own", { ...unverified, aliases: ["me@own.example"] }), /verified domains/);
+  await assert.rejects(() => writeSnapshot(db, storageFor, "alias-own", { ...unverified, aliases: ["me@own.example"] }), /plus and a word|verify/);
   await writeSettings(db, "alias-own", {
     ...settings,
     domains: [{ domain: "own.example", catchAll: false, verified: true, txtName: "_cumulus.own.example", txtValue: "x" }],

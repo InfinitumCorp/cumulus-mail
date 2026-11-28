@@ -4,6 +4,7 @@ import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 import { DEFAULT_THEME, THEMES, type Theme } from "../theme-names.ts";
+import { aliasProblem } from "./alias.ts";
 
 export type CustomDomain = {
   domain: string;
@@ -50,6 +51,14 @@ export type MailSettings = {
   unsubscribed: Unsubscribed[];
   /** A new mailbox shows "Finish setting up" until its owner completes or dismisses it. */
   setupPending: boolean;
+  /**
+   * Server-held: recent renames from Cumulus://ID (profile.updated), newest last: the name each replaced and the
+   * event's time. For a day, a save from a tab still showing one of those names doesn't put it back; an event older
+   * than the newest is ignored.
+   */
+  renames?: Array<{ from: string; at: string }>;
+  /** Server-held: when the Cumulus://ID behind this mailbox was deleted. Its addresses are never routed again. */
+  closedAt?: string;
   /** Colour scheme: light (default, the shell as it has always looked), dark, or follow the device. */
   theme: Theme;
   /**
@@ -122,12 +131,14 @@ function asDomain(value: unknown, platformDomain: string): CustomDomain | null {
   const domain = cleanDomain(text(row.domain, 253), platformDomain);
   if (!domain) return null;
   const txt = expectedTxt(domain);
+  // The value is the mailbox's own (set by the server, domain-ownership.ts); keep it, never the old shared one.
+  const own = typeof row.txtValue === "string" && /^cumulus-mail-verify=[0-9a-f]{32}$/.test(row.txtValue) ? row.txtValue : "";
   return {
     domain,
     catchAll: row.catchAll === true,
     verified: row.verified === true,
     txtName: txt.name,
-    txtValue: txt.value,
+    txtValue: own,
   };
 }
 
@@ -249,6 +260,15 @@ export function sanitizeSettings(value: unknown, platformDomain = "cumuluscloud.
       : [],
     setupPending: row.setupPending === true,
     theme: THEMES.includes(row.theme as Theme) ? (row.theme as Theme) : DEFAULT_THEME,
+    ...(Array.isArray(row.renames)
+      ? {
+          renames: row.renames
+            .filter((r) => r && typeof r.from === "string" && typeof r.at === "string" && !Number.isNaN(Date.parse(r.at)))
+            .map((r) => ({ from: text(r.from, 120), at: new Date(r.at).toISOString() }))
+            .slice(-5),
+        }
+      : {}),
+    ...(typeof row.closedAt === "string" && !Number.isNaN(Date.parse(row.closedAt)) ? { closedAt: new Date(row.closedAt).toISOString() } : {}),
     ...(asMailboxKey(row.mailboxKey) ? { mailboxKey: asMailboxKey(row.mailboxKey) } : {}),
     ...(b64url(row.indexSalt, 16, 64) ? { indexSalt: b64url(row.indexSalt, 16, 64) } : {}),
     ...(typeof row.clientIndex === "string" && row.clientIndex.startsWith("cmh1.") && row.clientIndex.length < 120_000
@@ -270,9 +290,11 @@ export function noteUnsubscribed(
   };
 }
 
-export function addressAllowed(email: string, settings: MailSettings, platformDomain: string): string | null {
+export function addressAllowed(email: string, settings: MailSettings, platformDomain: string, ownAddress?: string): string | null {
   const normalized = email.trim().toLowerCase();
   if (!validEmail(normalized)) return "Enter a real address.";
+  // The server's alias rule (alias.ts), checked here first so a refused address never reaches a save.
+  if (ownAddress) return aliasProblem(normalized, ownAddress, settings.domains.filter((d) => d.verified).map((d) => d.domain), platformDomain);
   const domain = normalized.split("@")[1] ?? "";
   if (domain === platformDomain) return null;
   if (settings.domains.some((item) => item.domain === domain && item.verified)) return null;
@@ -319,7 +341,15 @@ export function keepServerNotes(previous: MailSettings, next: MailSettings): Mai
     if (!prior || item.at > prior.at) byKey.set(item.key, item);
   }
   const unsubscribed = [...byKey.values()].sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-200);
-  return { ...next, autoReply: { ...next.autoReply, sent }, unsubscribed };
+  // renames and closedAt are the server's alone: whatever a client sends, the stored ones stay.
+  const { renames: _client, closedAt: _closed, ...rest } = next;
+  return {
+    ...rest,
+    autoReply: { ...next.autoReply, sent },
+    unsubscribed,
+    ...(previous.renames ? { renames: previous.renames } : {}),
+    ...(previous.closedAt ? { closedAt: previous.closedAt } : {}),
+  };
 }
 
 /** A domain stays verified only when the stored row already was, and its TXT value did not change. */
@@ -338,4 +368,16 @@ export function recordAudit(settings: MailSettings, action: string, detail: stri
     ...settings,
     audit: [...settings.audit, { at: now.toISOString(), action, detail }],
   });
+}
+
+/**
+ * The display name a full save keeps: what the client sent, unless it is a name a Cumulus://ID rename replaced in
+ * the last day (a tab still showing the old one) and the stored name differs. Decided under the save's row lock
+ * (records.ts replaceMailboxContents), so a rename landing while a save runs isn't overwritten.
+ */
+export function keptDisplayName(sent: string, stored: string, renames: MailSettings["renames"], now = Date.now()): string {
+  if (!sent) return stored;
+  if (sent === stored) return sent;
+  const replacedLately = (renames ?? []).some((r) => r.from === sent && now - Date.parse(r.at) < 24 * 60 * 60 * 1000);
+  return replacedLately ? stored : sent;
 }

@@ -5,8 +5,8 @@ import { sealText } from "./field-crypto.ts";
 import { applyRules, isCumulus } from "./logic.ts";
 import type { DeliveryHop, MailMessage, MailRule, Person } from "./model.ts";
 import { issueProtectedLink, PROTECTED_LINK_MAX_MS } from "./protect-store.ts";
-import type { MailQuery } from "./query.ts";
-import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, readProfile, readSettings, writeDelivery, writeSettings, type StoredAttachment } from "./records.ts";
+import { withTransaction, type MailQuery } from "./query.ts";
+import { insertAttachment, insertMessage, loadAttachmentMap, readMessages, lockMailbox, readProfile, readSettings, writeDelivery, writeSettings, type StoredAttachment } from "./records.ts";
 import { isHeld } from "./schedule.ts";
 import { applySieve } from "./sieve.ts";
 import { noteAutoReply, shouldAutoReply } from "./settings.ts";
@@ -260,8 +260,16 @@ export async function deliverMessage(
     await copyInto(db, storageFor, senderTenant, dest, message, files);
     hops.push({ email: person.email, status: "inside", detail: "Delivered inside Cumulus." });
     if (!message.extra?.autoReply && dest !== senderTenant) {
-      const settings = await readSettings(db, dest);
-      if (shouldAutoReply(settings, message.from.email)) {
+      // Claimed under the row lock first, so two deliveries at the same moment send one auto-reply, not two.
+      const { claimed, settings } = await withTransaction(db, async () => {
+        await lockMailbox(db, dest);
+        const current = await readSettings(db, dest);
+        if (!shouldAutoReply(current, message.from.email)) return { claimed: false, settings: current };
+        const next = noteAutoReply(current, message.from.email);
+        await writeSettings(db, dest, next);
+        return { claimed: true, settings: next };
+      });
+      if (claimed) {
         const profile = await readProfile(db, dest);
         if (profile) {
           await insertMessage(
@@ -284,7 +292,6 @@ export async function deliverMessage(
             },
             null,
           );
-          await writeSettings(db, dest, noteAutoReply(settings, message.from.email));
         }
       }
     }

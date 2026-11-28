@@ -5,9 +5,10 @@ import { base64ToBytes, newId } from "./bytes.ts";
 import type { TenantStorage } from "./delivery.ts";
 import { deliverPending } from "./delivery.ts";
 import { addressOwnedByOther } from "./directory.ts";
-import { requestedDomainCount, sanitizeSettings } from "./settings.ts";
+import { keptDisplayName, requestedDomainCount, sanitizeSettings } from "./settings.ts";
 import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
 import { mailDomain } from "./domain.ts";
+import { aliasProblem } from "./alias.ts";
 import { validEmail } from "./logic.ts";
 import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -73,12 +74,17 @@ export const RESERVED_LOCAL_PARTS = new Set([
  * receive that domain's mail. Aliases the mailbox already has stay valid.
  */
 export function aliasAllowed(email: string, current: MailboxSnapshot): boolean {
-  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return true;
-  const at = email.lastIndexOf("@");
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  if (domain === mailDomain()) return !RESERVED_LOCAL_PARTS.has(local.split("+")[0]!);
-  return (current.settings?.domains ?? []).some((item) => item.verified && item.domain.toLowerCase() === domain);
+  return aliasRefusal(email, current) === null;
+}
+
+/**
+ * Why this mailbox can't add the alias, or null. On the platform domain every local part may be a Cumulus://ID
+ * username, so a new alias there must be the owner's name, "+" and a word, or Mail's random form (alias.ts).
+ */
+function aliasRefusal(email: string, current: MailboxSnapshot): string | null {
+  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return null;
+  const verified = (current.settings?.domains ?? []).filter((item) => item.verified).map((item) => item.domain);
+  return aliasProblem(email, current.me.email, verified, mailDomain());
 }
 
 export async function checkedAliases(
@@ -95,12 +101,16 @@ export async function checkedAliases(
     if (typeof alias !== "string") continue;
     const email = alias.trim().toLowerCase();
     if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
-    if (!aliasAllowed(email, current)) {
+    const refused = aliasRefusal(email, current);
+    if (refused) {
       if (ownedByOther === "skip") continue;
-      throw new TenantAccessError(`An address can be on ${mailDomain()} or on one of your verified domains.`);
+      throw new TenantAccessError(refused);
     }
     if (await addressOwnedByOther(db, email, tenantId)) {
-      if (ownedByOther === "skip") continue;
+      // One this mailbox held but no longer routes (its domain lapsed) and another mailbox now has: it is that
+      // mailbox's now, so it's dropped here rather than failing every save from now on.
+      const held = current.aliases.some((a) => a.toLowerCase() === email);
+      if (ownedByOther === "skip" || held) continue;
       throw new TenantAccessError("That address belongs to another mailbox");
     }
     aliases.push(email);
@@ -264,7 +274,7 @@ export async function writeSnapshot(
   const next: MailboxSnapshot = {
     ...rest,
     // Only the display name comes from the client (first-run setup); address, plan and quota never do.
-    me: { ...current.me, name: cleanDisplayName(snapshot.me?.name) || current.me.name },
+    me: { ...current.me, name: chosenName(cleanDisplayName(snapshot.me?.name), current) },
     messages,
     aliases,
     signature: snapshot.signature.slice(0, 4000),
@@ -331,6 +341,15 @@ export async function readAttachment(
     throw new Error("Stored attachment checksum does not match its record");
   }
   return { name: row.name, contentType: row.content_type, bytes: stored.body };
+}
+
+/**
+ * The display name a full save keeps. Only the client sets it (first-run setup), but every full save sends it, so a
+ * tab still showing a name a Cumulus://ID rename replaced would put the old one back: for a day after the rename,
+ * such a name is ignored (after that, choosing it again in Mail works).
+ */
+function chosenName(sent: string, current: MailboxSnapshot): string {
+  return keptDisplayName(sent, current.me.name, current.settings?.renames);
 }
 
 /** A display name as stored: one line, no quotes or angle brackets (they would break a From header). */

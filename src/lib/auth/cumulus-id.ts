@@ -79,6 +79,8 @@ export type CidTokens = {
   tokenType: string;
   accessToken: string;
   accessTokenExpiresAt?: Date;
+  /** Rotating refresh token (Mail asks for offline_access). Better Auth stores the newest one. */
+  refreshToken?: string;
   idToken?: string;
   raw: Record<string, unknown>;
 };
@@ -125,6 +127,7 @@ export async function exchangeCidCode(
     accessToken,
     accessTokenExpiresAt: Number.isFinite(expiresIn) && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : undefined,
     idToken: typeof out.id_token === "string" ? out.id_token : undefined,
+    refreshToken: typeof out.refresh_token === "string" ? out.refresh_token : undefined,
     raw: out,
   };
 }

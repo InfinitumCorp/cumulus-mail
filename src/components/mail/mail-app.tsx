@@ -70,6 +70,7 @@ const ContactsPanel = onFirstUse(() => import("./panels").then((m) => m.Contacts
 const TasksPanel = onFirstUse(() => import("./panels").then((m) => m.TasksPanel));
 import { Reader } from "./reader";
 import { Sidebar } from "./sidebar";
+import { CumulusBar } from "@/components/cumulus-bar";
 import { applyTheme } from "@/lib/theme";
 import { useInterfaceLanguage } from "@/lib/interface-language";
 import { LanguageSlot } from "@/components/language";
@@ -906,6 +907,8 @@ export function MailApp() {
           {/* The language menu (src/i18n/start.js): right of the wordmark on phones, the header's right end on
               wider screens. It used to float bottom-left over the sidebar; moved here by owner waiver (2026-11-16). */}
           <LanguageSlot className="ml-auto flex shrink-0 items-center md:order-last" />
+          {/* Cumulus://ID account bar: next to the language menu, in the title row on phones and at the header's right end on wider screens. */}
+          <CumulusBar client="cumulus-mail" className="flex shrink-0 items-center md:order-last" />
           {/* Phones: Compose sits in the title row instead of taking a full-width row. */}
           <button
             type="button"

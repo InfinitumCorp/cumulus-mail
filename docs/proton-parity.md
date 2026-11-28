@@ -12,7 +12,7 @@ Checked against the public Proton Mail product on 10 Nov 2026, and again on 19 N
 
 Statuses: **existing** (already in this repo), **added** (this change), **deferred** (not shipped, with the reason).
 
-The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged, except for the custom-folder rows at the end of the sidebar's folder list and the Inbox category tab row. New controls sit in the composer toolbar, the account dialog, the contacts list, the reader column, and the `/p/$token` unlock route.
+The mail shell — header, sidebar, list, reader, and the account dialog chrome — is unchanged, except for the custom-folder rows at the end of the sidebar's folder list and the Inbox category tab row. New controls sit in the composer toolbar, the account dialog (including Cumulus://ID sessions and the key directory), the contacts list, the reader column, and the `/p/$token` unlock route.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Hide-my-email aliases | existing | “Disposable alias” in the account dialog. |
 | Plus addressing (`name+tag@domain`) | added | Routes to the base address. An exact address still wins. |
 | Additional addresses on the platform domain | added | Account dialog, cap 15. |
-| Custom domains | added | Up to 3. Verification is a TXT record `_cumulus-mail.<domain>` = `cumulus-mail-verify=cumuluscloud.app`. |
+| Custom domains | added | Up to 3. Verification is a TXT record `_cumulus-mail.<domain>` with a value bound to the mailbox (`cumulus-mail-verify=<32 hex>`, shown in the Domains panel), so one mailbox's record never verifies the domain for another. |
 | Catch-all | added | Published only after that TXT check succeeds. |
 | Live DNS and registrar changes | deferred | The default resolver is empty unless `MAIL_AUTH_DNS=live`. This change does not edit DNS. |
 | Paid plan billing | deferred (scoped) | No payment provider. Caps mirror a paid mailbox (3 domains, 15 addresses) without charging. Tiers, Stripe objects, where each limit is enforced, and the order of work are in `docs/plans.md`. |
@@ -69,8 +69,9 @@ The mail shell — header, sidebar, list, reader, and the account dialog chrome 
 | Block sender | added | Blocks that address for this mailbox only. It does not vote on the shared domain reputation. Report spam still does both. |
 | SPF, DKIM, DMARC, quarantine, suppression | existing | |
 | Provider-scale spam and phishing reputation | added | Free feeds, on unless `MAIL_SPAM_FEEDS=off`: URLhaus hosts file and the public malware-filter domain list. A feed that is down does not quarantine mail. The mailbox lists and `MAIL_RBL_ZONES` still apply. |
-| 2FA, passkeys, security keys | added | Cumulus://ID still enrolls the account factor. This mailbox can also require its own authenticator (TOTP) or a security key (ES256 or Ed25519). The TOTP secret is sealed with the tenant key. Recovery codes are stored only as SHA-256. The mailbox locks for 12 hours after the last success, and only once a factor is enrolled, so a new mailbox is not locked. |
-| Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Hidden when sign-in is off. Sessions on the identity provider itself (Cumulus ID) are not listed: this repo has no session API for that issuer. |
+| 2FA, passkeys, security keys | added | The account factor is Cumulus://ID's password and 4-digit PIN, with an optional authenticator app (no passkeys). This mailbox can also require its own authenticator (TOTP) or a security key (ES256 or Ed25519). The TOTP secret is sealed with the tenant key. Recovery codes are stored only as SHA-256. The mailbox locks for 12 hours after the last success, and only once a factor is enrolled, so a new mailbox is not locked. |
+| Session list | done | Account dialog lists Mail's own Better Auth sessions (device, last active, shortened IP) with sign-out per device and for all others. Hidden when sign-in is off. Sessions on Cumulus://ID itself are in the row below. |
+| Session list from Cumulus://ID | added | Account dialog "Sessions": `GET /api/id/sessions` with the Cumulus://ID access token stored at sign-in (device, product, country, last active, current), "Sign out" per session (`DELETE /api/id/sessions/:id`) and "Sign out everywhere else" (`POST /api/id/sessions/revoke-others`). Mail requests `offline_access` and refreshes the token with Cumulus://ID's rotating refresh token; only an account signed in before that change, or a revoked one, sees the link to `https://id.cumuluscloud.app/account` instead. |
 | Mailbox audit log | added | Recent account actions, kept on the mailbox settings. It is not the Firmament ledger. |
 | Import / export | existing | Server backup. |
 | Import / export in the account dialog | added | JSON backup, `.eml` and mbox. Gmail and Outlook: **partly built** (the OAuth start exists, the callback route does not), so off until `MAIL_PROVIDER_IMPORT=on` with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` or `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`. |

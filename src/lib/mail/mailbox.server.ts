@@ -10,6 +10,7 @@ import {
   unverifiedIssuer,
   verifyCumulusToken,
 } from "@/lib/auth/cumulus-issuer";
+import { cidConfig } from "@/lib/auth/cumulus-id";
 import { createStorageDriver, openTenantStorage, TenantAccessError, type StorageDriver } from "@/lib/storage";
 import { bytesToBase64 } from "./bytes.ts";
 import { importMailbox, exportMailbox, type MailboxBackup } from "./backup.ts";
@@ -17,9 +18,11 @@ import { createAbuseIntake } from "./abuse.ts";
 import { createBounceHandler } from "./dsn.ts";
 import { openMailbox, readAttachment, writeDelta, writeSnapshot } from "./mailbox.ts";
 import type { MailboxDelta } from "./delta.ts";
-import type { MailQuery } from "./query.ts";
+import { withTransaction, type MailQuery } from "./query.ts";
 import { assertTenantId } from "@/lib/storage/adapter";
-import { mailAppHost, mailboxAddress } from "./domain.ts";
+import { mailAppHost, mailboxAddress, mailDomain } from "./domain.ts";
+import { handleCidEvent, parseCidEvent, verifyCidEventSignature } from "./cid-events.ts";
+import { applyWorkerBindings } from "@/lib/cloudflare-env";
 import {
   BILLING_OFF,
   billingStatus,
@@ -32,12 +35,10 @@ import {
   stripeConfig,
   verifyStripeSignature,
 } from "./billing.ts";
-import { publishAddress } from "./directory.ts";
 import { resolverFromEnv } from "./authenticate.ts";
 import { refreshDomainVerification } from "./domains.ts";
 import { readProtectedLink, burnProtectedLink } from "./protect-store.ts";
-import { catchAllAddress } from "./routing.ts";
-import { readProfile, readSettings, writeSettings } from "./records.ts";
+import { lockMailbox, publishRoutes, readProfile, readRouteState, readSettings, writeSettings } from "./records.ts";
 import { issueBlobShare, openBlobShare, sqlShareLedger } from "./share.ts";
 import type { MailProfile, MailboxSnapshot } from "./snapshot.ts";
 
@@ -73,7 +74,8 @@ async function tenantFromCumulusToken(token: string): Promise<string> {
     throw new UnauthorizedError();
   }
   const keys = createLocalJWKSet(jwks as { keys: [] });
-  const verified = await verifyCumulusToken(token, { issuer, keys });
+  // A Cumulus://ID access token must be minted for this client (`aud`).
+  const verified = await verifyCumulusToken(token, { issuer, keys, audience: cidConfig().clientId });
   return verified.tenantId;
 }
 
@@ -85,15 +87,28 @@ async function sessionMailbox(
   // Which sign-in the second factor is passed for: the session (cookie sign-in) or the bearer token.
   let sessionRef = "";
   if (bearerToken && unverifiedIssuer(bearerToken) === cumulusIssuer()) {
-    const tenantId = await tenantFromCumulusToken(bearerToken);
+    const cid = await tenantFromCumulusToken(bearerToken);
+    assertTenantId(cid);
+    // The access token carries the cid, not the address: ask Cumulus://ID who this is (which also
+    // confirms the session is still live). Using the cid as the local part would publish a
+    // `cid_…@` address for the mailbox.
+    const { cidProfileFromTokens } = await import("@/lib/auth/cumulus-id");
+    const person = await cidProfileFromTokens(cidConfig(), { accessToken: bearerToken });
+    const email = (person?.email ?? "").trim().toLowerCase();
+    // The address Cumulus://ID gives every account is on Mail's domain; anything else isn't a mailbox of ours.
+    if (!person || person.cid !== cid || !email.endsWith(`@${mailDomain()}`)) throw new UnauthorizedError();
+    // The same Mail tenant as that person's cookie sign-in and account events (tenantForCid: the Better Auth user
+    // linked to the cid), never a second mailbox keyed by the cid itself.
+    const { tenantForBearer } = await import("./cid-events.ts");
+    const tenantId = await tenantForBearer(await database(), cid, { email, name: person.name || person.username || email.split("@")[0]! });
     assertTenantId(tenantId);
     sessionRef = `bearer:${bearerToken}`;
     resolved = {
       verified: true, // a Cumulus ID token: the identity provider verified the email
       tenantId,
       profile: {
-        name: tenantId,
-        email: mailboxAddress(tenantId),
+        name: person.name || person.username || email.split("@")[0]!,
+        email,
         cid: `cid:${tenantId}`,
         plan: "Free",
         quotaGb: 15,
@@ -435,11 +450,19 @@ export async function checkDomainForSession(
   if (!current) throw new Error("Add that domain in the account panel first.");
   const checked = await refreshDomainVerification({ ...settings, domains: [current] }, resolverFromEnv());
   const verified = checked.domains[0]?.verified === true;
-  await writeSettings(db, tenantId, {
-    ...settings,
-    domains: settings.domains.map((item) => (item.domain === domain ? { ...item, verified } : item)),
+  // Under the row lock (the DNS lookup above is not): record the result on the stored settings as they are now,
+  // then re-publish routes from what is verified. A domain that stopped verifying stops routing its aliases and
+  // catch-all; one that verifies again routes them again; a closed mailbox routes nothing.
+  await withTransaction(db, async () => {
+    await lockMailbox(db, tenantId);
+    const fresh = await readSettings(db, tenantId);
+    await writeSettings(db, tenantId, {
+      ...fresh,
+      domains: fresh.domains.map((item) => (item.domain === domain && item.txtValue === current.txtValue ? { ...item, verified } : item)),
+    });
+    const state = await readRouteState(db, tenantId);
+    if (state) await publishRoutes(db, tenantId, state);
   });
-  if (verified && current.catchAll) await publishAddress(db, tenantId, catchAllAddress(domain));
   return { verified, txtName: current.txtName, txtValue: current.txtValue };
 }
 
@@ -461,6 +484,25 @@ export async function readProtectedForToken(token: string): Promise<{
 export async function burnProtectedForToken(token: string): Promise<{ burned: true }> {
   await burnProtectedLink(await database(), token);
   return { burned: true };
+}
+
+/**
+ * POST /api/cid-events: an account event from Cumulus://ID (see cid-events.ts). Answers 401 for a
+ * missing or wrong signature, 400 for a malformed or stale event, and 200 otherwise.
+ */
+export async function receiveCidEvent(body: string, signature: string | null): Promise<{ status: number; result?: string }> {
+  applyWorkerBindings();
+  const secret = process.env.CID_EVENTS_SECRET?.trim() ?? "";
+  if (!secret) return { status: 404 };
+  if (body.length > 16_384 || !(await verifyCidEventSignature(secret, body, signature))) return { status: 401 };
+  const event = parseCidEvent(body);
+  // Signed events older than a day are refused, so a captured request can't be replayed later.
+  if (!event || Math.abs(Date.now() - Date.parse(event.at)) > 24 * 60 * 60 * 1000) return { status: 400 };
+  const result = await handleCidEvent(await database(), event, mailDomain());
+  // A notice that arrives before its account.created (events can be delivered out of order): ask the
+  // sender to try again shortly (Cumulus://ID retries from its queue), unless the event is old.
+  if (result === "no-mailbox" && Date.now() - Date.parse(event.at) < 60 * 60 * 1000) return { status: 409, result };
+  return { status: 200, result };
 }
 
 /** Where Stripe sends people back: `BILLING_RETURN_URL`, else this app's own origin. */

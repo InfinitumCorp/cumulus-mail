@@ -12,9 +12,9 @@ export const DEFAULT_CUMULUS_JWKS_URI = "https://id.cumuluscloud.app/realms/cumu
 export const LEGACY_COGNITO_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fRlMO7dna";
 
 /**
- * JWKS for an issuer: a Keycloak `/realms/<name>` issuer uses the realm certs
- * path, anything else (Cognito included) uses `/.well-known/jwks.json`.
- * CUMULUS_OIDC_JWKS_URL replaces this entirely.
+ * JWKS for an issuer: a `/realms/<name>` issuer (Cumulus://ID) uses the realm
+ * certs path, anything else (a Cognito pool included) uses
+ * `/.well-known/jwks.json`. CUMULUS_OIDC_JWKS_URL replaces this entirely.
  * @param {string} issuer
  */
 export function jwksUrlForIssuer(issuer) {

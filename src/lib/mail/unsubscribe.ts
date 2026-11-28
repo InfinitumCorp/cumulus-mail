@@ -1,7 +1,7 @@
 import { assertTenantId } from "../storage/adapter.ts";
 import { oneClickUnsubscribe, subscriptions, unsubscribeOptions, type Resolver, type Unsubscribe } from "./categories.ts";
 import type { MailQuery } from "./query.ts";
-import { readMessages, readSettings, writeSettings } from "./records.ts";
+import { readMessages, updateSettings } from "./records.ts";
 import { noteUnsubscribed } from "./settings.ts";
 
 export type UnsubscribeResult =
@@ -32,8 +32,7 @@ export async function unsubscribeMessage(
   if (option.kind !== "one-click") return { method: option.kind, option };
   const result = await oneClickUnsubscribe(option.url, fetcher, 10_000, resolve);
   if (result.ok) {
-    const settings = await readSettings(db, tenantId);
-    await writeSettings(db, tenantId, noteUnsubscribed(settings, key, "one-click"));
+    await updateSettings(db, tenantId, (settings) => noteUnsubscribed(settings, key, "one-click"));
   }
   return { method: "one-click", ...result };
 }

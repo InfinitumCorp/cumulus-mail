@@ -78,17 +78,17 @@ test("an imported backup cannot take another mailbox's address, and keeps to the
     db,
     storageFor,
     "imp-eve",
-    await backupOf("imp-eve", { aliases: ["imp.dan@cumuluscloud.app", "eve.extra@cumuluscloud.app"] }),
+    await backupOf("imp-eve", { aliases: ["imp.dan@cumuluscloud.app", "imp.eve+extra@cumuluscloud.app"] }),
   );
-  assert.deepEqual(restored.aliases, ["eve.extra@cumuluscloud.app"]);
+  assert.deepEqual(restored.aliases, ["imp.eve+extra@cumuluscloud.app"]);
   // Nor can an import (or a save) claim a reserved platform name or an address on someone else's domain.
   const claimed = await importMailbox(
     db,
     storageFor,
     "imp-eve",
-    await backupOf("imp-eve", { aliases: ["postmaster@cumuluscloud.app", "ceo@acme.example", "x@gmail.com", "eve.two@cumuluscloud.app"] }),
+    await backupOf("imp-eve", { aliases: ["postmaster@cumuluscloud.app", "ceo@acme.example", "x@gmail.com", "imp.eve+two@cumuluscloud.app"] }),
   );
-  assert.deepEqual(claimed.aliases, ["eve.two@cumuluscloud.app"]);
+  assert.deepEqual(claimed.aliases, ["imp.eve+two@cumuluscloud.app"]);
   const limit = (await readSnapshot(db, "imp-eve")).me.limits!.messages;
   const tooMany = Array.from({ length: limit + 1 }, (_, i) => mail(`m-${i}`, "inbox", "x@example.com", "imp.eve@cumuluscloud.app", "hi"));
   await assert.rejects(importMailbox(db, storageFor, "imp-eve", await backupOf("imp-eve", { messages: tooMany })), /too large/);
@@ -101,14 +101,14 @@ test("restoring one's own export still works: mail, aliases and sent copies come
   const base = await readSnapshot(db, "imp-fay");
   await writeSnapshot(db, storageFor, "imp-fay", {
     ...base,
-    aliases: ["fay.work@cumuluscloud.app"],
+    aliases: ["imp.fay+work@cumuluscloud.app"],
     messages: [...base.messages, mail("fay-out", "sent", "imp.fay@cumuluscloud.app", "imp.gus@cumuluscloud.app", "Hello Gus")],
   });
   const gusBefore = (await readSnapshot(db, "imp-gus")).messages.filter((m) => m.subject === "Hello Gus").length;
   assert.equal(gusBefore, 1, "delivered once by the save");
   const backup = await exportMailbox(db, storageFor("imp-fay"), "imp-fay");
   const restored = await importMailbox(db, storageFor, "imp-fay", backup);
-  assert.deepEqual(restored.aliases, ["fay.work@cumuluscloud.app"]);
+  assert.deepEqual(restored.aliases, ["imp.fay+work@cumuluscloud.app"]);
   assert.ok(restored.messages.some((m) => m.id === "fay-out"));
   assert.equal((await readSnapshot(db, "imp-gus")).messages.filter((m) => m.subject === "Hello Gus").length, 1, "not delivered again");
 });
@@ -134,7 +134,7 @@ test("an import keeps to a save's limits the import way: trimmed to the plan, ov
     file("elsewhere", "not-in-this-backup"),
   ];
   const message = { ...mail("lim-1", "inbox", "x@example.com", "imp.lim@cumuluscloud.app", "Limits"), body: "y".repeat(MAX_BODY + 50), folder: "folder-missing" as MailMessage["folder"] };
-  const aliases = Array.from({ length: limits.aliases + 3 }, (_, i) => `lim.${i}@cumuluscloud.app`);
+  const aliases = Array.from({ length: limits.aliases + 3 }, (_, i) => `imp.lim+${i}@cumuluscloud.app`);
   const restored = await importMailbox(db, storageFor, "imp-lim", await backupOf("imp-lim", { messages: [message], aliases, blobs, attachments }));
 
   assert.equal(restored.aliases.length, limits.aliases, "aliases trimmed to the plan, not refused");

@@ -43,9 +43,9 @@ test("ru: list and reader dates, plan usage, the sign-in note and the calendar f
   await page.locator("aside button.w-full.border-t").click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
-  await dialog.getByText("регистрирует коды аутентификатора", { exact: false }).waitFor({ timeout: 10_000 });
+  await dialog.getByText("Пароль, 4-значный PIN-код", { exact: false }).waitFor({ timeout: 10_000 });
   const text = await dialog.innerText();
-  for (const english of ["Custom domains", "Two-factor codes", "IMAP and SMTP stay on a local bridge", " of "]) {
+  for (const english of ["Custom domains", "Your password, 4-digit PIN", "IMAP and SMTP stay on a local bridge", " of "]) {
     assert.equal(text.includes(english), false, `still English in the account dialog: "${english}"`);
   }
   assert.match(text, /Свои домены/);

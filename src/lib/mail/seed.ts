@@ -2,12 +2,22 @@ import { defaultSettings } from "./settings.ts";
 import { limitsFor, newMailboxPlan, planLabel } from "./plans.ts";
 import { assertTenantId } from "../storage/adapter.ts";
 import { mailboxAddress } from "./domain.ts";
-import { addressBlind, publishAddress } from "./directory.ts";
+import { addressBlind, claimOwnAddress, publishAddress } from "./directory.ts";
 import { sealText } from "./field-crypto.ts";
 import { validEmail } from "./logic.ts";
 import { EVENTS, SEED_CONTACTS, SEED_MESSAGES, SEED_TASKS } from "./model.ts";
 import type { MailQuery } from "./query.ts";
-import { insertMessage } from "./records.ts";
+import { insertMessage, readSettings } from "./records.ts";
+
+/**
+ * The demo mailbox (seeded mail, a demo directory with security@, press@ and others): only the local development
+ * user, sign-in off (DEV_USER_ID in src/lib/auth/verify.server.ts). (Not isWorkspacePreview(): that is true
+ * whenever GROK_PROJECT_ID is unset, production included.) A real person whose username is alex gets an
+ * ordinary mailbox, and no demo routes that would shadow other people's addresses.
+ */
+function isDemo(tenantId: string, email: string): boolean {
+  return email === previewAddress() && tenantId === "dev-user";
+}
 
 function previewAddress(): string {
   return mailboxAddress("alex");
@@ -114,14 +124,16 @@ export async function provisionMailbox(
       startPlan,
     ],
   );
-  await publishAddress(db, tenantId, email);
-  if (email === previewAddress()) await ensureDemoDirectory(db);
+  // A mailbox whose Cumulus://ID was deleted (settings.closedAt) isn't routed again by being opened; an open one
+  // takes its own address back from any other mailbox's route for it (claimOwnAddress).
+  if (!(await readSettings(db, tenantId)).closedAt) await claimOwnAddress(db, tenantId, email);
+  if (isDemo(tenantId, email)) await ensureDemoDirectory(db);
   const claimed = await db.query<{ tenant_id: string }>(
     `update cumulus_mail.mailboxes set seeded = true where tenant_id = $1 and seeded = false returning tenant_id`,
     [tenantId],
   );
   if (claimed.length === 0) return;
-  if (email === previewAddress()) {
+  if (isDemo(tenantId, email)) {
     await seedPreviewContents(db, tenantId);
     return;
   }
