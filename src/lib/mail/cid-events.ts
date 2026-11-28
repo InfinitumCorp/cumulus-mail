@@ -208,7 +208,16 @@ export async function handleCidEvent(db: MailQuery, e: CidEvent, mailDomain: str
     await provisionMailbox(db, tenantId, { name, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 });
     return "provisioned";
   }
-  const tenantId = await tenantForCid(db, e.cid);
+  let tenantId = await tenantForCid(db, e.cid);
+  // A deletion that overtook its account.created (a queue retry): the mailbox is made now, closed, so the late
+  // account.created finds it closed and routes nothing.
+  const username = s(e.detail.username).toLowerCase();
+  if (e.type === "account.deleted" && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(username) && (!tenantId || !(await mailboxExists(db, tenantId)))) {
+    const email = `${username}@${mailDomain}`;
+    tenantId = (await tenantForCid(db, e.cid, { email, name: username }))!;
+    assertTenantId(tenantId);
+    await provisionMailbox(db, tenantId, { name: username, email, cid: `cid:${tenantId}`, plan: "Free", quotaGb: 15 });
+  }
   if (!tenantId) return e.type === "profile.updated" ? "ignored" : "no-mailbox";
   assertTenantId(tenantId);
   if (e.type === "account.deleted") {

@@ -194,3 +194,11 @@ test("Mail's bearer sign-in resolves its tenant through tenantForBearer (not the
   assert.match(branch, /const tenantId = await tenantForBearer\(/);
   assert.doesNotMatch(branch, /const tenantId = await tenantFromCumulusToken\(/);
 });
+
+test("account.deleted that overtakes its account.created leaves the mailbox closed, and the late created routes nothing", async () => {
+  const cid = "cid_88888888-8888-4888-8888-888888888888";
+  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.deleted", detail: { username: "early" }, at }, "cumuluscloud.app"), "unrouted");
+  assert.equal(await findTenantByAddress(harness.db, "early@cumuluscloud.app"), null);
+  assert.equal(await handleCidEvent(harness.db, { cid, type: "account.created", detail: { username: "early", displayName: "Early", mailAddress: "early@cumuluscloud.app" }, at }, "cumuluscloud.app"), "provisioned");
+  assert.equal(await findTenantByAddress(harness.db, "early@cumuluscloud.app"), null, "still closed");
+});
