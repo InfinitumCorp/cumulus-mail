@@ -56,14 +56,36 @@ test("a mailbox's own address beats another mailbox's route for it (a name taken
     await openMailbox(db, "sq-mallory", profile("sq-mallory", "mallory@cumuluscloud.app", "M"));
     // The rule refuses bob@ as an alias now; a route like this could only come from before it.
     await publishAddress(db, "sq-mallory", "bob@cumuluscloud.app");
+    const { addressBlind } = await import("./directory.ts");
+    const { sealText } = await import("./field-crypto.ts");
+    await db.query(`insert into cumulus_mail.aliases (tenant_id, address, address_bidx) values ($1, $2, $3)`, ["sq-mallory", sealText("sq-mallory", "bob@cumuluscloud.app"), addressBlind("sq-mallory", "bob@cumuluscloud.app")]);
     assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-mallory");
     // Bob's mailbox is made (account.created, or his first sign-in): the address is his.
     await openMailbox(db, "sq-bob", profile("sq-bob", "bob@cumuluscloud.app", "Bob"));
     assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-bob");
+    // The squatter's alias row goes too, so no later save of theirs can publish it again.
+    const held = await db.query(`select 1 from cumulus_mail.aliases where tenant_id = 'sq-mallory'`);
+    assert.equal(held.length, 0);
     // Saves on either side don't hand it back.
     await writeSnapshot(db, storageFor, "sq-mallory", { ...(await readSnapshot(db, "sq-mallory")), signature: "m" });
     await writeSnapshot(db, storageFor, "sq-bob", { ...(await readSnapshot(db, "sq-bob")), signature: "b" });
     assert.equal(await findTenantByAddress(db, "bob@cumuluscloud.app"), "sq-bob");
+  } finally {
+    await harness.close();
+  }
+});
+
+test("a real person named alex gets an ordinary mailbox: no demo directory shadowing security@ and others", async () => {
+  const { createHarness, profile } = await import("./test-support.ts");
+  const { openMailbox } = await import("./mailbox.ts");
+  const { findTenantByAddress } = await import("./directory.ts");
+  const harness = await createHarness();
+  try {
+    await openMailbox(harness.db, "real-alex", profile("real-alex", "alex@cumuluscloud.app", "Alex"));
+    assert.equal(await findTenantByAddress(harness.db, "alex@cumuluscloud.app"), "real-alex");
+    for (const demo of ["security@cumuluscloud.app", "press@cumuluscloud.app", "leah@cumuluscloud.app"]) {
+      assert.equal(await findTenantByAddress(harness.db, demo), null, demo);
+    }
   } finally {
     await harness.close();
   }
