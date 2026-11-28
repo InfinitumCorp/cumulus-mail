@@ -39,7 +39,23 @@ The default `npm run build` still uses Nitro preset `vercel`. `NITRO_PRESET=clou
 
 Hyperdrive config **cumulus-mail** already exists. Id: `d07a82ac7fcc42ac84dc6469140ef551`. Both wrangler files use that id. Do not create a second config. Do not point Hyperdrive at `ivqiskeziohbbtkcvlun`.
 
-Hyperdrive is on the Workers Free plan (100,000 queries per day). Do not put the database password in git. It stays in the existing Hyperdrive config.
+Hyperdrive is available on the Workers Free plan (100,000 queries per day), but **the API worker needs Workers Paid**: Free allows 10 ms of CPU per request, and a mailbox save measured about 44 ms (see `friday.md`, go/no-go). Do not put the database password in git. It stays in the existing Hyperdrive config.
+
+**Turn query caching off on this config before the cutover:**
+
+```sh
+npx wrangler hyperdrive get d07a82ac7fcc42ac84dc6469140ef551            # look for "caching": { "disabled": true }
+npx wrangler hyperdrive update d07a82ac7fcc42ac84dc6469140ef551 --caching-disabled
+```
+
+Hyperdrive caches read queries unless caching is disabled (the CLI offers `--caching-disabled`, `--max-age` and `--swr`). A cached read can be served after a write to the same rows. This app reads state that has to be current on every request:
+- Better Auth sessions: a signed-out or deleted session would still be accepted;
+- second factors and factor sessions;
+- address routes for inbound mail;
+- rate-limit counters;
+- the mailbox snapshot a reload shows after a save.
+
+The writes themselves (saves, claims, transactions) are not affected. `wrangler dev` does not emulate the cache, so `npm run smoke:worker` cannot show it. Leave it off unless a measured read path needs it, and then cache only that path, through a second Hyperdrive config.
 
 Origin is the dedicated Mail session pooler, port **5432**, `sslmode=require`, database `postgres`. Do not use port **6543** (transaction mode). The app's `pg` client uses the extended query protocol, which session mode accepts.
 

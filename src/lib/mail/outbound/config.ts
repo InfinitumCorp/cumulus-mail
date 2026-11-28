@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { mailDomain } from "../domain.ts";
+import { dialCloudflare } from "./cf-socket.ts";
 import { dialNode } from "./node-socket.ts";
 import { createSmtpTransport, type SmtpDial } from "./smtp.ts";
 import type { OutboundTransport } from "./transport.ts";
@@ -31,7 +32,18 @@ export type OutboundConfig = {
 
 type Env = Record<string, string | undefined>;
 
-export function outboundFromEnv(env: Env = process.env, dial: SmtpDial = dialNode): OutboundConfig | null {
+/**
+ * The SMTP dialer for this runtime. On Workers (`CUMULUS_RUNTIME=cloudflare`) it is `cloudflare:sockets`, as
+ * the inbound worker already uses: workerd's `node:tls` cannot upgrade an existing `node:net` socket, so
+ * `dialNode`'s STARTTLS fails there ("Cannot call releaseLock() on a reader with outstanding read promises")
+ * after EHLO, and every send from the API worker would be retried by the next scheduled run instead.
+ * Node hosts (the RU server) keep `node:net` / `node:tls`.
+ */
+export function defaultDial(env: Env = process.env): SmtpDial {
+  return env.CUMULUS_RUNTIME?.trim() === "cloudflare" ? dialCloudflare : dialNode;
+}
+
+export function outboundFromEnv(env: Env = process.env, dial: SmtpDial = defaultDial(env)): OutboundConfig | null {
   const dkim = dkimFromEnv(env);
   if (env.MAIL_OUTBOUND_DEV?.trim() === "memory") return { transport: createMemoryTransport(), dkim };
   const host = env.MAIL_SMTP_HOST?.trim();
