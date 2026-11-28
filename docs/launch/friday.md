@@ -1,5 +1,8 @@
 # Launch day: the ordered sequence (about 2 hours)
 
+> **Shipping today? Start with `docs/launch/ship-today.md`:** the exact commands in order, what each must print,
+> when to stop, what to have ready, and `npm run verify:live` after each deploy. This page is the long version.
+
 One page to follow on launch day, top to bottom. Every step has the command, what you should see, and how
 to undo it. The details behind each step are in the docs linked from it; this page does not replace them,
 it puts them in order.
@@ -63,8 +66,9 @@ Tick every line, or move the launch.
       - US (the dedicated database, `0001`–`0021` applied): `WARN 3 migration(s) to apply, in this order:
         0022_factor_sessions.sql, 0023_outbound_queue_created.sql, 0024_save_sequences.sql`, and `anon is refused
         on public.session` as ok;
-      - a new RU database: every file in `migrations/` listed, `0001_auth.sql` first, and
-        `WARN public.session does not exist yet` (0001 creates it);
+      - a new RU database: every file in `migrations/` listed, `0001_auth.sql` first, and, on Yandex Managed
+        PostgreSQL, `ok No anon role in this database (not Supabase): nothing to lock down` (on a new Supabase
+        database: `WARN public.session does not exist yet`, which 0001 creates);
       - `WARN MAIL_AUTH_DNS is not live`, and `WARN MAIL_SMTP_HOST is not set` until the relay is configured;
       - US only: SPF, DKIM and DMARC as MISSING until step 7 publishes them, and the MTA-STS and TLS-RPT
         lines as WARN;
@@ -123,8 +127,9 @@ The API worker's secrets are put by the deploy workflow from the `production-us`
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `HYPERDRIVE_ID` there. Stripe secrets only if billing goes live today.
 
 **RU, Yandex Lockbox** (`docs/deploy/yandex-ru.md`): `BETTER_AUTH_SECRET`, `DATABASE_URL`, `MAIL_BLOB_KEY`,
-`MAIL_BLIND_KEY`, `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY`, `CRON_SECRET`. The RU keys are
-**different** from the US keys unless the two copies share a bucket.
+`MAIL_BLIND_KEY` (the RU `MAIL_BLOB_KEY` value), `MAIL_S3_ACCESS_KEY_ID`, `MAIL_S3_SECRET_ACCESS_KEY`, `CRON_SECRET`.
+`MAIL_BLIND_KEY` is mounted only when the `production-ru` variable `YC_LOCKBOX_OPTIONAL_KEYS` lists it: set that
+variable to `MAIL_BLIND_KEY`. The RU keys are **different** from the US keys unless the two copies share a bucket.
 
 **Check:** step 3 (preflight) lists anything missing.
 **Rollback:** delete or replace the secret. Nothing reads them until step 4.
@@ -208,8 +213,10 @@ Follow `docs/deploy/cutover.md` Phases 1 and 2. In short:
    message from an outside account; it arrives in the new app.
 2. Workers → `cumulus-mail` → Domains: remove `mail.cumuluscloud.app`; `cumulus-mail-api` → Domains: add
    it. Back to back.
-3. Set `BETTER_AUTH_URL` to `https://mail.cumuluscloud.app` (the `production-us` environment) and re-run
-   the deploy for `api`.
+3. **Immediately**, so sign-in does not send users back to workers.dev:
+   `printf '%s' 'https://mail.cumuluscloud.app' | npx --yes wrangler@4.157.0 secret put BETTER_AUTH_URL --name cumulus-mail-api`
+   (takes effect at once), then set the `production-us` secret `BETTER_AUTH_URL` to the same value so later
+   deploy runs keep it.
 
 ```sh
 npm run smoke -- --url https://mail.cumuluscloud.app --domain cumuluscloud.app
@@ -218,7 +225,7 @@ npm run smoke -- --url https://mail.cumuluscloud.app --domain cumuluscloud.app
 **Expected:** every line ok, including `mx` (Cloudflare Email Routing). Sign in, open the inbox, see the
 message from 6.1.
 **Rollback:** move the custom domain back to `cumulus-mail`, the catch-all back to `cumulus-mail`, and
-`BETTER_AUTH_URL` back to the workers.dev origin. The old worker was never modified. Mail that arrived in
+`BETTER_AUTH_URL` back to the workers.dev origin (the same `secret put`, and `production-us`). The old worker was never modified. Mail that arrived in
 between stays in the new database.
 
 4. Add the four rate-limiting rules in `docs/deploy/edge-rate-limits.md` (zone `cumuluscloud.app`), in
@@ -250,7 +257,9 @@ GitHub → Actions → **Deploy RU (Yandex Cloud)**, confirmation `deploy ru`. T
 npm run smoke -- --url https://<id>.apigw.yandexcloud.net --region ru
 ```
 
-**Expected:** every line ok, region `ru`, sign-in through `ru.id.cumuluscloud.app`.
+**Expected:** every line ok, region `ru`, except `sign-in`: the container's `BETTER_AUTH_URL` is already
+`https://ru.mail.cumuluscloud.app`, so on the gateway's own domain the callback is not on this host. That
+line turns ok after step 9's DNS switch.
 **Rollback:** roll the container back to its previous revision; users still reach the old page.
 
 ## 9. RU cutover and its scheduler (15 min)
