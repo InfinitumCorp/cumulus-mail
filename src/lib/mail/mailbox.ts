@@ -8,6 +8,7 @@ import { addressOwnedByOther } from "./directory.ts";
 import { keptDisplayName, requestedDomainCount, sanitizeSettings } from "./settings.ts";
 import { DEFAULT_PLAN, limitsFor } from "./plans.ts";
 import { mailDomain } from "./domain.ts";
+import { aliasProblem } from "./alias.ts";
 import { validEmail } from "./logic.ts";
 import type { Attachment, MailMessage } from "./model.ts";
 import type { MailQuery } from "./query.ts";
@@ -73,12 +74,17 @@ export const RESERVED_LOCAL_PARTS = new Set([
  * receive that domain's mail. Aliases the mailbox already has stay valid.
  */
 export function aliasAllowed(email: string, current: MailboxSnapshot): boolean {
-  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return true;
-  const at = email.lastIndexOf("@");
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  if (domain === mailDomain()) return !RESERVED_LOCAL_PARTS.has(local.split("+")[0]!);
-  return (current.settings?.domains ?? []).some((item) => item.verified && item.domain.toLowerCase() === domain);
+  return aliasRefusal(email, current) === null;
+}
+
+/**
+ * Why this mailbox can't add the alias, or null. On the platform domain every local part may be a Cumulus://ID
+ * username, so a new alias there must be the owner's name, "+" and a word, or Mail's random form (alias.ts).
+ */
+function aliasRefusal(email: string, current: MailboxSnapshot): string | null {
+  if (current.aliases.some((alias) => alias.toLowerCase() === email)) return null;
+  const verified = (current.settings?.domains ?? []).filter((item) => item.verified).map((item) => item.domain);
+  return aliasProblem(email, current.me.email, verified, mailDomain());
 }
 
 export async function checkedAliases(
@@ -95,9 +101,10 @@ export async function checkedAliases(
     if (typeof alias !== "string") continue;
     const email = alias.trim().toLowerCase();
     if (!validEmail(email) || email === current.me.email.toLowerCase() || aliases.includes(email)) continue;
-    if (!aliasAllowed(email, current)) {
+    const refused = aliasRefusal(email, current);
+    if (refused) {
       if (ownedByOther === "skip") continue;
-      throw new TenantAccessError(`An address can be on ${mailDomain()} or on one of your verified domains.`);
+      throw new TenantAccessError(refused);
     }
     if (await addressOwnedByOther(db, email, tenantId)) {
       // One this mailbox held but no longer routes (its domain lapsed) and another mailbox now has: it is that

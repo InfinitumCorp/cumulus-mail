@@ -4,6 +4,7 @@ import { DEFAULT_PLAN, maxLimit, PLANS } from "./plans.ts";
 import { validEmail } from "./logic.ts";
 import { cleanDomain } from "./routing.ts";
 import { DEFAULT_THEME, THEMES, type Theme } from "../theme-names.ts";
+import { aliasProblem } from "./alias.ts";
 
 export type CustomDomain = {
   domain: string;
@@ -289,9 +290,11 @@ export function noteUnsubscribed(
   };
 }
 
-export function addressAllowed(email: string, settings: MailSettings, platformDomain: string): string | null {
+export function addressAllowed(email: string, settings: MailSettings, platformDomain: string, ownAddress?: string): string | null {
   const normalized = email.trim().toLowerCase();
   if (!validEmail(normalized)) return "Enter a real address.";
+  // The server's alias rule (alias.ts), checked here first so a refused address never reaches a save.
+  if (ownAddress) return aliasProblem(normalized, ownAddress, settings.domains.filter((d) => d.verified).map((d) => d.domain), platformDomain);
   const domain = normalized.split("@")[1] ?? "";
   if (domain === platformDomain) return null;
   if (settings.domains.some((item) => item.domain === domain && item.verified)) return null;

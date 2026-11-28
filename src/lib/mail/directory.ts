@@ -35,6 +35,32 @@ export async function publishAddress(db: MailQuery, tenantId: string, address: s
   );
 }
 
+/**
+ * A mailbox's own address is its own: any other mailbox's route for it (an alias someone took before this person's
+ * Cumulus://ID existed) is removed, and this mailbox's route published. Run when a mailbox is provisioned or opened.
+ */
+export async function claimOwnAddress(db: MailQuery, tenantId: string, address: string): Promise<void> {
+  assertTenantId(tenantId);
+  const email = address.trim().toLowerCase();
+  const domain = addressDomain(email);
+  if (!domain) return;
+  const rows = await db.query<{ tenant_id: string; address_bidx: string }>(
+    `select tenant_id, address_bidx from cumulus_mail.address_routes where domain = $1 and tenant_id <> $2`,
+    [domain, tenantId],
+  );
+  for (const row of rows) {
+    try {
+      assertTenantId(row.tenant_id);
+    } catch {
+      continue;
+    }
+    if (addressBlind(row.tenant_id, email) === row.address_bidx) {
+      await db.query(`delete from cumulus_mail.address_routes where domain = $1 and tenant_id = $2 and address_bidx = $3`, [domain, row.tenant_id, row.address_bidx]);
+    }
+  }
+  await publishAddress(db, tenantId, email);
+}
+
 /** Replace every routed address for one tenant. The mailbox address is included. */
 export async function replaceRoutedAddresses(db: MailQuery, tenantId: string, addresses: string[]): Promise<void> {
   assertTenantId(tenantId);

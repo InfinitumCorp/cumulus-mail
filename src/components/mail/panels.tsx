@@ -339,7 +339,7 @@ export function AccountPanel({
                     event.preventDefault();
                     const data = new FormData(event.currentTarget);
                     const email = String(data.get("address") ?? "");
-                    const error = addressAllowed(email, settings, mailDomain());
+                    const error = addressAllowed(email, settings, mailDomain(), me.email);
                     if (error) return;
                     onAddAlias(email.trim().toLowerCase());
                     event.currentTarget.reset();
