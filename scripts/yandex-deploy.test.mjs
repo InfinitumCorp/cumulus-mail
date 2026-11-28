@@ -56,7 +56,7 @@ test("the deploy script asks before acting and takes secrets only as Lockbox ref
   assert.equal(/wrangler|api\.cloudflare\.com/.test(script), false);
   // Optional Lockbox keys (key rotation) are an allowlist; anything else stops the deploy.
   assert.match(script, /for key in \$\{LOCKBOX_OPTIONAL_KEYS:-\}; do/);
-  assert.match(script, /MAIL_BLOB_KEYS\|MAIL_BLIND_KEY\) secret_args\+=/);
+  assert.match(script, /MAIL_BLOB_KEYS\|MAIL_BLIND_KEY\|MAIL_SMTP_PASSWORD\|MAIL_DKIM_PRIVATE_KEY\|STRIPE_SECRET_KEY\|STRIPE_WEBHOOK_SECRET\) secret_args\+=/);
   assert.match(script, /is not an optional key" >&2; exit 1/);
 });
 
